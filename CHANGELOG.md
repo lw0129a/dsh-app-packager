@@ -6,14 +6,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Added
-
-- **Publishing now runs in CI through npm trusted publishing (OIDC).** `.github/workflows/publish.yml` publishes both tarballs on a `v*` tag (or on demand from the Actions tab / `gh workflow run publish.yml`) with `id-token: write` and no npm token anywhere, so a 2FA account needs neither an OTP nor a manual approval of a staged package. Configure the trusted publisher once per package on npmjs.com (repository `lw0129a/dsh-app-packager`, workflow `publish.yml`).
-
-### Fixed
-
-- **The *Upgrade plugin* button no longer walks the plugin backwards.** When the plugin is installed from a local tarball, the registry's `latest` can be older than what is on the machine (today: `0.2.0` against a local `0.6.0`), and `add dsh-app-packager@latest` would quietly replace it — dropping the SDK card and the new engine. The upgrade now reads the installed version, compares it with the registry and stops with a message when there is nothing newer; `node <plugin>/upgrade.mjs --force` still reinstalls on demand. Verified against the real profile install (`0.2.0` on the registry, `0.6.0` installed, engine home untouched).
-
 ## [0.6.0] - 2026-10-10
 
 ### Added
@@ -23,11 +15,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **The engine directory now lives inside the plugin, and upgrading the plugin keeps it.** `~/AppPackager` still works: the first resolution renames it to `<plugin>/home` — a rename, never a copy, so multi-GB SDKs move instantly — after which `APP_PACKAGER_HOME` or the `home` config key can point anywhere else. The new *Upgrade plugin* button runs `dsh plugin --profile <name> add dsh-app-packager@latest` (or `pnpm add`) with the engine directory temporarily renamed out of the way, so reinstalling cannot delete your downloaded SDKs, certificates or registered projects; and a profile that runs the plugin from somewhere other than `node_modules` simply hides the button and says why.
 - `packages/dsh-app-packager/index.mjs` holds the path resolution both halves share (`resolvePluginHome`, `withHomePreserved`, `pluginRoot`, `looksLikeEngineHome`), so the host tools, the panel backend and the upgrade wrapper cannot disagree about where the engine directory is.
 
+- **Publishing now runs in CI through npm trusted publishing (OIDC).** `.github/workflows/publish.yml` publishes both tarballs on a `v*` tag (or on demand from the Actions tab / `gh workflow run publish.yml`) with `id-token: write` and no npm token anywhere, so a 2FA account needs neither an OTP nor a manual approval of a staged package. Configure the trusted publisher once per package on npmjs.com (repository `lw0129a/dsh-app-packager`, workflow `publish.yml`).
+
 ### Fixed
 
 - **`harmony_sdk_ready` no longer calls a half-installed HarmonyOS runtime ready.** It accepted `oh-package.json5` as proof, but the installer writes that manifest *before* running `ohpm install`, so a failed install counted as ready and the HarmonyOS build went ahead without a runtime. Readiness is now only `oh_modules/@dcloudio/uni-app-x-runtime`, its vapor counterpart, or a `*.har` in the directory.
 - **The engine test suite ran against the repository instead of its temporary root.** It symlinked `lib/` into the temp root, and since `lib/init.sh` recomputes `PIPELINE_ROOT` from its own location, anything sourced through it resolved back to the checkout — the SDK cases wrote their fixtures into `packages/app-packager/engine/sdk/`. The harness copies `lib/` now, so `PIPELINE_ROOT` is really the temp root.
 - **A test can no longer delete a real engine directory.** `resolvePluginHome` only migrates a directory that is actually an engine home (`.engine-version` or `打包工具.command` present), and the legacy path is an explicit option instead of being derived from `$HOME` inside the test, so a test that fakes a home cannot reach the real one even if the runtime ignores the fake.
+
+- **The *Upgrade plugin* button no longer walks the plugin backwards.** When the plugin is installed from a local tarball, the registry's `latest` can be older than what is on the machine (today: `0.2.0` against a local `0.6.0`), and `add dsh-app-packager@latest` would quietly replace it — dropping the SDK card and the new engine. The upgrade now reads the installed version, compares it with the registry and stops with a message when there is nothing newer; `node <plugin>/upgrade.mjs --force` still reinstalls on demand. Verified against the real profile install (`0.2.0` on the registry, `0.6.0` installed, engine home untouched).
 
 ## [0.5.0] - 2026-10-09
 
