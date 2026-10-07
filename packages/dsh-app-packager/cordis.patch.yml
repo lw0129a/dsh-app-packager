@@ -7,8 +7,9 @@
     - id: app-packager
       name: 'dsh-app-packager'
       config:
-        # Engine home (APP_PACKAGER_HOME). Empty means ~/AppPackager, or the
-        # APP_PACKAGER_HOME environment variable when set.
+        # Engine home. Empty follows APP_PACKAGER_HOME, else <plugin dir>/home.
+        # The first time <plugin dir>/home is used, an existing ~/AppPackager is
+        # renamed into place so downloads and registered projects move along.
         home: ''
         # Extra directories scanned for uni-app x projects, on top of the
         # engine home's parent directory.

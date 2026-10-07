@@ -91,6 +91,7 @@ npm view app-packager version     # 期望 0.2.0
 
 > - 刚 stage 完是 `status: validating`（注册表异步校验 tarball），此时批准/查看可能报 `staged version "…" not found`，等它变成 `staged` 再批。
 > - **不要在这上面反复试 CLI**：`npm stage approve` 对这类凭证固定 404（见上一节），`--otp` 也救不回来。
+> - **npm 恢复码不是 CLI 的 OTP**：把 `npm_recovery_codes.txt` 里的码喂给 `npm publish --otp=…`，注册表会先回 `Your account has been temporarily suspended due to a recent security-sensitive action.`，再给 `403 Forbidden - PUT …`；之后连 `npm stage publish` 也是 403（本机 2026-10-07 实测，读操作不受影响）。恢复码只属于 npmjs.com 的账号恢复流程，不能当 CLI 验证码用 —— 触发后只能等封禁解除或走官方申诉，不要反复重试。
 > - `npm stage download <id>` 目前在注册表侧 404（`GET /-/stage/***/tarball`），所以**发布前在本地用 `pnpm -r pack` 检查 tarball**，别指望下载回来验。
 > - 若本地 npm 缓存目录权限有问题（`EPERM … _cacache`），加 `npm_config_cache=/tmp/ap-npmcache`。
 > - 发错了内容可以 `npm unpublish app-packager@<version>`，但 24 小时后同名同版本不可复用，优先发新版本。
@@ -146,7 +147,8 @@ description:
 ### 本项目的上架记录
 
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
-- 2026-10-08：发布 **0.2.0**：插件新增 Web GUI 面板（宿主侧 `web.js` 六条同源路由 + 浏览器侧 `client.js`），仓库文档改为中英双份并补上协作规范。
+- 2026-10-08：发布 **0.2.0**：- 2026-10-07：**0.6.0** 完成：引擎新增 `sdk status|urls|install|process` 子命令，面板新增按本机 HBuilderX 版本（`5.26.2026091802`、series `5.26`）推荐并一键配置三平台离线 SDK 的卡片；引擎目录默认改到插件内 `<plugin>/home`（旧的 `~/AppPackager` 首次解析时改名搬入，升级期间暂存到 `<profile>/node_modules/.app-packager-home-backup`）。GitHub release `v0.6.0` 已发布并附两个离线 tgz；**npm 0.6.0 尚未发出** —— 账号在「恢复码当 OTP」的尝试后被临时封禁（见第二节的警告），registry 上仍是 0.2.0。
+插件新增 Web GUI 面板（宿主侧 `web.js` 六条同源路由 + 浏览器侧 `client.js`），仓库文档改为中英双份并补上协作规范。
 - 2026-10-07：两个包**先以带 scope 的名字**（`@lw0129a/app-packager`、`@lw0129a/dsh-app-packager`）用 staged publishing 发出、由维护者在 npmjs.com 批准上线（0.1.0，暂存区已清空）；随后按需求**去掉 scope 改名**为 `app-packager` / `dsh-app-packager`（命令里不再出现 `@lw0129a/`），以同样流程重新发布 0.1.0。`@lw0129a/*` 那两个旧名只留在 registry 上，不再更新，可选择性 `npm deprecate` 指向新名。
 - 2026-10-07：本机 `desktop` profile 已从「本地 tarball + `pnpm-workspace.yaml` override」改回从 registry 安装，并在一个全新临时 profile 里验证过 `dsh plugin --profile <name> add dsh-app-packager` 无需任何 override 即可装载（`--dump-config` 里能看到 `- id: app-packager` 那一层）。
 - 当天唯一的红项是仓库年龄（仓库建于 `2026-10-07T02:50:28Z`，24 小时门槛在 `2026-10-08T02:50Z`），按第 3 条的机制等它自己转绿。
