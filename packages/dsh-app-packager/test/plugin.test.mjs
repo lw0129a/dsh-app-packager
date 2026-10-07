@@ -684,8 +684,12 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
 
   const slots = [];
   const dictionaries = [];
+  const effects = [];
+  const disposed = [];
   const ctx = {
-    effect: (fn) => fn(),
+    effect: (fn) => {
+      effects.push(fn());
+    },
     locale: {
       register: (namespace, dict) => {
         dictionaries.push({ namespace, dict });
@@ -694,7 +698,10 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
       bind: () => (key) => key,
     },
     slots: {
-      inject: (_slot, register) => register(),
+      inject: (slot, register) => {
+        register();
+        return () => disposed.push(slot);
+      },
       register: (options, component) => {
         slots.push({ options, component });
         return () => {};
@@ -704,8 +711,17 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   exported.apply(ctx);
   assert.deepEqual(slots.map((entry) => entry.options.name), ['sidebar.panellist', 'main']);
   assert.equal(slots[1].options.key, 'app-packager');
+  // 侧栏按 id 寻址同名 main 面板：id、order、locale 与实际文案都要对得上，
+  // 否则入口要么不排序、要么显示成键名。
+  assert.equal(slots[0].options.id, 'app-packager');
+  assert.equal(slots[0].options.order, 60);
+  assert.equal(slots[0].options.locale, 'app-packager');
+  assert.equal(slots[0].options.label(), 'entry.label');
   assert.equal(dictionaries[0].namespace, 'app-packager');
   assert.deepEqual(Object.keys(dictionaries[0].dict.zh).sort(), Object.keys(dictionaries[0].dict.en).sort());
+  for (const key of ['entry.label', 'sdk', 'upgrade.run']) {
+    assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
+  }
 
   // The notice must not depend on the host half sending `summary`: the panel
   // falls back to reading the raw log, so a page refresh alone is enough.
@@ -738,6 +754,10 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.ok(texts.includes(zh['options.uploaders.none']), 'state 还没到时应提示没有可用上传平台，而不是崩掉');
   const icon = slots[0].component();
   assert.equal(icon.type, 'svg');
+
+  // 卸载要注销两个槽位，否则热重载会留下重复入口。
+  effects.at(-1)();
+  assert.deepEqual(disposed, ['sidebar.panellist', 'main']);
 });
 
 test('SDK 平台参数：单个、多个、all 展开与非法值', () => {
