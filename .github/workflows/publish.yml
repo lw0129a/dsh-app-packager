@@ -1,0 +1,85 @@
+name: Publish
+
+# 用 npm trusted publishing（OIDC）发布：工作流里没有任何 npm token，也不需要人工输验证码。
+#
+# 一次性前置条件（在 npmjs.com 的包设置里，账号被恢复后做）：
+#   app-packager / dsh-app-packager → Settings → Trusted Publisher → GitHub Actions
+#   Organization or user = lw0129a、Repository = dsh-app-packager、Workflow filename = publish.yml
+# 两个包都要各配一次；配好后这个工作流就能发布，不再走「staged publishing + 人工批准」。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 只走一遍打包与鉴权，不真正发布
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # 换取 npm 的 OIDC 身份，trusted publishing 必需
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          # npm 11.x；trusted publishing 要求 npm >= 11.5.1
+          # 不要加 registry-url：那会写入 _authToken 占位，反而盖掉 OIDC
+          node-version: '24'
+
+      - name: 检查 npm 版本与 tag 一致
+        run: |
+          set -euo pipefail
+          v=$(npm --version); major=${v%%.*}; rest=${v#*.}; minor=${rest%%.*}
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
+            echo "::error::npm >= 11.5.1 才支持 trusted publishing，当前 $v"
+            exit 1
+          fi
+          echo "npm $v"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            for p in packages/app-packager packages/dsh-app-packager; do
+              have=$(node -p "require('./$p/package.json').version")
+              [ "$have" = "$tag" ] \
+                || { echo "::error::$p 的版本是 $have，与 tag $GITHUB_REF_NAME 不一致"; exit 1; }
+            done
+          fi
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm docs:check
+      - run: pnpm -r pack --pack-destination "$RUNNER_TEMP/tarballs"
+      - run: ls -l "$RUNNER_TEMP/tarballs"
+
+      - name: 发布（trusted publishing）
+        run: |
+          set -euo pipefail
+          dry=()
+          # 注意别写成 `[ cond ] && dry+=(...)`：set -e 下条件不成立会让脚本直接退出
+          if [ "${{ inputs.dry_run }}" = "true" ]; then dry+=(--dry-run); fi
+          # 顺序要紧：插件依赖 CLI，先发 app-packager。
+          # 用 [0-9]* 排除根包的 app-packager-monorepo-*.tgz（private，不发布）。
+          npm publish "$RUNNER_TEMP"/tarballs/app-packager-[0-9]*.tgz "${dry[@]}"
+          npm publish "$RUNNER_TEMP"/tarballs/dsh-app-packager-[0-9]*.tgz "${dry[@]}"
+
+      - name: 回读 registry 版本
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          set -euo pipefail
+          sleep 15
+          for p in app-packager dsh-app-packager; do
+            want=$(node -p "require('./packages/$p/package.json').version")
+            have=$(npm view "$p" version)
+            [ "$have" = "$want" ] \
+              || { echo "::error::$p 在 registry 上是 $have，期望 $want"; exit 1; }
+            echo "$p@$have 已上线"
+          done

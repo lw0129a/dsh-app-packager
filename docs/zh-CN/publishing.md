@@ -25,6 +25,20 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 先看 tarball 内容再发布
 npm login
 ```
 
+### 首选：交给 GitHub Actions（trusted publishing，免 token 免验证码）
+
+`.github/workflows/publish.yml` 已经就绪：推 `v*` tag 自动发布，或在 Actions 页签手动 `gh workflow run publish.yml`。它用 `id-token: write` 让 npm 通过 OIDC 认出这个仓库，**工作流里没有任何 npm token**，因此「bypass token 不能直发」和「需要 OTP」这两个问题都不存在。
+
+一次性配置（两个包各做一次，账号恢复后）：npmjs.com → 包 → **Settings → Trusted Publisher → GitHub Actions**，填 `Organization or user = lw0129a`、`Repository = dsh-app-packager`、`Workflow filename = publish.yml`（工作流里没声明 `environment`，这一栏就留空 —— 两边必须一致）。
+
+要求与坑：
+
+- 需要 npm ≥ 11.5.1；工作流用 `node-version: '24'`（自带 npm 11.x），并**故意不设** `setup-node` 的 `registry-url`：那会写入 `_authToken` 占位，反而让 npm 不走 OIDC。
+- 发布顺序由工作流保证：先 `app-packager`，再 `dsh-app-packager`（后者依赖前者）。
+- 先用 `gh workflow run publish.yml -f dry_run=true` 空跑一遍（完整打包 + 鉴权，不上传），确认无误再正式跑。
+- 账号还在临时封禁状态时 OIDC 一样会被拒（403），先恢复账号。
+- tag 与两个 `package.json` 的版本必须一致，工作流发布前会校验。
+
 ### 账号开了 2FA 时：走 npm 的「暂存发布」（staged publishing）
 
 npm 从 2026-07 起收紧了 bypass-2FA granular token：这类 token 不能再做账号/组织/包管理动作，官方 roadmap 也已把「直接发布」列进下一批移除项（见 [Restricting npm bypass-2FA granular access tokens](https://github.blog/changelog/2026-07-31-restricting-npm-bypass-2fa-granular-access-tokens/)）。本机实测（账号 `lw0129a`，2FA 为 auth-and-writes，2026-10-07）：
@@ -147,7 +161,8 @@ description:
 ### 本项目的上架记录
 
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
-- 2026-10-08：发布 **0.2.0**：- 2026-10-07：**0.6.0** 完成：引擎新增 `sdk status|urls|install|process` 子命令，面板新增按本机 HBuilderX 版本（`5.26.2026091802`、series `5.26`）推荐并一键配置三平台离线 SDK 的卡片；引擎目录默认改到插件内 `<plugin>/home`（旧的 `~/AppPackager` 首次解析时改名搬入，升级期间暂存到 `<profile>/node_modules/.app-packager-home-backup`）。GitHub release `v0.6.0` 已发布并附两个离线 tgz；**npm 0.6.0 尚未发出** —— 账号在「恢复码当 OTP」的尝试后被临时封禁（见第二节的警告），registry 上仍是 0.2.0。
+- 2026-10-08：发布 **0.2.0**：- 2026-10-07：**0.6.0** 完成：引擎新增 `sdk status|urls|install|process` 子命令，面板新增按本机 HBuilderX 版本（`5.26.2026091802`、series `5.26`）推荐并一键配置三平台离线 SDK 的卡片；引擎目录默认改到插件内 `<plugin>/home`（旧的 `~/AppPackager` 首次解析时改名搬入，升级期间暂存到 `<profile>/node_modules/.app-packager-home-backup`）。GitHub release `v0.6.0` 已发布并附两个离线 tgz；**npm 0.6.0 尚未发出** —— 账号在「恢复码当 OTP」的尝试后被临时封禁（见第二节的警告），发布路径已改为 GitHub Actions + trusted publishing（`.github/workflows/publish.yml`，见第一节）：账号恢复并在 npmjs.com 配好 trusted publisher 后，跑一次工作流即可把 0.6.0 发出去。
+registry 上仍是 0.2.0。
 插件新增 Web GUI 面板（宿主侧 `web.js` 六条同源路由 + 浏览器侧 `client.js`），仓库文档改为中英双份并补上协作规范。
 - 2026-10-07：两个包**先以带 scope 的名字**（`@lw0129a/app-packager`、`@lw0129a/dsh-app-packager`）用 staged publishing 发出、由维护者在 npmjs.com 批准上线（0.1.0，暂存区已清空）；随后按需求**去掉 scope 改名**为 `app-packager` / `dsh-app-packager`（命令里不再出现 `@lw0129a/`），以同样流程重新发布 0.1.0。`@lw0129a/*` 那两个旧名只留在 registry 上，不再更新，可选择性 `npm deprecate` 指向新名。
 - 2026-10-07：本机 `desktop` profile 已从「本地 tarball + `pnpm-workspace.yaml` override」改回从 registry 安装，并在一个全新临时 profile 里验证过 `dsh plugin --profile <name> add dsh-app-packager` 无需任何 override 即可装载（`--dump-config` 里能看到 `- id: app-packager` 那一层）。

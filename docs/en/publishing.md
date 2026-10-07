@@ -25,6 +25,20 @@ Both packages live on the public npm registry with **unscoped names** (`app-pack
 npm login
 ```
 
+### Preferred: let GitHub Actions publish (trusted publishing, no token, no OTP)
+
+`.github/workflows/publish.yml` is ready: a `v*` tag publishes both packages, or run `gh workflow run publish.yml` from the Actions tab. It uses `id-token: write` so npm identifies this repository through OIDC — **the workflow holds no npm token at all**, which sidesteps both "a bypass token cannot publish directly" and "an OTP is required".
+
+One-time setup (once per package, after the account is restored): npmjs.com → package → **Settings → Trusted Publisher → GitHub Actions**, then `Organization or user = lw0129a`, `Repository = dsh-app-packager`, `Workflow filename = publish.yml` (leave the environment field empty unless the workflow declares one; both sides must match).
+
+Requirements and traps:
+
+- npm ≥ 11.5.1; the workflow uses `node-version: '24'` (which ships npm 11.x) and **deliberately omits** `setup-node`'s `registry-url` — that writes an `_authToken` placeholder which would stop npm from using OIDC.
+- The workflow enforces the order: `app-packager` first, then `dsh-app-packager` (which depends on it).
+- Validate with `gh workflow run publish.yml -f dry_run=true` (packs and authenticates, uploads nothing), then run it for real.
+- While the account is temporarily suspended OIDC is refused too (403), so restore the account first.
+- The tag and both `package.json` versions must match; the workflow checks that before publishing.
+
 ### With 2FA enabled: npm staged publishing
 
 Since July 2026 npm has been restricting bypass-2FA granular tokens: they can no longer perform account/org/package management, and direct publishing is on the removal list ([Restricting npm bypass-2FA granular access tokens](https://github.blog/changelog/2026-07-31-restricting-npm-bypass-2fa-granular-access-tokens/)). Measured on this account (`lw0129a`, 2FA `auth-and-writes`, 2026-10-07):
@@ -147,7 +161,8 @@ Screenshots are optional: put a `screenshots.json` next to the plugin's `package
 ### Listing history for this project
 
 - 2026-10-07: forked `lw0129a/awesome-dsh-plugin`, branch `add-dsh-app-packager`, opened PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) with just that one entry file. **Do not delete the fork before it merges** — deleting it closes the PR.
-- 2026-10-08: **0.2.0** adds the web GUI panel- 2026-10-07: **0.6.0** adds the engine's `sdk status|urls|install|process` subcommands and a panel card that reads the local HBuilderX version (`5.26.2026091802`, series `5.26`) to recommend and one-click configure the offline SDKs for all three platforms; the engine directory now defaults to `<plugin>/home` (an existing `~/AppPackager` is renamed in on first resolve and staged under `<profile>/node_modules/.app-packager-home-backup` during upgrades). GitHub release `v0.6.0` is out with both offline tgz assets; **npm 0.6.0 is not published yet** — the account was temporarily suspended after a recovery code was tried as an OTP (see the warning in section 2), so the registry still serves 0.2.0.
+- 2026-10-08: **0.2.0** adds the web GUI panel- 2026-10-07: **0.6.0** adds the engine's `sdk status|urls|install|process` subcommands and a panel card that reads the local HBuilderX version (`5.26.2026091802`, series `5.26`) to recommend and one-click configure the offline SDKs for all three platforms; the engine directory now defaults to `<plugin>/home` (an existing `~/AppPackager` is renamed in on first resolve and staged under `<profile>/node_modules/.app-packager-home-backup` during upgrades). GitHub release `v0.6.0` is out with both offline tgz assets; **npm 0.6.0 is not published yet** — the account was temporarily suspended after a recovery code was tried as an OTP (see the warning in section 2), The publish path is now GitHub Actions + trusted publishing (`.github/workflows/publish.yml`, see section 1): once the account is restored and the trusted publisher is configured on npmjs.com, running that workflow publishes 0.6.0.
+so the registry still serves 0.2.0.
  (host half `web.js` with six same-origin routes, browser half `client.js`) and ships the bilingual documentation and repository conventions.
 - 2026-10-07: both packages were first published **under scoped names** (`@lw0129a/app-packager`, `@lw0129a/dsh-app-packager`) via staged publishing, approved on npmjs.com (0.1.0). They were then **renamed without a scope** to `app-packager` / `dsh-app-packager` (`@lw0129a/` no longer appears in any command) and republished at 0.1.0 the same way. The old `@lw0129a/*` names are deprecated leftovers on the registry; they can be unpublished from a browser-authenticated session or deprecated in favour of the new names.
 - 2026-10-07: the local `desktop` profile switched back from "local tarball + `pnpm-workspace.yaml` override" to a registry install, and a fresh temporary profile verified that `dsh plugin --profile <name> add dsh-app-packager` needs no override (`--dump-config` shows the `- id: app-packager` layer).
