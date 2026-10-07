@@ -18,6 +18,9 @@ export const ENGINE_ENTRY = '打包工具.command';
 export const ENGINE_WIZARD = '初始化.command';
 export const VERSION_FILE = '.engine-version';
 
+/** Scripts the user may double-click in Finder; always restored to 0o755. */
+const EXECUTABLE = /\.(command|sh)$/i;
+
 /** Paths inside the home that belong to the user and are never overwritten. */
 const USER_OWNED = [
   /^config\/settings\.local\.env$/,
@@ -136,9 +139,11 @@ export function materialize(home, { force = false } = {}) {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(src, dest);
       try {
-        // Windows has no POSIX mode bits; the engine is always invoked as
-        // `bash <script>`, so a failed chmod is harmless there.
-        fs.chmodSync(dest, fs.statSync(src).mode & 0o777);
+        // pnpm pack 会把 tarball 里所有文件记成 644（npm pack 保留 755），所以打包态下源文件的
+        // 权限位不可信：`.command`/`.sh` 是给 Finder 双击用的，这里一律补回可执行。
+        // Windows 无 POSIX 权限位，chmod 会失败或无效（引擎始终用 `bash <script>` 调用），无害。
+        const sourceMode = fs.statSync(src).mode & 0o777;
+        fs.chmodSync(dest, EXECUTABLE.test(entry.name) ? 0o755 : sourceMode);
       } catch {
         /* best effort */
       }

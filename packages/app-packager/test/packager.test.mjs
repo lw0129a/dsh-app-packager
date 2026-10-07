@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { listProjects, parseEnvText } from '../src/projects.mjs';
@@ -68,6 +68,10 @@ test('materialize 复制引擎、二次调用不再复制、保留本地配置',
   assert.equal(first.upToDate, false);
   assert.ok(isMaterialized(home));
   assert.ok(existsSync(engineEntryPath(home)));
+  if (process.platform !== 'win32') {
+    // pnpm pack 打的 tarball 里 `.command` 是 644，物化时必须补回可执行位（Finder 双击要用）
+    assert.ok((statSync(engineEntryPath(home)).mode & 0o111) !== 0, '打包工具.command 应可执行');
+  }
   assert.ok(readFileSync(join(home, 'lib', 'common.sh'), 'utf8').includes('PROJECT_SEARCH_ROOTS'));
 
   // The home gets secret-protecting ignore rules; the packaged engine has no

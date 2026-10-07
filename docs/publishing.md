@@ -12,7 +12,8 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 先看 tarball 内容再发布
 
 要确认的三件事：
 
-1. `packages/app-packager` 的 tarball 里带上了 `engine/`（约 45 个文件、~115 KB），且 `engine/打包工具.command` 与 `engine/初始化.command` 仍是可执行位（`tar -tvzf` 看权限位是否为 `-rwxr-xr-x`）。
+1. `packages/app-packager` 的 tarball 里带上了 `engine/`（约 46 个文件、~124 KB），入口 `engine/打包工具.command` 与 `engine/lib/common.sh` 都在。
+   注意 **pnpm 打的包里所有文件都是 644**（`npm pack` 才保留 755），所以别指望 tarball 里的权限位：CLI 物化引擎时会把 `.command`/`.sh` 一律补回 755（`src/home.mjs` 的 `EXECUTABLE` 规则，有单测），用户手里那份是可双击的。
 2. `packages/dsh-app-packager` 的 tarball 里 `package.json` 的 `@lw0129a/app-packager` 依赖已从 `workspace:^0.1.0` 被 pnpm 重写成 `^0.1.0`（npm 不认 workspace 协议，未重写的包装上去会装不上）。
 3. 两个 `package.json` 的 `version` 已递增。
 
