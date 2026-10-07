@@ -180,7 +180,7 @@ export function apply(ctx, rawConfig = {}) {
   // (assertSupportedJsonSchema): `{ type: 'json' }` is rejected and takes the
   // whole entry down with it, tools and panel alike.
   const output = (render) => ({ schema: { type: 'object' }, render: (_args, value) => [{ type: 'text', text: render(value) }] });
-  const homeParam = { type: 'string', description: 'AppPackager 引擎目录（默认 ~/AppPackager，或 APP_PACKAGER_HOME 环境变量）' };
+  const homeParam = { type: 'string', description: 'AppPackager 引擎目录（默认 <插件目录>/home，可用 APP_PACKAGER_HOME 覆盖；首次使用时旧的 ~/AppPackager 会被改名搬入）' };
   // Both engine actions accept these: `check` is the dry run of exactly the same
   // option set, so the model can pre-flight a release wiring change.
   const optionParams = {
