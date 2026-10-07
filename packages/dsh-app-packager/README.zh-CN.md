@@ -37,7 +37,7 @@ dsh plugin --profile desktop add dsh-app-packager
 
 ```
 AppPackager 引擎目录：<插件目录>/home
-引擎版本：0.6.0
+引擎版本：0.6.1
 项目（1）:
 - shop（商城）
   平台: iOS (IPA), Android (APK)

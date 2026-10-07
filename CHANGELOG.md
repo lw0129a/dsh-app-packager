@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-10
+
 ### Changed
 
 - **One-click setup is now repeatable and cheap** (engine script version `2026.10.10.3`). `sdk install` skips any platform that is already `ready` with an `已就绪，跳过` line, so pressing *One-click setup* again no longer re-downloads the 800 MB-class iOS archive; `--file` is an explicit request and still runs.
@@ -126,7 +128,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.6.0...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.6.1...main
+[0.6.1]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.1
 [0.6.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.0
 [0.5.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.5.0
 [0.4.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.4.0
