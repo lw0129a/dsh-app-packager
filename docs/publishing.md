@@ -72,36 +72,47 @@ Harness 的插件市场（dshmarket）**不接收插件条目 PR**，它读取�
 npm view @lw0129a/dsh-app-packager version
 ```
 
-PR 里附加的条目按现有条目的字段写（以 `dsh-local-ai` 为参照）：
+条目不是加进 README 或 `plugins.json`，而是在对方仓库新建一个 YAML 文件：
 
-```json
-{
-  "name": "dsh-app-packager",
-  "owner": "lw0129a",
-  "url": "https://github.com/lw0129a/app-packager",
-  "category": "tools",
-  "npm": "@lw0129a/dsh-app-packager",
-  "version": "0.1.0",
-  "description": {
-    "en": "Build iOS/Android/HarmonyOS packages for uni-app x projects from DeepSeek Harness: list configured projects, check toolchains, run the packaging engine.",
-    "zh": "在 DeepSeek Harness 里打包 uni-app x 项目（iOS/Android/HarmonyOS）：列出已配置项目、检查工具链、调用打包引擎出包。"
-  }
-}
+```text
+data/plugins/<owner>__<repo>.yml      # 例如 data/plugins/lw0129a__dsh-app-packager.yml
 ```
 
-字段说明（对照清单现有条目）：
+内容（字段名与顺序照抄同目录已有条目，如 `00080000__dsh-project-memory.yml`）：
+
+```yaml
+url: https://github.com/lw0129a/dsh-app-packager
+name: lw0129a/dsh-app-packager
+category: tools
+npm: '@lw0129a/dsh-app-packager'
+description:
+  zh: "在 DeepSeek Harness 里打包 uni-app x 项目（iOS/Android/HarmonyOS）：列出已配置项目、检查工具链、调用打包引擎出包。"
+  en: "Build iOS/Android/HarmonyOS packages for uni-app x projects from DeepSeek Harness: list configured projects, check toolchains, run the packaging engine."
+```
+
+字段说明：
 
 | 字段 | 说明 |
 | --- | --- |
-| `name` | 清单内唯一名，通常与 npm 包名去掉 scope 后一致 |
-| `owner` | GitHub 用户名 |
-| `url` | 仓库地址，用于抓 stars |
-| `category` | 取 `categories` 里的键；本插件宜用 `tools`（工具与能力），偏构建流程也可用 `dev` |
-| `npm` | npm 包名（带 scope 要写全） |
-| `version` | 上架时的版本，之后由 CI 跟随 registry 刷新 |
-| `description.en` / `.zh` | 中英双语，市场按语言显示 |
+| `url` | 仓库地址，用于抓 stars；**必须是公开仓库**（本项目的 `https://github.com/lw0129a/dsh-app-packager`） |
+| `name` | `<owner>/<repo>`，也是文件名的来源 |
+| `category` | 取 `categories` 里的键；本插件用 `tools`（工具与能力），偏构建流程也可用 `dev` |
+| `npm` | npm 包名（带 scope 要写全）；也可用 `tarball:` 指向 GitHub Release 里的 tgz |
+| `description.zh` / `.en` | 中英双语，市场按语言显示，两句意思必须一致 |
 
-`page` / `stars` / `downloads` / `install` / `added` / `capabilities` 等字段由对方 CI 生成，不必手写。清单的贡献规范在 awesome-dsh-plugin 仓库根目录的 `contributing.md`，提 PR 前先读一遍。
+`page` / `install` / `stars` / `downloads` / `capabilities` / `added` 等字段由对方 CI 生成，不必手写。
+
+### 对方 CI 会检查什么
+
+1. 一个 PR 最多 3 条 entry。
+2. **仓库里能读到 `dsh.bundle`**：从仓库根 `package.json`，或 `packages/` · `plugins/` · `apps/` 子包里读。本项目的插件在 `packages/dsh-app-packager/package.json`，声明的正是 `dsh.bundle.patch`，符合这条。
+3. **仓库年龄 ≥ 1 天**（新建的仓库当天提 PR 会被拒）。
+4. `awesome-lint` 与站点构建：双语一致、分隔符、日期等。
+
+截图可选：在自己的仓库里放 `screenshots.json`（与插件的 `package.json` 同级），列 1–8 个图片路径，市场详情页会显示。
+
+贡献规范全文见 awesome-dsh-plugin 仓库根目录的 `contributing.md`；提 PR 前先读一遍。
+
 
 ## 四、用户侧安装方式
 

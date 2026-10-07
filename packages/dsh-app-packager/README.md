@@ -1,6 +1,6 @@
 # @lw0129a/dsh-app-packager
 
-DeepSeek Harness 的 [AppPackager](https://github.com/lw0129a/app-packager) 插件：让 Harness 里可以直接列出项目、体检环境、检查打包条件、执行打包（iOS IPA / Android APK / HarmonyOS HAP）。
+DeepSeek Harness 的 [AppPackager](https://github.com/lw0129a/dsh-app-packager) 插件：让 Harness 里可以直接列出项目、体检环境、检查打包条件、执行打包（iOS IPA / Android APK / HarmonyOS HAP）。
 
 宿主侧插件（host-only），没有 Web UI；装上后会注册四个工具。
 

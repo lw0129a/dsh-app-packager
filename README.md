@@ -1,5 +1,11 @@
 # AppPackager（打包工具）
 
+[![CI](https://github.com/lw0129a/dsh-app-packager/actions/workflows/ci.yml/badge.svg)](https://github.com/lw0129a/dsh-app-packager/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@lw0129a/app-packager.svg)](https://www.npmjs.com/package/@lw0129a/app-packager)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+仓库：<https://github.com/lw0129a/dsh-app-packager>（MIT 开源）
+
 把 uni-app x 项目一键打成 **iOS IPA / Android APK / HarmonyOS HAP** 的本地离线工具链：现在既能按原来的方式在 macOS 上直接运行，也能作为 npm 包安装、作为 **DeepSeek Harness 插件**在插件市场安装使用。
 
 - CLI：`@lw0129a/app-packager` —— 一个零运行时依赖的 Node 命令行，把打包引擎（bash）交付到你机器上的 `~/AppPackager`。

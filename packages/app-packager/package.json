@@ -25,10 +25,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lw0129a/app-packager.git",
+    "url": "git+https://github.com/lw0129a/dsh-app-packager.git",
     "directory": "packages/app-packager"
   },
-  "homepage": "https://github.com/lw0129a/app-packager#readme",
+  "homepage": "https://github.com/lw0129a/dsh-app-packager#readme",
+  "bugs": {
+    "url": "https://github.com/lw0129a/dsh-app-packager/issues"
+  },
   "keywords": [
     "uni-app-x",
     "uni-app",
