@@ -10,11 +10,13 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { apply, inject, name } from '../index.js';
-import { createPanel, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, summarizeOutput } from '../web.js';
+import { createJobRunner, createPanel, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../web.js';
+import { LEGACY_HOME_NAME, homeInPlugin, legacyHome, pluginRoot, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../index.mjs';
 
 /**
  * Mirror cordis service access: reading `ctx.<service>` without declaring it in
@@ -738,3 +740,180 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.equal(icon.type, 'svg');
 });
 
+test('SDK 平台参数：单个、多个、all 展开与非法值', () => {
+  assert.deepEqual(sdkPlatforms({}), ['ios', 'android', 'harmony'], '不指定就是三个平台');
+  assert.deepEqual(sdkPlatforms({ platform: 'all' }), ['ios', 'android', 'harmony']);
+  assert.deepEqual(sdkPlatforms({ platform: 'ios' }), ['ios']);
+  assert.deepEqual(sdkPlatforms({ platforms: ['ios', 'ios', 'harmony'] }), ['ios', 'harmony'], '去重并保持顺序');
+  assert.throws(() => sdkPlatforms({ platforms: ['windows'] }), /platforms 只能是/);
+});
+
+test('一键配置 SDK：每个平台一次 sdk install，处理已下载只跑 sdk process', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn(record) });
+  const started = panel.startJob({ kind: 'sdk', platforms: ['ios', 'android'] });
+  assert.equal(started.kind, 'sdk');
+  assert.equal(started.platform, 'ios,android');
+  for (let index = 0; index < 6; index += 1) await settle();
+  assert.deepEqual(
+    record.map((entry) => entry.args),
+    [['sdk', 'install', 'ios', '--yes'], ['sdk', 'install', 'android', '--yes']],
+    '每个平台一次非交互安装，面板不弹引擎的交互提示',
+  );
+  assert.equal(panel.jobLog(started.id).ok, true);
+
+  const processing = [];
+  const other = createPanel({ config: { home }, spawn: fakeSpawn(processing) });
+  other.startJob({ kind: 'sdk', processOnly: true });
+  for (let index = 0; index < 4; index += 1) await settle();
+  assert.deepEqual(processing.map((entry) => entry.args), [['sdk', 'process']]);
+
+  const both = [];
+  const third = createPanel({ config: { home }, spawn: fakeSpawn(both) });
+  third.startJob({ kind: 'sdk', platforms: ['harmony'], process: true });
+  for (let index = 0; index < 6; index += 1) await settle();
+  assert.deepEqual(
+    both.map((entry) => entry.args),
+    [['sdk', 'install', 'harmony', '--yes'], ['sdk', 'process']],
+    '勾了「同时处理已下载的包」就多跑一次 sdk process',
+  );
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板 state 带出 HBuilderX 版本、SDK 清单与下载目录', async () => {
+  const home = fixtureHome();
+  const status = {
+    hbuilderx: { found: true, app: '/Applications/HBuilderX.app', version: '5.26.2026091802', series: '5.26' },
+    sdkRoot: join(home, 'sdk'),
+    platforms: [{ id: 'ios', label: 'iOS', series: '5.26', dir: join(home, 'sdk', 'iOS', '5.26'), state: 'ready', ready: true, page: 'https://example.test/ios', direct: 'https://example.test/sdk.zip', package: 'UniAppX-iOS@5.26.zip' }],
+    archives: [],
+    incompleteDownloads: 0,
+  };
+  const record = [];
+  const spawn = (dir, args, options) =>
+    fakeSpawn(record, args[0] === 'sdk'
+      ? { code: 0, stdout: `${JSON.stringify(status)}\n` }
+      : { code: 0 })(dir, args, options);
+  const panel = createPanel({ config: { home }, spawn });
+  const state = await panel.state();
+  assert.deepEqual(record.filter((entry) => entry.args[0] === 'sdk').map((entry) => entry.args), [['sdk', 'status']]);
+  assert.equal(state.sdk.hbuilderx.series, '5.26');
+  assert.equal(state.sdk.platforms[0].state, 'ready');
+  assert.equal(state.sdkError, '');
+  assert.equal(state.plugin.home, home, '显式配置的引擎目录原样带出');
+  assert.ok('canUpgrade' in state, '面板要能判断能不能从自己这里升级');
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('sdk status 读不出来时报错字段，不影响其余 state', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const spawn = (dir, args, options) =>
+    fakeSpawn(record, args[0] === 'sdk' ? { code: 1, stdout: 'boom\n' } : { code: 0 })(dir, args, options);
+  const panel = createPanel({ config: { home }, spawn });
+  const state = await panel.state();
+  assert.equal(state.sdk, null);
+  assert.match(state.sdkError, /boom/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('升级插件：走插件自己的 node 脚本，并用引擎目录暂存的包装器', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'app-packager-plugin-root-'));
+  const plugin = join(root, 'node_modules', 'dsh-app-packager');
+  mkdirSync(plugin, { recursive: true });
+  writeFileSync(join(plugin, 'package.json'), '{}');
+  const home = fixtureHome();
+  const record = [];
+  const nodes = [];
+  const nodeSpawn = (script, args, options) => {
+    nodes.push({ script, args, cwd: options.cwd });
+    options.onLine?.('升级完成', 'stdout');
+    return Promise.resolve({ code: 0, signal: null, stdout: '升级完成\n', stderr: '' });
+  };
+  const panel = createPanel({
+    config: { home },
+    spawn: fakeSpawn(record),
+    nodeSpawn,
+    moduleUrl: pathToFileURL(join(plugin, 'web.js')).href,
+  });
+  const started = panel.startJob({ kind: 'upgrade' });
+  assert.equal(started.kind, 'upgrade');
+  for (let index = 0; index < 4; index += 1) await settle();
+  assert.deepEqual(record, [], '升级不通过引擎跑');
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].script, join(plugin, 'upgrade.mjs'));
+  assert.equal(nodes[0].cwd, plugin);
+  assert.match(panel.jobLog(started.id).output, /升级完成/);
+
+  const outside = createPanel({ config: { home }, spawn: fakeSpawn([]), nodeSpawn, moduleUrl: 'file:///tmp/elsewhere/web.js', env: {} });
+  assert.throws(() => outside.startJob({ kind: 'upgrade' }), /无法自动升级/);
+  rmSync(home, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('升级期间不丢引擎目录：暂存到插件旁边，成功或失败都移回', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'app-packager-preserve-'));
+  const plugin = join(root, 'node_modules', 'dsh-app-packager');
+  mkdirSync(plugin, { recursive: true });
+  const home = join(plugin, 'home');
+  mkdirSync(join(home, 'sdk'), { recursive: true });
+  writeFileSync(join(home, 'sdk', 'marker.txt'), 'ios sdk');
+
+  let visibleDuringUpgrade = null;
+  await withHomePreserved(plugin, async () => {
+    visibleDuringUpgrade = existsSync(home);
+  });
+  assert.equal(visibleDuringUpgrade, false, '升级过程中插件目录里没有 home，避免 pnpm 删掉它');
+  assert.equal(readFileSync(join(home, 'sdk', 'marker.txt'), 'utf8'), 'ios sdk', '升级完成后原样回来');
+  assert.equal(existsSync(upgradeBackupDir(plugin)), false, '暂存目录不留残渣');
+
+  await assert.rejects(withHomePreserved(plugin, async () => { throw new Error('安装失败'); }), /安装失败/);
+  assert.equal(readFileSync(join(home, 'sdk', 'marker.txt'), 'utf8'), 'ios sdk', '升级失败也必须还原');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('引擎主目录：显式配置 > 环境变量 > 插件目录内；旧目录一次性搬进来', () => {
+  // 这个用例会真的 rename 一个旧主目录，而 resolvePluginHome 的 legacy 默认值来自真实
+  // $HOME：所以每次调用都必须显式传 legacy，并且在这里守住「真实的 ~/AppPackager 没被动过」。
+  const realLegacy = legacyHome();
+  const realLegacyExisted = existsSync(realLegacy);
+
+  const root = mkdtempSync(join(tmpdir(), 'app-packager-home-'));
+  const profile = join(root, 'profile');
+  const plugin = join(profile, 'node_modules', 'dsh-app-packager');
+  mkdirSync(plugin, { recursive: true });
+  writeFileSync(join(plugin, 'package.json'), '{}');
+  const moduleUrl = pathToFileURL(join(plugin, 'web.js')).href;
+  const env = { DSH_PROFILE_DIR: profile };
+  const home = homeInPlugin(plugin);
+  assert.equal(pluginRoot(moduleUrl, env), plugin);
+  assert.equal(pluginRoot(moduleUrl, { DSH_PROFILE_DIR: join(root, 'nothing') }), plugin, '能按 import.meta.url 定位就不看环境变量');
+  assert.equal(resolvePluginHome('/tmp/given', { moduleUrl, env }), '/tmp/given');
+  assert.equal(resolvePluginHome('', { moduleUrl, env: { ...env, APP_PACKAGER_HOME: '/tmp/from-env' } }), '/tmp/from-env');
+  // 没有旧目录可搬时，位置就是插件目录内的 home（legacy 指一个不存在的路径）。
+  assert.equal(resolvePluginHome('', { moduleUrl, env, legacy: join(root, 'no-home', LEGACY_HOME_NAME) }), home);
+
+  // 旧版把引擎目录放在 ~/AppPackager；第一次解析就 rename 进插件目录，不复制数据。
+  // legacy 必须显式传入：默认值来自真实 $HOME，测试绝不能碰用户自己的 ~/AppPackager。
+  const legacy = join(root, 'fake-home', LEGACY_HOME_NAME);
+  mkdirSync(join(legacy, 'sdk'), { recursive: true });
+  writeFileSync(join(legacy, 'sdk', 'marker.txt'), 'android sdk');
+  writeFileSync(join(legacy, '.engine-version'), '0.5.0');
+
+  // 同名但不是引擎目录的目录绝不能被搬走。
+  const lookalike = join(root, 'lookalike');
+  mkdirSync(lookalike, { recursive: true });
+  assert.equal(resolvePluginHome('', { moduleUrl, env, legacy: lookalike }), home);
+  assert.equal(existsSync(lookalike), true, '不是引擎目录就原样留着');
+  assert.equal(existsSync(home), false, '也不顺手创建插件目录内的 home');
+
+  const notices = [];
+  assert.equal(resolvePluginHome('', { moduleUrl, env, legacy, onNotice: (text) => notices.push(text) }), home);
+  assert.equal(readFileSync(join(home, 'sdk', 'marker.txt'), 'utf8'), 'android sdk');
+  assert.equal(existsSync(legacy), false, '迁移是 rename，旧目录不再留着');
+  assert.match(notices.join(''), /迁移到插件目录内/);
+  assert.equal(resolvePluginHome('', { moduleUrl, env, legacy }), home, '已经在插件目录内就直接用');
+  assert.equal(existsSync(realLegacy), realLegacyExisted, '这个用例绝不能碰真实的 ~/AppPackager');
+  rmSync(root, { recursive: true, force: true });
+});

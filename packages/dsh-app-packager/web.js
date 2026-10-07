@@ -12,7 +12,7 @@
  *
  * @module dsh-app-packager/web
  */
-import { execFile as execFileCallback } from 'node:child_process';
+import { execFile as execFileCallback, spawn as spawnProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -24,14 +24,15 @@ import {
   materialize,
   packageVersion,
   parseEnvFile,
-  resolveHome,
   runDoctor,
   runEngine,
   shellAvailable,
 } from 'app-packager';
+import { pluginRoot, resolvePluginHome } from './index.mjs';
 
 export const ROUTE_BASE = '/api/app-packager';
 export const PLATFORM_VALUES = ['ios', 'android', 'harmony', 'all'];
+export const SDK_PLATFORM_VALUES = ['ios', 'android', 'harmony'];
 
 const JOB_LIMIT = 6;
 const OUTPUT_LIMIT = 400_000;
@@ -112,11 +113,29 @@ export function overrideList(value) {
   return out;
 }
 
+/**
+ * Platforms an SDK job configures: an explicit list, a single platform, or all
+ * of them. `check`/`build` accept the engine's `all`; SDK installs are one
+ * engine call per platform, so `all` is expanded here.
+ *
+ * @param {{platforms?: string[], platform?: string}} [spec]
+ * @returns {string[]}
+ */
+export function sdkPlatforms(spec = {}) {
+  const requested = Array.isArray(spec.platforms) && spec.platforms.length > 0
+    ? spec.platforms
+    : spec.platform && spec.platform !== 'all'
+      ? [spec.platform]
+      : SDK_PLATFORM_VALUES;
+  const list = [...new Set(requested.map((value) => String(value).trim()).filter((value) => SDK_PLATFORM_VALUES.includes(value)))];
+  if (list.length === 0) throw new Error(`platforms 只能是 ${SDK_PLATFORM_VALUES.join('/')}`);
+  return list;
+}
+
 /** Bash-style truthiness, matching the engine's own `is_true` on these switches. */
 function isOn(value, fallback) {
   return value === undefined ? fallback : !/^(false|0|no|off)$/i.test(String(value).trim());
 }
-
 /** Directory mtime as a cheap change stamp; a missing directory is just "never". */
 function dirStamp(dir) {
   try {
@@ -321,12 +340,49 @@ function jobView(job) {
 }
 
 /**
+ * Run the plugin's own node script (the 升级插件 action) with the same streaming
+ * contract as `runEngine`, so the panel shows and cancels it like an engine run.
+ */
+export function runNode(script, args = [], { cwd, timeoutMs, onLine, onSpawn } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawnProcess(process.execPath, [script, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    onSpawn?.(child);
+    const stdout = [];
+    const stderr = [];
+    const carry = { stdout: '', stderr: '' };
+    const consume = (stream) => (chunk) => {
+      const text = chunk.toString('utf8');
+      (stream === 'stdout' ? stdout : stderr).push(text);
+      if (!onLine) return;
+      const parts = (carry[stream] + text).split(/\r?\n/);
+      carry[stream] = parts.pop() ?? '';
+      for (const line of parts) onLine(line, stream);
+    };
+    child.stdout.on('data', consume('stdout'));
+    child.stderr.on('data', consume('stderr'));
+
+    let timer = null;
+    if (timeoutMs) {
+      timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        setTimeout(() => child.kill('SIGKILL'), 5000).unref?.();
+      }, timeoutMs);
+    }
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (timer) clearTimeout(timer);
+      resolve({ code: code ?? 1, signal: signal ?? null, stdout: stdout.join(''), stderr: stderr.join('') });
+    });
+  });
+}
+
+/**
  * In-memory job registry for the panel: at most `limit` runs are kept (the
  * oldest *finished* one is evicted first) and each log is capped at `outputLimit`.
  *
- * @param {{spawn?: typeof runEngine, limit?: number, outputLimit?: number}} [options]
+ * @param {{spawn?: typeof runEngine, nodeSpawn?: typeof runNode, limit?: number, outputLimit?: number}} [options]
  */
-export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLimit = OUTPUT_LIMIT } = {}) {
+export function createJobRunner({ spawn = runEngine, nodeSpawn = runNode, limit = JOB_LIMIT, outputLimit = OUTPUT_LIMIT } = {}) {
   /** @type {any[]} */
   const jobs = [];
   let seq = 0;
@@ -398,6 +454,13 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
       };
 
       (async () => {
+        // An upgrade job runs the plugin's own node script; everything else runs
+        // the engine in `home`.
+        const runOnce = (argv) =>
+          spec.node
+            ? nodeSpawn(spec.node.script, spec.node.args || [], { ...options, cwd: spec.node.cwd })
+            : spawn(spec.home, argv, options);
+
         // A build only starts once the same scope passes `check`: a missing
         // profile, a wrong permission switch or an unfinished SDK are the
         // callers' to fix, and running the build first would bury that under
@@ -427,7 +490,7 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
           for (const [index, argv] of commands.entries()) {
             if (job.cancelled) break;
             if (commands.length > 1) append(job, `▶ ${index + 1}/${commands.length}  ${argv.join(' ')}\n`);
-            const result = await spawn(spec.home, argv, options);
+            const result = await runOnce(argv);
             appendResult(job, result);
             if (result.code !== 0 && job.code === null) {
               job.code = result.code;
@@ -474,9 +537,16 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
  *
  * @param {{config?: object, spawn?: typeof runEngine, limit?: number, outputLimit?: number}} [options]
  */
-export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder, limit, outputLimit } = {}) {
-  const runner = createJobRunner({ spawn, limit, outputLimit });
-  const homeOf = () => resolveHome(config.home || '');
+export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNode, pick = pickFolder, limit, outputLimit, moduleUrl = import.meta.url, env = process.env } = {}) {
+  const runner = createJobRunner({ spawn, nodeSpawn, limit, outputLimit });
+  const homeNotices = [];
+  const homeOf = () => resolvePluginHome(config.home || '', {
+    moduleUrl,
+    env,
+    onNotice: (text) => {
+      if (!homeNotices.includes(text)) homeNotices.push(text);
+    },
+  });
 
   function projectsOf(home) {
     try {
@@ -544,6 +614,36 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
     }
   }
 
+  /**
+   * HBuilderX version and per-platform SDK readiness, straight from the engine's
+   * `sdk status`: the same bash code that recommends a download entry is the one
+   * that later finds the SDK again, so the panel only renders its JSON.
+   */
+  let sdkCache = null;
+  async function sdkStatusOf(home) {
+    const stamp = [ 'sdk', 'config/settings.env' ].map((rel) => dirStamp(path.join(home, rel))).join('|');
+    if (sdkCache && sdkCache.home === home && sdkCache.stamp === stamp) return sdkCache.value;
+
+    const shell = shellAvailable();
+    if (!shell.available) return { error: `当前系统上无法运行 bash 引擎：${shell.error}` };
+    let result;
+    try {
+      result = await spawn(home, ['sdk', 'status'], { stdio: 'pipe', timeoutMs: 60_000, searchRoots: config.searchRoots, shell: shell.shell });
+    } catch (error) {
+      return { error: `无法读取 SDK 状态：${String(error?.message || error)}` };
+    }
+    if (result.code !== 0) {
+      return { error: String(result.stderr || result.stdout || `sdk status 退出码 ${result.code}`).trim() };
+    }
+    try {
+      const value = JSON.parse(String(result.stdout || '').trim() || '{}');
+      sdkCache = { home, stamp, value };
+      return value;
+    } catch (error) {
+      return { error: `无法解析 sdk status 输出：${String(error?.message || error)}` };
+    }
+  }
+
   /** Defaults the panel mirrors from config/settings.env (the engine still owns them). */
   function optionsOf(home) {
     let env = {};
@@ -578,9 +678,14 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
       const projects = projectsOf(home);
       const uploaders = uploadersOf(home);
       const profiles = await profilesOf(home);
+      const sdk = await sdkStatusOf(home);
+      const root = pluginRoot(moduleUrl, env);
       const list = Array.isArray(projects) ? projects : [];
       return {
         home,
+        // The engine home lives inside the plugin; show it so the download
+        // directory is never a mystery (plus any one-time migration notice).
+        plugin: { root, home, notices: homeNotices },
         engineVersion: packageVersion(),
         materialized: isMaterialized(home),
         shell: shellAvailable(),
@@ -592,6 +697,9 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
         profilesError: Array.isArray(profiles) ? '' : profiles.error,
         options: optionsOf(home),
         overrideKeys: await overrideKeysOf(home),
+        sdk: sdk && !sdk.error ? sdk : null,
+        sdkError: sdk && sdk.error ? sdk.error : '',
+        canUpgrade: Boolean(root),
         // The project's own packaging env files, offered as `--set` presets.
         presets: Object.fromEntries(list.map((project) => [project.id, presetsOf(project.sourceDir)])),
         jobs: runner.list(),
@@ -619,17 +727,53 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
       };
     },
 
-    /** Start a `check` or `build` engine run; returns the job record. */
+    /** Start a `check` / `build` / `sdk` / `upgrade` run; returns the job record. */
     startJob(spec = {}) {
-      const kind = spec.kind === 'check' ? 'check' : 'build';
-      const platforms = scopePlatforms(spec);
-      const commands = engineCommandsFor(spec, { check: kind === 'check' });
       const home = homeOf();
       if (!isMaterialized(home)) materialize(home);
       const shell = shellAvailable();
       if (!shell.available) {
         throw new Error(`当前系统上无法运行 bash 引擎：${shell.error}\nWindows 请安装 Git for Windows（推荐）或启用 WSL。`);
       }
+
+      // 一键配置 SDK：按 HBuilderX 版本下载官方 iOS/Android SDK 并归位、ohpm 装
+      // HarmonyOS runtime，或处理已经下载到 sdk/ 的压缩包。每个平台一次引擎调用。
+      if (spec.kind === 'sdk') {
+        const platforms = sdkPlatforms(spec);
+        const commands = spec.processOnly === true
+          ? [['sdk', 'process']]
+          : platforms.map((platform) => ['sdk', 'install', platform, '--yes']);
+        if (spec.process === true && spec.processOnly !== true) commands.push(['sdk', 'process']);
+        return runner.start({
+          kind: 'sdk',
+          platform: platforms.join(','),
+          home,
+          commands,
+          timeoutMs: config.sdkTimeoutMs || 3_600_000,
+          searchRoots: config.searchRoots,
+          shell: shell.shell,
+        });
+      }
+
+      // 升级插件：home 在插件目录内，升级前先把它暂存到插件旁边、升级完再移回
+      // （upgrade.mjs），所以已下载的 SDK / 证书 / 项目配置都不会丢。
+      if (spec.kind === 'upgrade') {
+        const root = pluginRoot(moduleUrl, env);
+        if (!root) {
+          throw new Error('当前代码不在 DSH 插件目录内，无法自动升级。请执行：dsh plugin --profile <profile> add dsh-app-packager@latest');
+        }
+        return runner.start({
+          kind: 'upgrade',
+          home,
+          commands: [['upgrade']],
+          node: { script: path.join(root, 'upgrade.mjs'), args: [], cwd: root },
+          timeoutMs: config.upgradeTimeoutMs || 1_800_000,
+        });
+      }
+
+      const kind = spec.kind === 'check' ? 'check' : 'build';
+      const platforms = scopePlatforms(spec);
+      const commands = engineCommandsFor(spec, { check: kind === 'check' });
       // Builds are gated on the same scope passing `check` first (the panel's
       // "fix the environment, then package" flow). `skipCheck` is the explicit
       // escape hatch for a caller that just checked.

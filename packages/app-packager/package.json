@@ -1,6 +1,6 @@
 {
   "name": "app-packager",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "AppPackager CLI: package uni-app x projects into iOS IPA, Android APK and HarmonyOS HAP from one command, on macOS today and Windows through a Git-Bash/WSL bridge.",
   "license": "MIT",
   "type": "module",

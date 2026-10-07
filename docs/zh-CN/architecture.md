@@ -15,7 +15,7 @@
             home · projects · engine · doctor · cli
                          │  spawn bash（丢弃 stdin）
                          ▼
-            <引擎目录，默认 ~/AppPackager>            ← 由 engine/ 物化而来
+            <引擎目录，默认 <插件目录>/home>          ← 由 engine/ 物化而来
             lib/*.sh · config/ · signing/ · certificates/
 ```
 
@@ -25,7 +25,9 @@
 | --- | --- |
 | `packages/app-packager/bin/app-packager.mjs` | 可执行入口，解析 argv 后交给 `src/cli.mjs`。 |
 | `packages/app-packager/src/cli.mjs` | 命令表（`init` `doctor` `list` `register` `check` `build` `run` `env` `version`）、选项解析、无法识别的参数透传给引擎。 |
-| `packages/app-packager/src/home.mjs` | 引擎目录解析（`--dir` → `APP_PACKAGER_HOME` → `~/AppPackager`）、带版本号的物化、保留用户文件、`HOME_GITIGNORE`。 |
+| `packages/app-packager/src/home.mjs` | 引擎目录解析（`--dir` → `APP_PACKAGER_HOME` → 仓库内默认）、带版本号的物化、保留用户文件、`HOME_GITIGNORE`。 |
+| `packages/dsh-app-packager/index.mjs` | 插件侧唯一的引擎目录解析与升级包装：`resolvePluginHome`（显式配置 → `APP_PACKAGER_HOME` → `<插件目录>/home`；旧 `~/AppPackager` 用 rename 一次性搬进来，且只搬真的是引擎目录的那种）、`withHomePreserved`（升级期间把 home 改名到 profile 的 `node_modules/.app-packager-home-backup`，成功失败都搬回）、`pluginRoot`。宿主工具、面板后端与升级脚本共用这一份。 |
+| `packages/dsh-app-packager/upgrade.mjs` | 面板「升级插件」执行的脚本：`dsh plugin --profile <name> add dsh-app-packager@latest`（没有 `dsh` 时退回 profile 目录里的 `pnpm add`），整体包在 `withHomePreserved` 里。 |
 | `packages/app-packager/src/projects.mjs` | 读 `config/projects/*.env`（引号、`\ ` 转义、`$VAR`/`${VAR}` 展开、`export` 前缀），并给出启用的平台。 |
 | `packages/app-packager/src/engine.mjs` | bash 探测（`native` / `git-bash` / `wsl`）、路径转换、注入 `PIPELINE_ROOT` 与 `PROJECT_SEARCH_ROOTS`、带超时与逐行回显的 spawn。 |
 | `packages/app-packager/src/doctor.mjs` | Node 侧体检（Node、引擎、shell 桥接、Xcode 工具、HBuilderX、JDK、Android SDK、DevEco Studio、签名目录、项目配置）。 |
@@ -47,18 +49,21 @@
 
 ## 需要守住的约定
 
+- **引擎目录默认在插件里**：`<插件目录>/home`；旧版本留在 `~/AppPackager` 的目录第一次解析时用 `renameSync` 搬进去（不复制，几 GB SDK 也不耗时），跨卷失败就保留旧目录并把提示带回面板。改名只发生在目录里确实有 `.engine-version` 或 `打包工具.command` 时 —— 同名但不是引擎的目录一律不动。
+- **升级期间把 home 移出插件目录**：pnpm 重装会先删 `node_modules/dsh-app-packager`，所以 `withHomePreserved` 先把 home 改名到 `<profile>/node_modules/.app-packager-home-backup`，装完（或失败）再搬回，绝不让下载好的 SDK 与已登记项目跟着重装消失。
 - **引擎环境**：始终以 `bash <引擎目录>/打包工具.command <args>` 调用，注入 `PIPELINE_ROOT`（shell 化的引擎目录）、`PROJECT_SEARCH_ROOTS`（`:` 分隔，默认引擎目录的父目录）与 `LANG`；工作目录为引擎目录。调用方若已设 `PIPELINE_ROOT` 则沿用，与 `lib/runner.sh` 一致。
 - **stdin 永远丢弃**（`stdio: ['ignore', …]`）：`打包工具.command` 的 headless 分支结尾是 `printf '按回车退出...'; read -r _`，否则被 spawn 的进程会挂住。
 - **升级不动用户文件**：`home.mjs` 复制时跳过 `config/*.local.env`、`config/init.local.env`、`config/projects/*.env`、`certificates/`、`signing/`、`sdk/`、`packages/`、`logs/`、`workspaces/`，并用 `.engine-version` 记录物化版本。
 - **补回可执行位**（`EXECUTABLE = /\.(command|sh)$/i` → 755），因为 pnpm 打的 tarball 里所有文件都是 644。
 - **成功不只看出口码**：输出里出现 `[FAIL]` 时插件判定为失败（`verdictOf`）。
+- **推荐 SDK 的逻辑只有引擎一份**：HBuilderX 版本 → SDK 系列 → 官方下载入口 → 下载/解压/归位，全在 `engine/lib/sdk.sh`（`sdk status|urls|install|process`）。面板不自己拼 URL：iOS 的直链模板由系列推出来，Android 的文件名带构建号只能从官方页解析，HarmonyOS 走 ohpm 装 runtime，`--file` 用来接本地下好的包。
 - **`check` 与 `build` 是两个子命令**：引擎 argv 由 `web.js` 的 `engineArgsFor` 拼装，因为在 `lib/runner.sh` 里裸平台参数意味着**打包**。检查某平台永远是 `打包工具.command check <平台> [项目]`。
 - **打包选项只有一份出处**：`--full-permission` / `--no-full-permission`、`--package-kind`、`--profile`、`--set KEY=VALUE` 都由 `engineArgsFor` 生成，**`check` 与 `build` 共用同一组**（check 就是同一套接线的预演：描述文件缺失或类型不符、权限开关写错都会先报出来）。`--package-kind` 是 iOS 概念，非 iOS 平台不传。面板描述文件清单不自己解析 `.mobileprovision`，而是调用引擎的 `profiles` 子命令（按 `signing/current`、`signing/apple`、`certificates/iOS` 的 mtime 缓存）；`--set` 允许的键从引擎 `lib/common.sh` 的 `PACKAGE_ENV_OVERRIDE_KEYS` 读出后随 `state` 下发，面板据此过滤项目预设，避免与引擎各维护一份白名单。
 - **物化出的引擎目录会写一份 `.gitignore`**（`HOME_GITIGNORE`），保护 `config/projects/*.env`、`certificates/*`、`*.p12`、`*.mobileprovision`、`*.ipa`、`*.apk`、`*.hap`。
 
 ## 测试与 CI
 
-`node --test`，不引框架：`packages/app-packager/test/packager.test.mjs`（env 解析、项目发现、物化、doctor）与 `packages/dsh-app-packager/test/plugin.test.mjs`（工具注册、schema、渲染、参数校验、用假 req/res 驱动宿主路由、任务执行器，以及用 stub React 加载 `client.js` 并断言面板注册进 `sidebar.panellist` + `main` 的冒烟测试）。CI 在 `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22 上跑这两组，外加 CLI 冒烟与 `pnpm -r pack` 的 tarball 校验。bash 引擎本身未被 CI 覆盖——真机 Android/HarmonyOS 出包需要装了 HBuilderX 的机器。
+`node --test`，不引框架：`packages/app-packager/test/packager.test.mjs`（env 解析、项目发现、物化、doctor）、`packages/app-packager/test/engine.test.sh`（`parse_args` 选项、打包参数白名单、`profiles` 与 `sdk status` 的 JSON、`harmony_sdk_ready` —— 在临时 `PIPELINE_ROOT` 里跑，`lib/` 是复制的所以临时根真的生效）与 `packages/dsh-app-packager/test/plugin.test.mjs`（工具注册、schema、渲染、参数校验、用假 req/res 驱动宿主路由、任务执行器，以及用 stub React 加载 `client.js` 并断言面板注册进 `sidebar.panellist` + `main` 的冒烟测试）。CI 在 `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22 上跑这两组，外加 CLI 冒烟与 `pnpm -r pack` 的 tarball 校验。bash 引擎本身未被 CI 覆盖——真机 Android/HarmonyOS 出包需要装了 HBuilderX 的机器。
 
 ## 怎么扩展
 

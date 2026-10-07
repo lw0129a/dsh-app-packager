@@ -1,6 +1,6 @@
 {
   "name": "dsh-app-packager",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "AppPackager for DeepSeek Harness: list uni-app x projects, check the local toolchain, and build iOS / Android / HarmonyOS packages on macOS, Windows and Linux.",
   "keywords": [
     "dsh",
@@ -39,8 +39,10 @@
   },
   "files": [
     "index.js",
+    "index.mjs",
     "web.js",
     "client.js",
+    "upgrade.mjs",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md"
@@ -77,7 +79,7 @@
       "id": "app-packager",
       "kind": "tools+panel",
       "invocation": "mount the dsh-app-packager bundle row",
-      "expected": "exposes app_packager_list / app_packager_doctor / app_packager_check / app_packager_build, driving the bundled bash engine (or the Node half on Windows), plus an AppPackager panel in the web GUI (environment check, project list, builds with live logs and cancel)."
+      "expected": "also reads the HBuilderX version, recommends the matching iOS / Android / HarmonyOS SDK downloads and installs them from the panel, and can upgrade the plugin while keeping the downloaded SDKs; exposes app_packager_list / app_packager_doctor / app_packager_check / app_packager_build, driving the bundled bash engine (or the Node half on Windows), plus an AppPackager panel in the web GUI (environment check, project list, builds with live logs and cancel)."
     },
     "evidence": {
       "install": null,
@@ -93,7 +95,7 @@
     "test": "node --test test/plugin.test.mjs"
   },
   "dependencies": {
-    "app-packager": "workspace:^0.5.0"
+    "app-packager": "workspace:^0.6.0"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"

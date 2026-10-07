@@ -15,7 +15,7 @@ Three layers, one behaviour: the original bash packaging toolchain stays the sin
             home · projects · engine · doctor · cli
                          │  spawn bash (stdin ignored)
                          ▼
-            <engine dir, default ~/AppPackager>      ← materialised from engine/
+            <engine dir, default <plugin>/home>      ← materialised from engine/
             lib/*.sh · config/ · signing/ · certificates/
 ```
 
@@ -25,7 +25,9 @@ Three layers, one behaviour: the original bash packaging toolchain stays the sin
 | --- | --- |
 | `packages/app-packager/bin/app-packager.mjs` | Executable entry; parses argv and dispatches to `src/cli.mjs`. |
 | `packages/app-packager/src/cli.mjs` | Command table (`init` `doctor` `list` `register` `check` `build` `run` `env` `version`), option parsing, pass-through of unknown engine arguments. |
-| `packages/app-packager/src/home.mjs` | Engine directory resolution (`--dir` → `APP_PACKAGER_HOME` → `~/AppPackager`), version-stamped materialisation, user-file preservation, `HOME_GITIGNORE`. |
+| `packages/app-packager/src/home.mjs` | Engine directory resolution (`--dir` → `APP_PACKAGER_HOME` → the repository default), version-stamped materialisation, user-file preservation, `HOME_GITIGNORE`. |
+| `packages/dsh-app-packager/index.mjs` | The plugin's single source for the engine directory and the upgrade wrapper: `resolvePluginHome` (explicit config → `APP_PACKAGER_HOME` → `<plugin>/home`, renaming a legacy `~/AppPackager` into place once — and only when that directory really is an engine home), `withHomePreserved` (stashes the home in the profile's `node_modules/.app-packager-home-backup` around an upgrade and restores it either way) and `pluginRoot`. Shared by the host tools, the panel backend and the upgrade script. |
+| `packages/dsh-app-packager/upgrade.mjs` | What *Upgrade plugin* runs: `dsh plugin --profile <name> add dsh-app-packager@latest`, falling back to `pnpm add` in the profile directory, wrapped in `withHomePreserved`. |
 | `packages/app-packager/src/projects.mjs` | Reads `config/projects/*.env` (quoting, `\ ` escapes, `$VAR`/`${VAR}` expansion, `export` prefix) and reports enabled platforms. |
 | `packages/app-packager/src/engine.mjs` | bash discovery (`native` / `git-bash` / `wsl`), path translation, `PIPELINE_ROOT` + `PROJECT_SEARCH_ROOTS` injection, spawn with timeout and line streaming. |
 | `packages/app-packager/src/doctor.mjs` | Node-side environment checks (Node, engine, shell bridge, Xcode tooling, HBuilderX, JDK, Android SDK, DevEco Studio, signing dirs, project config). |
@@ -47,18 +49,21 @@ The browser side is a second Cordis tree: the host reads `dsh.client` + `exports
 
 ## Contracts worth keeping
 
+- **The engine directory lives inside the plugin**: `<plugin>/home`. A legacy `~/AppPackager` is moved in with `renameSync` on first resolution (never a copy — multi-GB SDKs move instantly); across volumes it stays where it is and the notice reaches the panel. The rename only happens for a directory that really is an engine home (`.engine-version` or `打包工具.command` present), so a folder that merely shares the name is left alone.
+- **An upgrade stashes the home outside the plugin directory**: reinstalling deletes `node_modules/dsh-app-packager` first, so `withHomePreserved` renames the home to `<profile>/node_modules/.app-packager-home-backup` and moves it back when the install finishes or fails — downloaded SDKs and registered projects never disappear with a reinstall.
 - **Engine environment**: the engine is always invoked as `bash <engineDir>/打包工具.command <args>` with `PIPELINE_ROOT` (shell-ified engine dir), `PROJECT_SEARCH_ROOTS` (`:`-separated, defaults to the engine dir's parent) and `LANG`; cwd is the engine dir. `PIPELINE_ROOT` pre-set by the caller wins, exactly as in `lib/runner.sh`.
 - **stdin is always ignored** (`stdio: ['ignore', …]`): the headless branch of `打包工具.command` ends with `printf '按回车退出...'; read -r _`, which would otherwise hang a spawned process.
 - **User-owned paths survive upgrades**: `home.mjs` skips `config/*.local.env`, `config/init.local.env`, `config/projects/*.env`, `certificates/`, `signing/`, `sdk/`, `packages/`, `logs/`, `workspaces/` when copying, and `.engine-version` records what was materialised.
 - **Executable bits are restored** (`EXECUTABLE = /\.(command|sh)$/i` → 755) because pnpm archives every file as 644.
 - **Success is not just the exit code**: the plugin treats output containing `[FAIL]` as a failure (`verdictOf`).
+- **SDK recommendation logic exists only in the engine**: HBuilderX version → SDK series → official download entry → download, unpack and place, all of it in `engine/lib/sdk.sh` (`sdk status|urls|install|process`). The panel builds no URLs of its own: the iOS archive name follows from the series, Android's carries a build number and can only be scraped from DCloud's page, HarmonyOS installs its runtime through ohpm, and `--file` takes an archive you downloaded yourself.
 - **`check` and `build` are different subcommands**: engine argv is built in `web.js` (`engineArgsFor`), because a bare platform argument means *build* in `lib/runner.sh`. Checking a platform is always `打包工具.command check <platform> [project]`.
 - **Build options have a single source of truth**: `--full-permission` / `--no-full-permission`, `--package-kind`, `--profile` and `--set KEY=VALUE` are all produced by `engineArgsFor` and **shared by `check` and `build`** (a check is the dry run of the same wiring, so a missing or mismatched profile and a wrong permission switch surface there first). `--package-kind` is an iOS concept and is never passed on another platform. The panel does not parse `.mobileprovision` files itself; it calls the engine's `profiles` subcommand (cached on the mtime of `signing/current`, `signing/apple` and `certificates/iOS`). The keys `--set` accepts are read from `PACKAGE_ENV_OVERRIDE_KEYS` in the engine's `lib/common.sh` and shipped with `state`, so the panel filters project presets with the engine's own allow-list instead of keeping a second copy.
 - **A materialised engine directory gets a `.gitignore`** (`HOME_GITIGNORE`) protecting `config/projects/*.env`, `certificates/*`, `*.p12`, `*.mobileprovision`, `*.ipa`, `*.apk`, `*.hap`.
 
 ## Tests and CI
 
-`node --test`, no framework: `packages/app-packager/test/packager.test.mjs` (env parsing, project discovery, materialisation, doctor) and `packages/dsh-app-packager/test/plugin.test.mjs` (tool registration, schemas, rendering, argument validation, the host routes against fake request/response objects, the job runner, and a smoke test that loads `client.js` with a stubbed React and asserts the panel registers into `sidebar.panellist` + `main`). CI runs both on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, plus CLI smoke runs and a `pnpm -r pack` job that validates the tarballs. The bash engine itself is untouched and untested by CI — Android/HarmonyOS builds need a real machine with HBuilderX.
+`node --test`, no framework: `packages/app-packager/test/packager.test.mjs` (env parsing, project discovery, materialisation, doctor), `packages/app-packager/test/engine.test.sh` (`parse_args` options, the package-env allow-list, the JSON of `profiles` and `sdk status`, `harmony_sdk_ready` — all inside a temporary `PIPELINE_ROOT`, which works because the harness copies `lib/` instead of symlinking it) and `packages/dsh-app-packager/test/plugin.test.mjs` (tool registration, schemas, rendering, argument validation, the host routes against fake request/response objects, the job runner, and a smoke test that loads `client.js` with a stubbed React and asserts the panel registers into `sidebar.panellist` + `main`). CI runs both on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, plus CLI smoke runs and a `pnpm -r pack` job that validates the tarballs. The bash engine itself is untouched and untested by CI — Android/HarmonyOS builds need a real machine with HBuilderX.
 
 ## Extending it
 

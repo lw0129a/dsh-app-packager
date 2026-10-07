@@ -863,8 +863,15 @@ install_harmony_runtime() {
 JSON
   fi
 
-  printf '  是否使用 ohpm 安装 %s 到 sdk/HarmonyOS/%s？[y/N]: ' "$package" "$HX_SERIES"
-  read -r answer || answer=""
+  # SDK_AUTO_INSTALL=yes 供 `sdk install harmony --yes`（面板一键配置）免交互调用。
+  case "${SDK_AUTO_INSTALL:-ask}" in
+    yes | y | 1) answer="y" ;;
+    no | n | 0) answer="n" ;;
+    *)
+      printf '  是否使用 ohpm 安装 %s 到 sdk/HarmonyOS/%s？[y/N]: ' "$package" "$HX_SERIES"
+      read -r answer || answer=""
+      ;;
+  esac
   case "$answer" in
     y|Y|yes|YES)
       if (cd "$dir" && "$ohpm" install "$package" --save-prod); then

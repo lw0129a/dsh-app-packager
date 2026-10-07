@@ -43,6 +43,31 @@ window.__ModuleLoader__.load({
       'engine.missing': '未物化',
       'engine.shell': 'Shell 桥接',
       'engine.shell.none': '不可用',
+      'engine.location': '引擎位置',
+      'engine.location.plugin': 'DSH 插件目录内（升级插件时 SDK、证书与项目配置都会保留）',
+      'engine.location.other': '不在 DSH 插件目录内',
+      sdk: 'SDK 与一键配置',
+      'sdk.hint': '按本机 HBuilderX 的版本号推荐同系列 SDK：iOS/Android 从 DCloud 官方直链下载后自动解压归位，HarmonyOS 用 DevEco 的 ohpm 安装 runtime。',
+      'sdk.hbuilderx': 'HBuilderX',
+      'sdk.hbuilderx.none': '未找到 HBuilderX（/Applications/HBuilderX.app）：装好后再回来，引擎才能判断该下载哪个系列的 SDK。',
+      'sdk.series': 'SDK 系列',
+      'sdk.root': '下载目录',
+      'sdk.ready': '已就绪',
+      'sdk.missing': '未安装',
+      'sdk.mismatch': '版本不匹配，建议 {series}',
+      'sdk.dir': '目录',
+      'sdk.page': '官方下载页',
+      'sdk.direct': '官方直链',
+      'sdk.install': '一键配置',
+      'sdk.installAll': '一键配置全部',
+      'sdk.process': '处理已下载的 SDK',
+      'sdk.archives': 'sdk/ 里已有 {n} 个压缩包，可点「处理已下载的 SDK」解压归位。',
+      'sdk.incomplete': '有 {n} 个未完成的下载（.part），删掉后可以重试。',
+      'sdk.manual': '自动下载不可用时，可从官方下载页手动下载，放进 sdk/ 再点「处理已下载的 SDK」。',
+      'upgrade': '插件升级',
+      'upgrade.hint': '升级会先把引擎目录（SDK、证书、项目配置）暂存到插件旁边，装完立即移回，不会丢；升级完成后重启 DeepSeek Harness 生效。',
+      'upgrade.run': '升级插件',
+      'upgrade.unavailable': '这段代码不在 DSH 插件目录里，无法从面板升级：请在终端执行 dsh plugin --profile <profile> add dsh-app-packager@latest。',
       doctor: '环境检查（Node）',
       'doctor.run': '开始检查',
       'doctor.ok': '结论：当前环境可以打包。',
@@ -112,6 +137,8 @@ window.__ModuleLoader__.load({
       'job.exit': '退出码 {code}',
       'job.kind.check': '环境检查',
       'job.kind.build': '打包',
+      'job.kind.sdk': 'SDK 配置',
+      'job.kind.upgrade': '插件升级',
       'job.dropped': '（日志过长，已省略前 {n} 字符）',
       'job.waiting': '等待输出…',
       'job.problems': '发现 {errors} 项错误、{warnings} 项警告：',
@@ -135,6 +162,31 @@ window.__ModuleLoader__.load({
       'engine.missing': 'Not materialized',
       'engine.shell': 'Shell bridge',
       'engine.shell.none': 'unavailable',
+      'engine.location': 'Engine location',
+      'engine.location.plugin': 'inside the DSH plugin directory (SDKs, certificates and project configs survive a plugin upgrade)',
+      'engine.location.other': 'not inside a DSH plugin directory',
+      sdk: 'SDKs and one-click setup',
+      'sdk.hint': 'The SDK series follows the local HBuilderX version: iOS/Android download from the official DCloud links and unpack themselves, HarmonyOS installs the runtime through DevEco’s ohpm.',
+      'sdk.hbuilderx': 'HBuilderX',
+      'sdk.hbuilderx.none': 'HBuilderX was not found (/Applications/HBuilderX.app). Install it and come back: the engine needs its version to know which SDK series to download.',
+      'sdk.series': 'SDK series',
+      'sdk.root': 'Download directory',
+      'sdk.ready': 'Ready',
+      'sdk.missing': 'Not installed',
+      'sdk.mismatch': 'Wrong version, {series} expected',
+      'sdk.dir': 'Directory',
+      'sdk.page': 'Download page',
+      'sdk.direct': 'Direct download',
+      'sdk.install': 'Set up',
+      'sdk.installAll': 'Set up all',
+      'sdk.process': 'Process downloaded SDKs',
+      'sdk.archives': '{n} archive(s) already in sdk/ — “Process downloaded SDKs” unpacks and files them.',
+      'sdk.incomplete': '{n} unfinished download(s) (.part); delete them to retry.',
+      'sdk.manual': 'When the automatic download is unavailable, download from the official page, drop the archive into sdk/ and press “Process downloaded SDKs”.',
+      'upgrade': 'Plugin upgrade',
+      'upgrade.hint': 'The upgrade parks the engine directory (SDKs, certificates, project configs) next to the plugin, installs, then moves it straight back, so nothing is lost. Restart DeepSeek Harness afterwards.',
+      'upgrade.run': 'Upgrade plugin',
+      'upgrade.unavailable': 'This code is not inside a DSH plugin directory, so the panel cannot upgrade it: run dsh plugin --profile <profile> add dsh-app-packager@latest.',
       doctor: 'Environment check (Node)',
       'doctor.run': 'Run check',
       'doctor.ok': 'This machine can build.',
@@ -204,6 +256,8 @@ window.__ModuleLoader__.load({
       'job.exit': 'exit code {code}',
       'job.kind.check': 'Environment check',
       'job.kind.build': 'Build',
+      'job.kind.sdk': 'SDK setup',
+      'job.kind.upgrade': 'Plugin upgrade',
       'job.blockedByCheck': 'The pre-build environment check failed, so the build did not start. Fix the [FAIL] items above, then press “Build” again.',
       'job.dropped': '(log truncated, {n} leading characters dropped)',
       'job.waiting': 'Waiting for output…',
@@ -255,6 +309,7 @@ window.__ModuleLoader__.load({
       check: { display: 'flex', gap: '8px', fontSize: '12px', alignItems: 'baseline' },
       mark: { width: '12px', textAlign: 'center' },
       hint: { fontSize: '11px', color: 'var(--dsw-alias-label-tertiary, inherit)', opacity: 0.7, marginLeft: '20px' },
+      link: { fontSize: '12px', color: 'var(--dsw-alias-label-link, #4c8dff)', textDecoration: 'none' },
       badge: { fontSize: '11px', padding: '1px 7px', borderRadius: '999px', border: '1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42))' },
       log: { margin: 0, padding: '8px 10px', maxHeight: '320px', overflow: 'auto', fontSize: '11.5px', lineHeight: 1.45, fontFamily: "var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)", whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.09))', borderRadius: '6px' },
       error: { border: '1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5))', color: 'var(--dsw-alias-state-error, #ff6b6b)', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', whiteSpace: 'pre-wrap' },
@@ -443,6 +498,16 @@ window.__ModuleLoader__.load({
 
       const stopJob = () => guard('job', async () => setJob(await call(`job/kill?id=${encodeURIComponent(job.id)}`, { method: 'POST' })));
 
+      // SDK setup and the plugin upgrade ride the same job route as a build, so
+      // they stream their log into the one job card below.
+      const startSdkJob = (spec) => guard('sdk', async () => {
+        setJob(await call('job', { method: 'POST', body: { kind: 'sdk', ...spec } }));
+        refresh();
+      });
+      const upgradePlugin = () => guard('upgrade', async () => {
+        setJob(await call('job', { method: 'POST', body: { kind: 'upgrade' } }));
+      });
+
       // The host opens the OS folder dialog; a plain cancel is not an error, but a
       // missing picker falls back to typing the path by hand.
       const pickDirectory = () => guard('pick', async () => {
@@ -550,6 +615,12 @@ window.__ModuleLoader__.load({
         row(t('engine.home'), state.home),
         row(t('engine.version'), state.engineVersion),
         row(
+          t('engine.location'),
+          state.plugin && state.plugin.root && String(state.home).startsWith(state.plugin.root)
+            ? t('engine.location.plugin')
+            : t('engine.location.other'),
+        ),
+        row(
           t('engine.ready'),
           state.materialized ? t('engine.ready') : t('engine.missing'),
         ),
@@ -588,8 +659,60 @@ window.__ModuleLoader__.load({
           : h('div', { style: styles.muted }, t('loading')),
       );
 
+      // SDK setup: the engine recommends the download entry per platform from the
+      // local HBuilderX version, and the same `sdk install` call performs it.
+      const sdkCard = !state ? null : h(
+        'div',
+        { style: styles.group },
+        h(
+          'div',
+          { style: styles.groupHead },
+          h('span', { style: styles.groupTitle }, t('sdk')),
+          h('span', { style: { flex: 1 } }),
+          button(t('sdk.installAll'), () => startSdkJob({ platforms: ['ios', 'android', 'harmony'] }), { disabled: Boolean(busy) || jobRunning }),
+          button(t('sdk.process'), () => startSdkJob({ processOnly: true }), { disabled: Boolean(busy) || jobRunning }),
+          state.canUpgrade ? button(t('upgrade.run'), upgradePlugin, { disabled: Boolean(busy) || jobRunning }) : null,
+        ),
+        state.sdkError ? h('div', { style: styles.error }, state.sdkError) : null,
+        h('div', { style: styles.muted }, t('sdk.hint')),
+        hb && hb.found
+          ? h('div', { style: styles.muted }, `${t('sdk.hbuilderx')}: ${hb.version || '?'} · ${t('sdk.series')} ${hb.series || '?'}`)
+          : h('div', { style: styles.warn }, t('sdk.hbuilderx.none')),
+        sdkInfo ? h('div', { style: styles.muted }, `${t('sdk.root')}: ${sdkInfo.sdkRoot}`) : null,
+        sdkList.map((item) => h(
+          'div',
+          { key: item.id, style: styles.check },
+          h('span', { style: { ...styles.mark, color: markColor(sdkMark(item)) } }, mark(sdkMark(item))),
+          h('span', null, `${item.label} · ${sdkStateText(item)}`),
+          h('span', { style: { flex: 1 } }),
+          button(t('sdk.install'), () => startSdkJob({ platforms: [item.id] }), { disabled: Boolean(busy) || jobRunning }),
+          h('a', { href: item.page, target: '_blank', rel: 'noreferrer', style: styles.link }, t('sdk.page')),
+          item.direct ? h('a', { href: item.direct, target: '_blank', rel: 'noreferrer', style: styles.link }, t('sdk.direct')) : null,
+          h('div', { style: styles.hint }, `${t('sdk.dir')}: ${item.dir}`),
+        )),
+        sdkInfo && sdkInfo.archives && sdkInfo.archives.length
+          ? h('div', { style: styles.muted }, tf('sdk.archives', { n: sdkInfo.archives.length }))
+          : null,
+        sdkInfo && sdkInfo.incompleteDownloads
+          ? h('div', { style: styles.warn }, tf('sdk.incomplete', { n: sdkInfo.incompleteDownloads }))
+          : null,
+        h('div', { style: styles.muted }, t('sdk.manual')),
+        h('div', { style: styles.muted }, state.canUpgrade ? t('upgrade.hint') : t('upgrade.unavailable')),
+      );
+
       const projects = (state && state.projects) || [];
       const profiles = (state && state.profiles) || [];
+      // SDK setup is driven by the engine's own `sdk status`; the panel only picks
+      // labels. `sdkError` is a failed status read, not a missing SDK.
+      const sdkInfo = (state && state.sdk) || null;
+      const sdkList = (sdkInfo && sdkInfo.platforms) || [];
+      const hb = (sdkInfo && sdkInfo.hbuilderx) || null;
+      const sdkMark = (item) => (item.state === 'ready' ? 'ok' : item.state === 'mismatch' ? 'warn' : 'fail');
+      const sdkStateText = (item) => (item.state === 'ready'
+        ? t('sdk.ready')
+        : item.state === 'mismatch'
+          ? tf('sdk.mismatch', { series: item.series })
+          : t('sdk.missing'));
       const profilesNote = (state && state.profilesError) || (profiles.length ? t('options.profile.auto') : t('options.profiles.none'));
       // The engine owns this list; we only filter presets with it.
       const overrideKeys = (state && state.overrideKeys) || null;
@@ -827,6 +950,7 @@ window.__ModuleLoader__.load({
         error ? h('div', { style: styles.error }, `${t('error')}: ${error}`) : null,
         engineCard,
         doctorCard,
+        sdkCard,
         projectsCard,
         jobCard,
       );

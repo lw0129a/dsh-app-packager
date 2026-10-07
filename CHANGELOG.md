@@ -4,6 +4,21 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-10
+
+### Added
+
+- **The panel reads your HBuilderX version and recommends the matching SDK for iOS, Android and HarmonyOS — then installs it for you.** The engine's new `sdk` subcommand reports the detected HBuilderX app/CLI and its version series, each platform's SDK directory and state (`ready` / `mismatch` / `missing`), the official download page and the file name to look for; because the iOS archive name is derivable from the series alone the engine also hands out that direct URL, while Android's file name carries a build number so the engine resolves it from DCloud's official page, and HarmonyOS has no archive at all (its runtime comes from ohpm). *One-click setup* then runs the engine's own download/unpack path per platform, *Process downloaded SDKs* imports archives already sitting in `sdk/`, and the card lists what is waiting there plus how many Baidu-Netdisk downloads are still incomplete. Nothing is installed behind your back: the card only recommends until you press the button, and a platform whose SDK is already `ready` is left alone.
+- **Engine: `sdk` subcommand** (engine script version `2026.10.10.1`) — `sdk status` (JSON, for the panel and other tools), `sdk urls` (the same thing for humans), `sdk install <ios|android|harmony|all> [--yes] [--file <archive>]` and `sdk process`. `install` reuses the existing `resolve_direct_sdk_url` (official page → direct link) and `import_sdk_archive` (unpack, place, rewrite `config/settings.local.env`), prints the official download page when a platform has no deterministic link, and takes a locally downloaded archive through `--file` for machines that cannot reach the download host.
+- **The engine directory now lives inside the plugin, and upgrading the plugin keeps it.** `~/AppPackager` still works: the first resolution renames it to `<plugin>/home` — a rename, never a copy, so multi-GB SDKs move instantly — after which `APP_PACKAGER_HOME` or the `home` config key can point anywhere else. The new *Upgrade plugin* button runs `dsh plugin --profile <name> add dsh-app-packager@latest` (or `pnpm add`) with the engine directory temporarily renamed out of the way, so reinstalling cannot delete your downloaded SDKs, certificates or registered projects; and a profile that runs the plugin from somewhere other than `node_modules` simply hides the button and says why.
+- `packages/dsh-app-packager/index.mjs` holds the path resolution both halves share (`resolvePluginHome`, `withHomePreserved`, `pluginRoot`, `looksLikeEngineHome`), so the host tools, the panel backend and the upgrade wrapper cannot disagree about where the engine directory is.
+
+### Fixed
+
+- **`harmony_sdk_ready` no longer calls a half-installed HarmonyOS runtime ready.** It accepted `oh-package.json5` as proof, but the installer writes that manifest *before* running `ohpm install`, so a failed install counted as ready and the HarmonyOS build went ahead without a runtime. Readiness is now only `oh_modules/@dcloudio/uni-app-x-runtime`, its vapor counterpart, or a `*.har` in the directory.
+- **The engine test suite ran against the repository instead of its temporary root.** It symlinked `lib/` into the temp root, and since `lib/init.sh` recomputes `PIPELINE_ROOT` from its own location, anything sourced through it resolved back to the checkout — the SDK cases wrote their fixtures into `packages/app-packager/engine/sdk/`. The harness copies `lib/` now, so `PIPELINE_ROOT` is really the temp root.
+- **A test can no longer delete a real engine directory.** `resolvePluginHome` only migrates a directory that is actually an engine home (`.engine-version` or `打包工具.command` present), and the legacy path is an explicit option instead of being derived from `$HOME` inside the test, so a test that fakes a home cannot reach the real one even if the runtime ignores the fake.
+
 ## [0.5.0] - 2026-10-09
 
 ### Added
@@ -96,7 +111,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.5.0...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.6.0...main
+[0.6.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.0
 [0.5.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.5.0
 [0.4.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.4.0
 [0.3.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.3.0

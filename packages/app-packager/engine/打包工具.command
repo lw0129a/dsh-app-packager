@@ -715,6 +715,17 @@ execute_selection() {
   esac
 }
 
+# SDK 状态 / 下载入口 / 一键配置（面板与外部工具读同一条 CLI）:
+#   打包工具.command sdk status
+#   打包工具.command sdk install ios --yes
+if [ "${1:-}" = "sdk" ]; then
+  shift
+  # shellcheck source=/dev/null
+  source "$PIPELINE_ROOT/lib/sdk.sh"
+  sdk_main "$@"
+  exit $?
+fi
+
 # 本地诊断: 打包工具.command diagnose
 if [ "${1:-}" = "diagnose" ]; then
   generate_local_diagnostic_report

@@ -19,12 +19,12 @@ import {
   materialize,
   isMaterialized,
   packageVersion,
-  resolveHome,
   runDoctor,
   runEngine,
   shellAvailable,
 } from 'app-packager';
 import { PACKAGE_KINDS, PLATFORM_VALUES, engineArgsFor, mountWebPanel, summarizeOutput } from './web.js';
+import { resolvePluginHome } from './index.mjs';
 
 export const name = 'app-packager';
 
@@ -63,9 +63,12 @@ function tail(text, limit) {
   return `…（省略前 ${value.length - limit} 字符）\n${value.slice(-limit)}`;
 }
 
-/** The engine home for this call: tool argument, then config, then env/default. */
+/**
+ * The engine home for this call: tool argument, then config, then the plugin's
+ * own `home/` directory (with a one-time move of an older ~/AppPackager).
+ */
 function homeFor(config, args) {
-  return resolveHome(args.home || config.home || '');
+  return resolvePluginHome(args.home || config.home || '', { moduleUrl: import.meta.url });
 }
 
 /** Materialize the engine on first use so a fresh install needs no extra step. */

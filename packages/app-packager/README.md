@@ -44,6 +44,11 @@ app-packager build android shop --upload pgyer --version 1.2.0
 
 app-packager ios shop             # `build` may be omitted; the argument is forwarded to the engine
 app-packager run list             # or forward arbitrary engine arguments explicitly
+
+app-packager sdk status           # HBuilderX version + each platform's SDK state as JSON
+app-packager sdk urls             # the same, as a human readable list of download entries
+app-packager sdk install ios      # download and unpack the matching iOS SDK (--yes for no prompts)
+app-packager sdk process          # import archives you already put in sdk/
 ```
 
 ### Options

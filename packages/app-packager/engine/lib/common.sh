@@ -788,9 +788,10 @@ android_sdk_ready() {
 harmony_sdk_ready() {
   local dir
   dir="$(harmony_sdk_dir)"
+  # 只看真正的 runtime 产物：oh-package.json5 是安装前由 sdk.sh/init.sh 自己创建的清单文件，
+  # 拿它当就绪标志会把「ohpm 装失败」误判成已就绪。
   [ -d "$dir/oh_modules/@dcloudio/uni-app-x-runtime" ] ||
     [ -d "$dir/oh_modules/@dcloudio/uni-app-x-vapor-runtime" ] ||
-    [ -f "$dir/oh-package.json5" ] ||
     find "$dir" -type f -name '*.har' -print -quit 2>/dev/null | grep -q .
 }
 

@@ -50,6 +50,17 @@ centre column:
   the engine yet) and sending the ticked ones as one comma separated `--upload`;
   *HarmonyOS debug HAP* and *Keep work dir* live in an *Advanced* fold, each
   with a one-line explanation.
+- **SDK** — the detected HBuilderX app/CLI and its version series, and each
+  platform's SDK directory with its state (`ready` / `mismatch` / `missing`).
+  *One-click setup* asks the engine to download and unpack the matching SDK for
+  the ticked platforms, *Process downloaded SDKs* imports archives already in
+  `sdk/`, and each row links to DCloud's official download page — plus the
+  direct iOS archive URL, which follows from the version series alone.
+- **Upgrade plugin** — reinstalls `dsh-app-packager@latest` into the current
+  profile. The engine directory is renamed out of the way for the duration, so
+  an upgrade can never delete your downloaded SDKs, certificates or registered
+  projects; the button is hidden when the plugin does not run from a profile's
+  `node_modules`.
 - **Job** — the running check/build with its live engine log, its verdict
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
   Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above
@@ -133,10 +144,17 @@ config**.
 
 ## Engine directory and first use
 
-The default engine directory is `~/AppPackager` (override with the config key or
-`APP_PACKAGER_HOME`). The first tool call (or the panel's *Init engine*)
-releases the bundled engine there; later upgrades refresh the engine files but
-never overwrite your own config, certificates, SDKs or artifacts.
+The engine directory lives inside the plugin (`<plugin>/home`), so it travels
+with the plugin; `APP_PACKAGER_HOME` or the `home` config key points it
+somewhere else. An existing `~/AppPackager` from an earlier version is renamed
+into place on first use — a rename, never a copy, so multi-GB SDKs and
+registered projects move instantly.
+
+The first tool call (or the panel's *Init engine*) releases the bundled engine
+there; later upgrades refresh the engine files but never overwrite your own
+config, certificates, SDKs or artifacts. *Upgrade plugin* in the panel goes one
+step further and reinstalls the npm package, keeping the engine directory
+stashed until the install finishes.
 
 For the interactive wizard (register uni-app x projects found next to the
 engine, pick platforms, configure signing), use the CLI:

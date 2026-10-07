@@ -44,6 +44,11 @@ app-packager build android shop --upload pgyer --version 1.2.0
 
 app-packager ios shop             # 可省略 build，参数直接透传给引擎
 app-packager run list             # 或用 run 显式转发任意引擎参数
+
+app-packager sdk status           # 读出 HBuilderX 版本与各平台 SDK 状态（JSON）
+app-packager sdk urls             # 同一份信息的人读版：官方下载入口清单
+app-packager sdk install ios      # 下载并解压对应系列的 iOS SDK（加 --yes 免交互）
+app-packager sdk process          # 处理你自己放进 sdk/ 的压缩包
 ```
 
 ### 选项

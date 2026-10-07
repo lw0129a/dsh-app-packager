@@ -61,7 +61,7 @@ dsh plugin --profile desktop add dsh-app-packager
 | `app_packager_check` | 调用引擎对某平台做打包环境检查（证书、SDK、CLI） |
 | `app_packager_build` | 执行打包（`ios` / `android` / `harmony` / `all`）；不给项目即该平台全部已启用项目，上传可给多个平台（`pgyer,huawei`），可覆盖版本号 |
 
-首次调用会自动把引擎物化到 `~/AppPackager`；`app_packager_doctor` 在 Windows 上同样可用。
+首次调用会自动把引擎物化到 `<插件目录>/home`（首次解析时会把已有的 `~/AppPackager` 改名搬进去，SDK 与已登记项目都跟着走）；`app_packager_doctor` 在 Windows 上同样可用。
 
 ### Web 面板
 
@@ -72,6 +72,8 @@ dsh plugin --profile desktop add dsh-app-packager
 - **项目** —— 登记/删除项目：可以一次选多个目录（「选择目录…」支持多选，也可以每行一个手动填），列出已登记项目的源码目录与启用的平台，每行带「删除」——两步确认后只删引擎目录里的 `config/projects/<id>.env`，不动项目源码。
 - **打包范围** —— 打包的唯一入口：平台 × 项目批量打包（不勾项目 = 该平台全部项目），在一个任务里串行执行，日志用 `▶ i/n` 标出。**打包前会先按同一组项目与平台跑一次环境检查**，有 `[FAIL]` 就停下并把失败项列出来，让用户先处理，通过后才真正开始打包。
 - **打包选项** —— 版本号；**全量权限**开关（默认跟随 `config/settings.env` 的 `FULL_PERMISSION_PROFILE`，可以只对这一次打包改）；**iOS 包型**（测试包 Ad Hoc / 正式包 App Store / development / enterprise，按项目 Bundle ID 挑描述文件，本机没有该类型时灰掉并说明原因）；**描述文件**下拉（列出签名目录里的 `.mobileprovision`，带包型、Bundle ID 与是否过期，留空＝按包型或项目接线自动选）；**自定义配置项**（每行一个 `KEY=VALUE` 覆盖打包参数，如 `MARKETING_VERSION=1.2.3`，可从项目自带的 `scripts/ios-package/env/*.env` 载入预设，路径类键不允许覆盖）；上传平台来自引擎的 `config/upload.env`，不可用的灰掉并注明原因，勾选的拼成一个逗号分隔的 `--upload`；*HarmonyOS debug 包* 与 *保留构建目录* 收进「高级选项」。
+- **SDK** —— 读出本机 HBuilderX 与其版本系列，逐平台显示 SDK 状态（`ready` / `mismatch` / `missing`）与目录；「一键配置」按需下载并解压对应的 iOS / Android / HarmonyOS SDK，「处理已下载的 SDK」导入已经放在 `sdk/` 里的压缩包，每行还给 DCloud 官方下载页（iOS 另有系列推出的官方直链）。
+- **升级插件** —— 把 `dsh-app-packager@latest` 装回当前 profile；升级期间引擎目录先改名让开，所以已下载的 SDK、证书与已登记项目不会被重装删掉。
 - **任务** —— 当前 check/build 的实时引擎日志、判定结果（出现 `[FAIL]` 或非零退出码即失败）与「停止」按钮。
 
 面板只调用宿主侧注册的九条同源路由（`/api/app-packager/state|init|doctor|pick|project|project/remove|job|job/log|job/kill`），打包始终在宿主进程里跑，不在浏览器里执行。headless profile 里不出现面板，四个工具照常可用。
