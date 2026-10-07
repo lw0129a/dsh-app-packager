@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['18', '20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - name: CLI smoke test (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          node packages/app-packager/bin/app-packager.mjs init --dir "$RUNNER_TEMP/app-packager-home" --no-wizard
+          node packages/app-packager/bin/app-packager.mjs list --dir "$RUNNER_TEMP/app-packager-home"
+          node packages/app-packager/bin/app-packager.mjs doctor --dir "$RUNNER_TEMP/app-packager-home" --platform android || true
+      - name: CLI smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node packages/app-packager/bin/app-packager.mjs init --dir "$env:RUNNER_TEMP\app-packager-home" --no-wizard
+          node packages/app-packager/bin/app-packager.mjs list --dir "$env:RUNNER_TEMP\app-packager-home"
+          node packages/app-packager/bin/app-packager.mjs doctor --dir "$env:RUNNER_TEMP\app-packager-home" --platform android || true
+
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r pack --pack-destination "$RUNNER_TEMP/tarballs"
+      - run: ls -l "$RUNNER_TEMP/tarballs"

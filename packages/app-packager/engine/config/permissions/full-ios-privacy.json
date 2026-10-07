@@ -1,0 +1,23 @@
+{
+  "NSCameraUsageDescription": "用于拍照、录像和上传现场资料",
+  "NSPhotoLibraryUsageDescription": "用于选择并上传图片或视频",
+  "NSPhotoLibraryAddUsageDescription": "用于保存图片或视频到相册",
+  "NSMicrophoneUsageDescription": "用于录像、语音和录音功能",
+  "NSLocationWhenInUseUsageDescription": "用于定位、导航和附近服务",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "用于持续定位和后台位置服务",
+  "NSContactsUsageDescription": "用于选择联系人并提供相关服务",
+  "NSCalendarsUsageDescription": "用于读取和添加日程安排",
+  "NSRemindersUsageDescription": "用于读取和添加提醒事项",
+  "NSBluetoothAlwaysUsageDescription": "用于连接附近蓝牙设备",
+  "NSBluetoothPeripheralUsageDescription": "用于连接附近蓝牙设备",
+  "NSMotionUsageDescription": "用于运动状态和活动识别",
+  "NSHealthShareUsageDescription": "用于读取用户授权的健康数据",
+  "NSHealthUpdateUsageDescription": "用于写入用户授权的健康数据",
+  "NSFaceIDUsageDescription": "用于安全验证和身份确认",
+  "NSUserTrackingUsageDescription": "用于提供个性化内容和服务",
+  "NSLocalNetworkUsageDescription": "用于访问同一局域网内的设备和服务",
+  "NSAppleMusicUsageDescription": "用于访问用户授权的媒体内容",
+  "NSSpeechRecognitionUsageDescription": "用于语音识别和语音输入",
+  "NSHomeKitUsageDescription": "用于连接和控制家庭设备",
+  "NSNearbyInteractionUsageDescription": "用于发现附近设备并提供相关服务"
+}

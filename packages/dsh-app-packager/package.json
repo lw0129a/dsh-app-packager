@@ -1,0 +1,100 @@
+{
+  "name": "@lw0129a/dsh-app-packager",
+  "version": "0.1.0",
+  "description": "AppPackager for DeepSeek Harness: list uni-app x projects, check the local toolchain, and build iOS / Android / HarmonyOS packages on macOS, Windows and Linux.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "app-packager",
+    "uni-app-x",
+    "hBuilderX",
+    "ios",
+    "android",
+    "harmonyos",
+    "ipa",
+    "apk",
+    "hap"
+  ],
+  "homepage": "https://github.com/lw0129a/app-packager#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lw0129a/app-packager.git",
+    "directory": "packages/dsh-app-packager"
+  },
+  "bugs": {
+    "url": "https://github.com/lw0129a/app-packager/issues"
+  },
+  "author": "lw0129a",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dshWorkshop": {
+    "schema": "omdsh-workshop-package/v1",
+    "type": "plugin",
+    "integration": {
+      "protocol": "harness-profile",
+      "artifact": "cordis.patch.yml"
+    },
+    "lifecycle": {
+      "activation": "restart-profile",
+      "dispose": "supported"
+    },
+    "permissions": [
+      "native-code:none",
+      "network:outbound-optional"
+    ],
+    "capability": {
+      "id": "app-packager",
+      "kind": "tools",
+      "invocation": "mount the @lw0129a/dsh-app-packager bundle row",
+      "expected": "exposes app_packager_list / app_packager_doctor / app_packager_check / app_packager_build, driving the bundled bash engine (or the Node half on Windows)"
+    },
+    "evidence": {
+      "install": null,
+      "failureIsolation": null,
+      "hotReload": null,
+      "remove": null
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@lw0129a/app-packager": "workspace:^0.1.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

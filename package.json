@@ -1,0 +1,27 @@
+{
+  "name": "app-packager-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo for AppPackager: the cross-platform uni-app x packaging CLI and its DeepSeek Harness plugin.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "pnpm -r test",
+    "cli": "node packages/app-packager/bin/app-packager.mjs",
+    "doctor": "node packages/app-packager/bin/app-packager.mjs doctor",
+    "list": "node packages/app-packager/bin/app-packager.mjs list"
+  },
+  "keywords": [
+    "uni-app-x",
+    "packager",
+    "dsh-plugin",
+    "deepseek-harness",
+    "ios",
+    "android",
+    "harmonyos"
+  ]
+}

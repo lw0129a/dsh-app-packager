@@ -1,0 +1,50 @@
+{
+  "name": "@lw0129a/app-packager",
+  "version": "0.1.0",
+  "description": "AppPackager CLI: package uni-app x projects into iOS IPA, Android APK and HarmonyOS HAP from one command, on macOS today and Windows through a Git-Bash/WSL bridge.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "app-packager": "./bin/app-packager.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src",
+    "engine",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lw0129a/app-packager.git",
+    "directory": "packages/app-packager"
+  },
+  "homepage": "https://github.com/lw0129a/app-packager#readme",
+  "keywords": [
+    "uni-app-x",
+    "uni-app",
+    "packager",
+    "ios",
+    "ipa",
+    "android",
+    "apk",
+    "harmonyos",
+    "hap",
+    "hbuilderx",
+    "cli",
+    "dsh-plugin"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

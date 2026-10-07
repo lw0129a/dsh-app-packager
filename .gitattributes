@@ -1,0 +1,19 @@
+# The engine is bash: LF must survive a Windows checkout, or Git Bash reports
+# `bad interpreter: /bin/bash^M`. Force LF for every text file.
+* text=auto eol=lf
+
+# Keep the shell entry points and libraries explicitly LF as well.
+*.command text eol=lf
+*.sh text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+
+# Certificates and archives are binary; never normalise them.
+*.cer binary
+*.p12 binary
+*.mobileprovision binary
+*.p7b binary
+*.zip binary
+*.keystore binary
+*.png binary
+*.jpg binary

@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+.tmp/
+
+# Local AppPackager runtime state materialized by `app-packager init`
+.app-packager/

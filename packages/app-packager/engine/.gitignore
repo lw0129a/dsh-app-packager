@@ -1,0 +1,49 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local build/runtime data
+.tmp/
+workspaces/
+sdk/*
+!sdk/README.md
+!sdk/处理SDK.command
+packages/
+logs/*
+!logs/.gitkeep
+
+# Signing materials and secrets
+signing/current/
+*.p12
+*.mobileprovision
+
+# Machine-local initialization and project registrations
+config/settings.local.env
+config/init.local.env
+config/upload.local.env
+config/parallel.local.env
+config/projects/*.env
+!config/projects/project.env.example
+!config/upload.local.env.example
+!config/parallel.local.env.example
+
+# Certificates: keep docs and processor, ignore actual credentials
+certificates/*
+!certificates/README.md
+!certificates/处理证书.command
+
+# Xcode / build output
+DerivedData/
+build/
+*.xcuserstate
+*.ipa
+*.apk
+*.app
+*.hap
+
+# Editors
+.vscode/
+.idea/
