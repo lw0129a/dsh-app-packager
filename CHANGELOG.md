@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-08
+
+### Added
+
+- **Upload targets are part of the panel, and only the ones the engine can actually use are tickable.** The engine already supported several uploaders (`UPLOAD_PLATFORM_IDS`, e.g. pgyer plus four pre-registered app stores); the panel now lists each one with the same verdict the engine reaches — enabled in `config/upload.env` (or overridden in `config/upload.local.env`), provider script present, provider function declared — and greys out the rest with the reason (`未启用` / `引擎里还没有实现`), so a checkbox never promises an upload the engine will skip. Ticked targets are sent as one comma separated `--upload a,b`; the engine still filters them per artefact platform. `app-packager`'s Node half reads the registry directly (`listUploaders()` / `selectableUploaders()`), which is also what a Windows host without bash needs.
+- **Build scope in the panel: platforms × projects.** A *Build scope* block picks any set of platforms (`all` subsumes the rest) and any subset of projects (none ticked = every project that platform enables), with one *Env check* / *Build* pair for the selection. The engine CLI takes exactly one platform and one project per run, so a selection becomes several engine runs executed back to back inside one job — the log marks each with `▶ i/n` and the job succeeds only if every run did, keeping the first failing exit code. This is what makes "one platform, all projects" (`check ios --all`) and "several platforms, some projects" possible from the GUI; it was previously only reachable from the MCP `all` platform.
+- Two options that were plain checkboxes moved into an *Advanced* fold, each with a one-line explanation: *HarmonyOS debug HAP* and *Keep work dir*.
+
+### Fixed
+
+- **A build with no project no longer dies on `请指定项目 ID`.** Omitting the project only ever meant "all projects" for `platform=all`; for a single platform the engine needs the explicit `--all`, so `app_packager_build` / `app_packager_check` without a project (or the panel's batch scope) failed before doing anything. `engineArgsFor()` now appends `--all` for every single-platform run without a project, verified against the real engine (`check ios --all` checks both configured projects).
+
 ## [0.2.3] - 2026-10-08
 
 ### Added
@@ -59,7 +71,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.2.3...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.3.0...main
+[0.3.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.3.0
 [0.2.3]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.3
 [0.2.2]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.2
 [0.2.1]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.1

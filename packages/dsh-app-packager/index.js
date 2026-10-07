@@ -238,7 +238,7 @@ export function apply(ctx, rawConfig = {}) {
       type: 'object',
       properties: {
         platform: { type: 'string', enum: PLATFORM_VALUES, description: '平台，默认 all' },
-        project: { type: 'string', description: '项目 ID（config/projects/<id>.env），省略则检查全部项目' },
+        project: { type: 'string', description: '项目 ID（config/projects/<id>.env），省略则检查该平台全部已启用项目（引擎侧 --all）' },
         home: homeParam,
       },
       additionalProperties: false,
@@ -259,8 +259,8 @@ export function apply(ctx, rawConfig = {}) {
       type: 'object',
       properties: {
         platform: { type: 'string', enum: PLATFORM_VALUES, description: 'ios | android | harmony | all' },
-        project: { type: 'string', description: '项目 ID；platform=all 时可省略，表示全部项目' },
-        upload: { type: 'string', description: '打包后上传的平台，例如 pgyer' },
+        project: { type: 'string', description: '项目 ID；省略表示该平台全部已启用项目（platform=all 时就是全部项目，引擎侧 --all）' },
+        upload: { type: 'string', description: '打包后上传的平台，例如 pgyer；多个用逗号分隔（pgyer,huawei），以宿主 config/upload.env 中 ENABLED=true 且已实现的平台为准' },
         noUpload: { type: 'boolean', description: '跳过上传' },
         version: { type: 'string', description: '覆盖产物版本号' },
         harmonyDebug: { type: 'boolean', description: 'HarmonyOS 生成 debug 侧载包' },

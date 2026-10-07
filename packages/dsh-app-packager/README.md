@@ -35,8 +35,21 @@ centre column:
   dialog and *Add project* registers the picked directory through the engine's
   `register` subcommand, so a project anywhere on disk gets the same
   `config/projects/<id>.env` the wizard would write; pick a parent folder
-  instead and the engine scans one level below it. Shared build options: version override, upload to pgyer,
-  HarmonyOS debug HAP, keep the intermediate work directory.
+  instead and the engine scans one level below it.
+- **Build scope** — the batch entry point: any set of platforms (tick *All* for
+  the three) and any subset of projects (none ticked = every project that
+  platform enables), with one *Env check* / *Build* pair. The engine CLI takes a
+  single platform and a single project per run, so a selection becomes several
+  engine runs executed back to back inside one job, each marked `▶ i/n` in the
+  log; the job succeeds only if every run did, keeping the first failing exit
+  code.
+- **Shared build options** — version override; **Upload** lists the upload
+  targets the engine declares in `config/upload.env` and that are actually
+  usable (`ENABLED=true` with provider script and function present — pgyer by
+  default), greying out the rest with the reason (disabled / not implemented in
+  the engine yet) and sending the ticked ones as one comma separated `--upload`;
+  *HarmonyOS debug HAP* and *Keep work dir* live in an *Advanced* fold, each
+  with a one-line explanation.
 - **Job** — the running check/build with its live engine log, its verdict
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
   Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above

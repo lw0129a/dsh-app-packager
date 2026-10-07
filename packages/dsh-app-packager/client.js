@@ -61,9 +61,22 @@ window.__ModuleLoader__.load({
       build: '打包',
       options: '打包选项',
       'options.version': '版本号',
-      'options.upload': '上传 pgyer',
+      'options.upload': '上传',
+      'options.uploaders.none': '没有可用的上传平台：在 config/upload.env 里把对应平台的 ENABLED 设为 true（本地覆盖写 config/upload.local.env）。',
+      'options.uploader.disabled': '未启用',
+      'options.uploader.unimplemented': '引擎里还没有实现',
+      'options.uploader.platforms': '支持 {platforms}',
       'options.harmonyDebug': 'HarmonyOS debug 包',
       'options.keepWork': '保留构建目录',
+      'options.harmonyDebug.hint': '生成可侧载的 debug HAP（签名用调试证书），发布包不要勾。',
+      'options.keepWork.hint': '保留中间构建目录，构建失败时用来查日志；会让磁盘占用变大。',
+      advanced: '高级选项',
+      scope: '打包范围',
+      'scope.platforms': '平台',
+      'scope.projects': '项目',
+      'scope.all': '全选',
+      'scope.hint': '不勾项目 = 该平台所有项目；平台与项目会组合成多次引擎调用。',
+      'scope.nonePicked': '请至少勾选一个平台。',
       job: '任务',
       'job.none': '暂无任务。',
       'job.running': '运行中',
@@ -114,9 +127,22 @@ window.__ModuleLoader__.load({
       build: 'Build',
       options: 'Build options',
       'options.version': 'Version',
-      'options.upload': 'Upload to pgyer',
+      'options.upload': 'Upload',
+      'options.uploaders.none': 'No upload target is available: set ENABLED=true for one in config/upload.env (override locally in config/upload.local.env).',
+      'options.uploader.disabled': 'disabled',
+      'options.uploader.unimplemented': 'not implemented in the engine yet',
+      'options.uploader.platforms': 'for {platforms}',
       'options.harmonyDebug': 'HarmonyOS debug HAP',
       'options.keepWork': 'Keep work dir',
+      'options.harmonyDebug.hint': 'Builds a debug-signed HAP you can sideload; do not tick it for a release.',
+      'options.keepWork.hint': 'Keeps the intermediate build directory for inspecting a failed build; uses more disk.',
+      advanced: 'Advanced',
+      scope: 'Build scope',
+      'scope.platforms': 'Platforms',
+      'scope.projects': 'Projects',
+      'scope.all': 'All',
+      'scope.hint': 'No project ticked = every project of that platform; platforms × projects become several engine runs.',
+      'scope.nonePicked': 'Tick at least one platform.',
       job: 'Job',
       'job.none': 'No job yet.',
       'job.running': 'running',
@@ -182,6 +208,8 @@ window.__ModuleLoader__.load({
       error: { border: '1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5))', color: 'var(--dsw-alias-state-error, #ff6b6b)', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', whiteSpace: 'pre-wrap' },
       warn: { border: '1px solid var(--dsw-alias-state-warning, rgba(210,153,34,.5))', color: 'var(--dsw-alias-state-warning, #d29922)', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', whiteSpace: 'pre-wrap' },
       problemTitle: { fontWeight: 600, marginBottom: '2px' },
+      advanced: { fontSize: '12px' },
+      scope: { border: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.24))', borderRadius: '8px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.06))' },
     };
 
     /** Same-origin call into the host half; throws the host's error message. */
@@ -228,7 +256,9 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState('');
       const [platform, setPlatform] = useState('all');
       const [version, setVersion] = useState('');
-      const [upload, setUpload] = useState(false);
+      const [uploads, setUploads] = useState({});
+      const [batchPlatforms, setBatchPlatforms] = useState(['all']);
+      const [batchProjects, setBatchProjects] = useState({});
       const [harmonyDebug, setHarmonyDebug] = useState(false);
       const [keepWork, setKeepWork] = useState(false);
       const [rowPlatform, setRowPlatform] = useState({});
@@ -286,15 +316,39 @@ window.__ModuleLoader__.load({
 
       const runDoctor = () => guard('doctor', async () => setDoctor(await call('doctor', { method: 'POST', body: { platform } })));
 
+      // Upload targets are whatever the engine declares in config/upload.env; the
+      // ticked ones go to the engine as one comma separated `--upload <a,b>`.
+      const uploaders = (state && state.uploaders) || [];
+      const uploadArg = () => uploaders.filter((item) => uploads[item.id]).map((item) => item.id).join(',');
+      const uploaderNote = (item) => {
+        if (!item.enabled) return t('options.uploader.disabled');
+        if (!item.available) return t('options.uploader.unimplemented');
+        return item.platforms && item.platforms.length
+          ? tf('options.uploader.platforms', { platforms: item.platforms.map(onePlatform).join('/') })
+          : '';
+      };
+      // Batch scope: platforms × projects become one engine run each, and no
+      // project at all means every project that platform has enabled (`--all`).
+      const effectivePlatforms = batchPlatforms.includes('all') ? ['all'] : batchPlatforms;
+      const toggleBatchPlatform = (key) => {
+        if (key === 'all') return setBatchPlatforms(batchPlatforms.includes('all') ? [] : ['all']);
+        const next = batchPlatforms.filter((item) => item !== 'all');
+        setBatchPlatforms(next.includes(key) ? next.filter((item) => item !== key) : next.concat(key));
+      };
+      const pickedProjects = () => projects.filter((project) => batchProjects[project.id] !== false).map((project) => project.id);
+      const setAllProjects = (on) => setBatchProjects(Object.fromEntries(projects.map((project) => [project.id, on])));
+      const runBatch = (kind) => startJob(kind, { platforms: effectivePlatforms, projects: pickedProjects() });
+
       const startJob = (kind, spec) => guard('job', async () => {
+        const uploaderIds = uploadArg();
         const started = await call('job', {
           method: 'POST',
           body: {
             kind,
-            platform: spec.platform,
-            project: spec.project || '',
-            upload: upload ? 'pgyer' : '',
-            noUpload: !upload,
+            platforms: spec.platforms || [spec.platform],
+            projects: spec.projects || (spec.project ? [spec.project] : []),
+            upload: uploaderIds,
+            noUpload: !uploaderIds,
             version,
             harmonyDebug,
             keepWork,
@@ -332,14 +386,16 @@ window.__ModuleLoader__.load({
 
       const row = (label, value) => h('div', { style: styles.row }, h('span', { style: styles.rowLabel }, label), h('span', { style: styles.rowValue }, value));
 
-      const checkbox = (label, checked, onChange) => h(
+      const checkbox = (label, checked, onChange, options = {}) => h(
         'label',
-        { className: 'ap-check' },
-        h('input', { type: 'checkbox', checked, onChange: (event) => onChange(event.target.checked) }),
+        { className: 'ap-check', style: options.disabled ? { opacity: 0.5 } : undefined, title: options.title || undefined },
+        h('input', { type: 'checkbox', checked, disabled: Boolean(options.disabled), onChange: (event) => onChange(event.target.checked) }),
         label,
       );
 
-      const platformLabel = (key) => (key === 'all' ? t('platform.all') : key === 'harmony' ? 'HarmonyOS' : key === 'ios' ? 'iOS' : 'Android');
+      const onePlatform = (key) => (key === 'all' ? t('platform.all') : key === 'harmony' ? 'HarmonyOS' : key === 'ios' ? 'iOS' : key === 'android' ? 'Android' : key);
+
+      const platformLabel = (key) => String(key || '').split(',').filter(Boolean).map(onePlatform).join(' + ');
 
       const jobStatus = (value) => {
         if (!value) return '';
@@ -468,9 +524,19 @@ window.__ModuleLoader__.load({
           'div',
           { style: styles.actions },
           h('span', { style: styles.muted }, t('options')),
-          checkbox(t('options.upload'), upload, setUpload),
-          checkbox(t('options.harmonyDebug'), harmonyDebug, setHarmonyDebug),
-          checkbox(t('options.keepWork'), keepWork, setKeepWork),
+          uploaders.length === 0
+            ? h('span', { style: styles.muted }, t('options.uploaders.none'))
+            : h(
+                'span',
+                { style: styles.actions },
+                h('span', { style: styles.muted }, t('options.upload')),
+                uploaders.map((item) => checkbox(
+                  `${item.name}${uploaderNote(item) ? ` · ${uploaderNote(item)}` : ''}`,
+                  Boolean(uploads[item.id]),
+                  (on) => setUploads({ ...uploads, [item.id]: on }),
+                  { disabled: !item.available, title: uploaderNote(item) || undefined },
+                )),
+              ),
           h('input', {
             className: 'ap-input',
             style: { width: '120px' },
@@ -478,6 +544,55 @@ window.__ModuleLoader__.load({
             value: version,
             onChange: (event) => setVersion(event.target.value),
           }),
+          h(
+            'details',
+            { style: styles.advanced },
+            h('summary', null, t('advanced')),
+            h(
+              'div',
+              { style: { ...styles.actions, marginTop: '6px' } },
+              checkbox(t('options.harmonyDebug'), harmonyDebug, setHarmonyDebug, { title: t('options.harmonyDebug.hint') }),
+              checkbox(t('options.keepWork'), keepWork, setKeepWork, { title: t('options.keepWork.hint') }),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { style: styles.scope },
+          h(
+            'div',
+            { style: styles.actions },
+            h('span', { style: styles.groupTitle }, t('scope')),
+            h('span', { style: styles.muted }, t('scope.hint')),
+          ),
+          h(
+            'div',
+            { style: styles.actions },
+            h('span', { style: styles.muted }, t('scope.platforms')),
+            ['all', 'ios', 'android', 'harmony'].map((key) => checkbox(
+              onePlatform(key),
+              batchPlatforms.includes(key),
+              () => toggleBatchPlatform(key),
+            )),
+          ),
+          projects.length === 0 ? null : h(
+            'div',
+            { style: styles.actions },
+            h('span', { style: styles.muted }, t('scope.projects')),
+            button(t('scope.all'), () => setAllProjects(true), { disabled: Boolean(busy) }),
+            projects.map((project) => checkbox(
+              project.appName || project.id,
+              batchProjects[project.id] !== false,
+              (on) => setBatchProjects({ ...batchProjects, [project.id]: on }),
+            )),
+          ),
+          h(
+            'div',
+            { style: styles.actions },
+            button(t('check'), () => runBatch('check'), { disabled: Boolean(busy) || jobRunning || effectivePlatforms.length === 0 }),
+            button(t('build'), () => runBatch('build'), { primary: true, disabled: Boolean(busy) || jobRunning || effectivePlatforms.length === 0 }),
+            effectivePlatforms.length === 0 ? h('span', { style: styles.muted }, t('scope.nonePicked')) : null,
+          ),
         ),
         state && state.projectsError ? h('div', { style: styles.error }, state.projectsError) : null,
         projects.length === 0

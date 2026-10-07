@@ -14,7 +14,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apply, inject, name } from '../index.js';
-import { createPanel, engineArgsFor, mountWebPanel, summarizeOutput } from '../web.js';
+import { createPanel, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, summarizeOutput } from '../web.js';
 
 /**
  * Mirror cordis service access: reading `ctx.<service>` without declaring it in
@@ -390,9 +390,102 @@ test('面板任务：check 传 check 子命令、日志可轮询、运行中可�
   const killed = [];
   const canceller = createPanel({ config: { home }, spawn: fakeSpawn(killed, { hang: true }) });
   const running = canceller.startJob({ kind: 'build', platform: 'ios' });
-  assert.deepEqual(killed[0].args, ['ios'], 'build 不加 check');
+  assert.deepEqual(killed[0].args, ['ios', '--all'], 'build 不加 check；不给项目要补 --all，否则引擎 die');
   await canceller.killJob(running.id);
   assert.deepEqual(killed[1], { killed: 'SIGTERM' });
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('范围参数：单/多平台、全项目/指定项目、上传多平台', () => {
+  assert.deepEqual(engineArgsFor({ platform: 'ios', project: 'demo' }), ['ios', 'demo']);
+  assert.deepEqual(engineArgsFor({ platform: 'all' }), ['all'], 'all 本身就是全部项目，不加 --all');
+  assert.deepEqual(engineArgsFor({ platform: 'harmony', project: 'demo', upload: 'pgyer,huawei', version: '1.2.0', keepWork: true }), [
+    'harmony',
+    'demo',
+    '--upload',
+    'pgyer,huawei',
+    '--version',
+    '1.2.0',
+    '--keep-work',
+  ]);
+  assert.deepEqual(scopePlatforms({ platforms: ['ios', 'android'] }), ['ios', 'android']);
+  assert.deepEqual(scopePlatforms({ platforms: ['android', 'ios', 'android'] }), ['android', 'ios'], '去重保持顺序');
+  assert.deepEqual(scopePlatforms({ platforms: ['ios', 'all'] }), ['all'], 'all 吞掉其它平台');
+  assert.deepEqual(scopePlatforms({ platform: 'ios' }), ['ios'], '兼容单个 platform');
+  assert.throws(() => scopePlatforms({ platforms: [] }), /至少选择一个平台/);
+  assert.throws(() => scopePlatforms({ platforms: ['windows'] }), /platform 必须是/);
+
+  assert.deepEqual(
+    engineCommandsFor({ platforms: ['ios', 'android'], projects: ['a', 'b'], upload: 'pgyer' }, { check: true }),
+    [
+      ['check', 'ios', 'a'],
+      ['check', 'ios', 'b'],
+      ['check', 'android', 'a'],
+      ['check', 'android', 'b'],
+    ],
+    '平台 × 项目 一行一条引擎命令',
+  );
+  assert.deepEqual(engineCommandsFor({ platforms: ['ios', 'android'], noUpload: true }, {}), [
+    ['ios', '--all', '--no-upload'],
+    ['android', '--all', '--no-upload'],
+  ]);
+  assert.deepEqual(engineCommandsFor({ platforms: ['all'], projects: ['a'] }, {}), [['all', 'a']]);
+});
+
+test('面板任务：多平台 × 全项目拆成多条引擎命令，串行执行并合并日志', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn(record) });
+  const started = panel.startJob({ kind: 'build', platforms: ['ios', 'android'], projects: [], noUpload: true });
+  assert.equal(started.running, true);
+  assert.equal(started.platform, 'ios,android');
+  assert.equal(started.project, '');
+  for (let index = 0; index < 8; index += 1) await settle();
+
+  const job = panel.jobLog(started.id);
+  assert.equal(job.running, false);
+  assert.equal(job.code, 0);
+  assert.equal(job.ok, true, '两条都成功才算成功');
+  assert.deepEqual(record.map((entry) => entry.args), [
+    ['ios', '--all', '--no-upload'],
+    ['android', '--all', '--no-upload'],
+  ]);
+  assert.match(job.output, /▶ 1\/2 {2}ios --all --no-upload/);
+  assert.match(job.output, /▶ 2\/2 {2}android --all --no-upload/);
+  assert.match(job.output, /done/, '第二条的输出也在同一个任务里');
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板任务：批处理里某一条失败时保留首个失败退出码，其余照跑', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const spawn = (fakeHome, args, options) =>
+    fakeSpawn(record, { code: args[0] === 'ios' ? 1 : 0 })(fakeHome, args, options);
+  const panel = createPanel({ config: { home }, spawn });
+  const started = panel.startJob({ kind: 'build', platforms: ['ios', 'android'], projects: ['demo'] });
+  for (let index = 0; index < 8; index += 1) await settle();
+
+  const job = panel.jobLog(started.id);
+  assert.deepEqual(record.map((entry) => entry.args), [['ios', 'demo'], ['android', 'demo']], '失败不中断后续');
+  assert.equal(job.code, 1);
+  assert.equal(job.ok, false);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板 state 带出上传平台清单与其可用性', () => {
+  const home = fixtureHome();
+  mkdirSync(join(home, 'config'), { recursive: true });
+  writeFileSync(
+    join(home, 'config', 'upload.env'),
+    ['UPLOAD_PLATFORM_IDS="pgyer store"', 'UPLOAD_PLATFORM_pgyer_NAME="蒲公英"', 'UPLOAD_PLATFORM_store_ENABLED=false'].join('\n'),
+  );
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
+  const state = panel.state();
+  assert.deepEqual(state.uploaders, [
+    { id: 'pgyer', name: '蒲公英', enabled: true, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'script' },
+    { id: 'store', name: 'store', enabled: false, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'disabled' },
+  ]);
+  assert.equal(state.uploadersError, '');
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -504,12 +597,32 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   // The notice must not depend on the host half sending `summary`: the panel
   // falls back to reading the raw log, so a page refresh alone is enough.
   assert.match(source, /value\.summary \|\| summarizeLog\(value\.output\)/);
+  // 打包范围与上传勾选都必须走宿主的 platforms/projects/upload 字段。
+  assert.match(source, /platforms: spec\.platforms \|\| \[spec\.platform\]/);
+  assert.match(source, /projects: spec\.projects \|\| \(spec\.project \? \[spec\.project\] : \[\]\)/);
+  assert.match(source, /uploaders\.filter\(\(item\) => uploads\[item\.id\]\)/);
 
   // Render with the real dictionaries: a typo in the panel path throws here.
   const zh = dictionaries[0].dict.zh;
   const tree = slots[1].component({ t: (key) => (key in zh ? zh[key] : key) });
   assert.equal(tree.type, 'div');
   assert.equal(tree.props.className, 'ap-root');
+  const flatten = (node, out = []) => {
+    if (node === null || node === undefined || typeof node === 'boolean') return out;
+    if (Array.isArray(node)) {
+      for (const child of node) flatten(child, out);
+      return out;
+    }
+    if (typeof node !== 'object') {
+      out.push(String(node));
+      return out;
+    }
+    return flatten(node.children, out);
+  };
+  const texts = flatten(tree);
+  assert.ok(texts.includes(zh.scope), '打包范围区块渲染出来了');
+  assert.ok(texts.includes(zh['scope.hint']));
+  assert.ok(texts.includes(zh['options.uploaders.none']), 'state 还没到时应提示没有可用上传平台，而不是崩掉');
   const icon = slots[0].component();
   assert.equal(icon.type, 'svg');
 });

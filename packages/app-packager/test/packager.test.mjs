@@ -8,6 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { listProjects, parseEnvText } from '../src/projects.mjs';
+import { listUploaders, selectableUploaders } from '../src/uploaders.mjs';
 import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
 import { runDoctor } from '../src/doctor.mjs';
 
@@ -152,5 +153,61 @@ test('runDoctor 报告检查项且失败数与状态一致', () => {
   assert.equal(report.checks.filter((check) => check.status === 'fail').length, report.failures);
   assert.equal(report.ok, report.failures === 0);
   assert.ok(report.checks.some((check) => check.id === 'node'));
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () => {
+  const home = tempDir('app-packager-upload-');
+  mkdirSync(join(home, 'config'), { recursive: true });
+  mkdirSync(join(home, 'lib', 'uploaders'), { recursive: true });
+  writeFileSync(join(home, 'lib', 'uploaders', 'pgyer.sh'), 'upload_pgyer_artifact() {\n  :\n}\n');
+  writeFileSync(join(home, 'lib', 'uploaders', 'declared_missing.sh'), 'something_else() {\n  :\n}\n');
+  writeFileSync(
+    join(home, 'config', 'upload.env'),
+    [
+      'UPLOAD_PLATFORM_IDS="pgyer huawei declared_missing"',
+      'UPLOAD_PLATFORM_pgyer_NAME="蒲公英"',
+      'UPLOAD_PLATFORM_pgyer_ENABLED=true',
+      'UPLOAD_PLATFORM_pgyer_PLATFORMS="ios android harmony"',
+      'UPLOAD_PLATFORM_pgyer_SCRIPT=lib/uploaders/pgyer.sh',
+      'UPLOAD_PLATFORM_pgyer_FUNCTION=upload_pgyer_artifact',
+      'UPLOAD_PLATFORM_huawei_NAME="华为应用市场"',
+      'UPLOAD_PLATFORM_huawei_ENABLED=false',
+      'UPLOAD_PLATFORM_declared_missing_NAME="没实现"',
+      'UPLOAD_PLATFORM_declared_missing_ENABLED=true',
+      'UPLOAD_PLATFORM_declared_missing_SCRIPT=lib/uploaders/declared_missing.sh',
+      'UPLOAD_PLATFORM_declared_missing_FUNCTION=upload_missing_artifact',
+    ].join('\n'),
+  );
+
+  const uploaders = listUploaders(home);
+  // 带连字符的 id 不能拼成 shell 变量名，直接忽略（引擎侧同样取不到）。
+  assert.deepEqual(uploaders.map((item) => item.id), ['pgyer', 'huawei', 'declared_missing']);
+  assert.deepEqual(uploaders[0], {
+    id: 'pgyer',
+    name: '蒲公英',
+    enabled: true,
+    available: true,
+    platforms: ['ios', 'android', 'harmony'],
+    script: join(home, 'lib', 'uploaders', 'pgyer.sh'),
+    reason: '',
+  });
+  assert.equal(uploaders[1].available, false);
+  assert.equal(uploaders[1].reason, 'disabled', 'ENABLED=false 直接不可用');
+  assert.equal(uploaders[2].available, false);
+  assert.equal(uploaders[2].reason, 'function', '脚本在但没有声明 FUNCTION 指定的函数');
+
+  // 缺省（ENABLED 未写）与 upload.local.env 覆盖。
+  writeFileSync(join(home, 'config', 'upload.local.env'), 'UPLOAD_PLATFORM_huawei_ENABLED=true\nUPLOAD_PLATFORM_huawei_PLATFORMS="android harmony"\nUPLOAD_PLATFORM_huawei_SCRIPT=lib/uploaders/pgyer.sh\nUPLOAD_PLATFORM_huawei_FUNCTION=upload_pgyer_artifact\n');
+  const overridden = listUploaders(home).find((item) => item.id === 'huawei');
+  assert.equal(overridden.enabled, true);
+  assert.equal(overridden.available, true, '本地覆盖可以放行');
+  assert.deepEqual(overridden.platforms, ['android', 'harmony']);
+  assert.deepEqual(selectableUploaders(home, ['ios']).map((item) => item.id), ['pgyer'], '按产物平台过滤');
+
+  writeFileSync(join(home, 'config', 'upload.local.env'), 'UPLOAD_PLATFORM_IDS="nope"\n');
+  rmSync(join(home, 'lib', 'uploaders', 'pgyer.sh'), { force: true });
+  // UPLOAD_PLATFORM_IDS 只认 upload.env（本地文件不覆盖它），脚本删掉后 pgyer 不可用。
+  assert.equal(listUploaders(home)[0].reason, 'script');
   rmSync(home, { recursive: true, force: true });
 });

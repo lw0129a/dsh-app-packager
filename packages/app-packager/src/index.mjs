@@ -13,5 +13,6 @@ export {
 } from './home.mjs';
 export { engineCommand, findExecutable, resolveShell, runEngine, shellAvailable } from './engine.mjs';
 export { PLATFORMS, findProject, listProjects, parseEnvFile, parseEnvText, projectsDir } from './projects.mjs';
+export { ARTIFACT_PLATFORMS, listUploaders, selectableUploaders } from './uploaders.mjs';
 export { PLATFORM_LABELS, runDoctor } from './doctor.mjs';
 export { main } from './cli.mjs';

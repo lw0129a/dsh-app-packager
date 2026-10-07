@@ -18,6 +18,7 @@ import {
   PLATFORM_LABELS,
   isMaterialized,
   listProjects,
+  listUploaders,
   materialize,
   packageVersion,
   resolveHome,
@@ -40,6 +41,10 @@ const execFileAsync = promisify(execFileCallback);
  * `check` is an engine subcommand, not a flag, so it must come first; passing a
  * bare platform would ask the engine for a full build instead of a check.
  *
+ * No project means every project the platform has enabled, which the engine
+ * spells `--all` for a single platform (`all` already means every project of
+ * every platform); without it `selected_projects` dies on "请指定项目 ID".
+ *
  * @param {{platform?: string, project?: string, upload?: string, noUpload?: boolean,
  *   version?: string, harmonyDebug?: boolean, keepWork?: boolean}} args
  * @param {{check?: boolean}} [options]
@@ -52,6 +57,7 @@ export function engineArgsFor(args = {}, { check = false } = {}) {
   }
   const out = check ? ['check', platform] : [platform];
   if (args.project) out.push(String(args.project));
+  else if (platform !== 'all') out.push('--all');
   if (check) return out;
   if (args.upload) out.push('--upload', String(args.upload));
   if (args.noUpload) out.push('--no-upload');
@@ -59,6 +65,58 @@ export function engineArgsFor(args = {}, { check = false } = {}) {
   if (args.harmonyDebug) out.push('--harmony-debug');
   if (args.keepWork) out.push('--keep-work');
   return out;
+}
+
+/**
+ * The platforms a request covers, from `platforms` (a multi-select subset) or
+ * the older single `platform`. `all` subsumes the rest, and the engine takes
+ * one platform per run, so the panel gets one command per platform.
+ *
+ * @param {{platform?: string, platforms?: string|string[]}} args
+ * @returns {string[]}
+ */
+export function scopePlatforms(args = {}) {
+  const raw = args.platforms === undefined ? [args.platform] : args.platforms;
+  const picked = [];
+  for (const value of Array.isArray(raw) ? raw : [raw]) {
+    const platform = String(value || '').toLowerCase();
+    if (!PLATFORM_VALUES.includes(platform)) {
+      throw new Error(`platform 必须是 ${PLATFORM_VALUES.join(' | ')}，收到 ${JSON.stringify(value)}`);
+    }
+    if (platform === 'all') return ['all'];
+    if (!picked.includes(platform)) picked.push(platform);
+  }
+  if (picked.length === 0) throw new Error('至少选择一个平台');
+  return picked;
+}
+
+/**
+ * The project ids a request covers, from `projects` (a multi-select subset) or
+ * the older single `project`. Empty means every project the platform enables,
+ * which `engineArgsFor` spells `--all`.
+ *
+ * @param {{project?: string, projects?: string|string[]}} args
+ * @returns {string[]}
+ */
+export function scopeProjects(args = {}) {
+  const raw = args.projects === undefined ? (args.project ? [args.project] : []) : args.projects;
+  const picked = [];
+  for (const value of Array.isArray(raw) ? raw : [raw]) {
+    const id = String(value === undefined || value === null ? '' : value).trim();
+    if (id && !picked.includes(id)) picked.push(id);
+  }
+  return picked;
+}
+
+/** One engine run per platform × project: the engine CLI takes exactly one of each. */
+export function engineCommandsFor(args = {}, { check = false } = {}) {
+  const platforms = scopePlatforms(args);
+  const projects = scopeProjects(args);
+  const combos = [];
+  for (const platform of platforms) {
+    for (const project of projects.length > 0 ? projects : ['']) combos.push({ platform, project });
+  }
+  return combos.map(({ platform, project }) => engineArgsFor({ ...args, platform, project }, { check }));
 }
 
 const FOLDER_PROMPT = '选择 uni-app x 项目目录';
@@ -188,14 +246,25 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
       return job ? jobView(job) : undefined;
     },
     /**
-     * @param {object} spec `{kind, platform, project, home, args, timeoutMs, searchRoots, shell}`
+     * @param {object} spec `{kind, platform, project, home, args, commands, timeoutMs,
+     *   searchRoots, shell}`
+     *
+     * `commands` runs several engine calls back to back inside one job: the engine
+     * CLI takes a single platform per run, so "android + ios" is two runs. Only a
+     * cancel stops the batch early — a failing platform still lets the remaining
+     * ones report their own state — and the first non-zero exit code is kept.
      */
     start(spec) {
+      const commands = (Array.isArray(spec.commands) && spec.commands.length > 0 ? spec.commands : [spec.args]).map(
+        (argv) => (Array.isArray(argv) ? argv.map(String) : [String(argv)]),
+      );
       const job = {
         id: `job-${++seq}`,
         kind: spec.kind,
         platform: String(spec.platform || 'all'),
         project: String(spec.project || ''),
+        commands,
+        cancelled: false,
         startedAt: Date.now(),
         finishedAt: 0,
         running: true,
@@ -211,7 +280,7 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
       jobs.unshift(job);
       evict();
 
-      spawn(spec.home, spec.args, {
+      const options = {
         stdio: 'pipe',
         stdin: 'ignore',
         timeoutMs: spec.timeoutMs,
@@ -221,14 +290,23 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
           job.child = child;
         },
         onLine: (line) => append(job, `${line}\n`),
-      })
-        .then((result) => {
+      };
+
+      (async () => {
+        for (const [index, argv] of commands.entries()) {
+          if (job.cancelled) break;
+          if (commands.length > 1) append(job, `▶ ${index + 1}/${commands.length}  ${argv.join(' ')}\n`);
+          const result = await spawn(spec.home, argv, options);
           if (result.stdout) append(job, result.stdout.endsWith('\n') ? result.stdout : `${result.stdout}\n`);
           if (result.stderr) append(job, result.stderr.endsWith('\n') ? result.stderr : `${result.stderr}\n`);
-          job.code = result.code;
-          job.signal = result.signal;
-          job.ok = result.code === 0 && !/\[FAIL\]/.test(job.output);
-        })
+          if (result.code !== 0 && job.code === null) {
+            job.code = result.code;
+            job.signal = result.signal;
+          }
+        }
+        if (job.code === null) job.code = 0;
+        job.ok = job.code === 0 && !/\[FAIL\]/.test(job.output);
+      })()
         .catch((error) => {
           job.code = -1;
           job.error = String(error?.message || error);
@@ -245,6 +323,7 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
       const job = find(String(id || ''));
       if (!job) throw new Error(`未知任务：${id}`);
       if (!job.running) return jobView(job);
+      job.cancelled = true;
       const child = job.child;
       job.error = '已被取消';
       // ponytail: SIGTERM then SIGKILL after 5s; grandchildren the engine
@@ -284,6 +363,22 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
     }
   }
 
+  /** Uploaders the engine declares in config/upload.env, with their enabled state. */
+  function uploadersOf(home) {
+    try {
+      return listUploaders(home).map(({ id, name, enabled, available, platforms, reason }) => ({
+        id,
+        name,
+        enabled,
+        available,
+        platforms,
+        reason,
+      }));
+    } catch (error) {
+      return { error: String(error?.message || error) };
+    }
+  }
+
   return {
     runner,
     homeOf,
@@ -291,6 +386,7 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
     state() {
       const home = homeOf();
       const projects = projectsOf(home);
+      const uploaders = uploadersOf(home);
       return {
         home,
         engineVersion: packageVersion(),
@@ -298,6 +394,8 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
         shell: shellAvailable(),
         projects: Array.isArray(projects) ? projects : [],
         projectsError: Array.isArray(projects) ? '' : projects.error,
+        uploaders: Array.isArray(uploaders) ? uploaders : [],
+        uploadersError: Array.isArray(uploaders) ? '' : uploaders.error,
         jobs: runner.list(),
       };
     },
@@ -326,7 +424,8 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
     /** Start a `check` or `build` engine run; returns the job record. */
     startJob(spec = {}) {
       const kind = spec.kind === 'check' ? 'check' : 'build';
-      const args = engineArgsFor(spec, { check: kind === 'check' });
+      const platforms = scopePlatforms(spec);
+      const commands = engineCommandsFor(spec, { check: kind === 'check' });
       const home = homeOf();
       if (!isMaterialized(home)) materialize(home);
       const shell = shellAvailable();
@@ -335,10 +434,10 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
       }
       return runner.start({
         kind,
-        platform: spec.platform,
-        project: spec.project,
+        platform: platforms.join(','),
+        project: scopeProjects(spec).join(','),
         home,
-        args,
+        commands,
         timeoutMs: kind === 'check' ? config.checkTimeoutMs || 600_000 : config.buildTimeoutMs || 5_400_000,
         searchRoots: config.searchRoots,
         shell: shell.shell,

@@ -59,7 +59,7 @@ Once installed the agent can call four tools:
 | `app_packager_list` | Lists configured projects, enabled platforms and whether each source directory exists |
 | `app_packager_doctor` | Checks Node / shell bridge / Xcode / HBuilderX / JDK / Android SDK / DevEco Studio / project config |
 | `app_packager_check` | Runs the engine's pre-build check for one platform (certificates, SDK, CLI) |
-| `app_packager_build` | Builds (`ios` / `android` / `harmony` / `all`), with optional pgyer upload and version override |
+| `app_packager_build` | Builds (`ios` / `android` / `harmony` / `all`); no project means every enabled project of that platform, upload takes one or more targets (`pgyer,huawei`), version override |
 
 The first call materialises the engine into `~/AppPackager`; `app_packager_doctor` works on Windows too.
 
@@ -69,10 +69,12 @@ The same plugin ships a browser half (`./client.js`), so a profile with the web 
 
 - **Engine** — engine directory, version, materialised state and the detected bash bridge, with a one-click initialise.
 - **Environment** — the same report as `app_packager_doctor`, for one platform or all, each failure carrying its fix hint.
-- **Projects** — every `config/projects/*.env` with its source directory, enabled platforms, shared build options (version, pgyer upload, HarmonyOS debug, keep work dir) and per-project *check* / *build* buttons.
+- **Projects** — every `config/projects/*.env` with its source directory, enabled platforms and per-project *check* / *build* buttons.
+- **Build scope** — batch platforms × projects (no project ticked = all of them), run back to back in one job and marked `▶ i/n` in the log.
+- **Shared build options** — version override; upload targets read from the engine's `config/upload.env`, greyed out with a reason when unusable and sent as one comma separated `--upload`; *HarmonyOS debug HAP* and *Keep work dir* in an *Advanced* fold.
 - **Jobs** — live engine output of the running check/build, its verdict (`[FAIL]` or a non-zero exit code means failure) and a stop button.
 
-The panel talks to six same-origin routes the host half registers (`/api/app-packager/state|init|doctor|job|job/log|job/kill`); builds still run in the host process, never in the browser. A headless profile simply shows no panel — the four tools work everywhere.
+The panel talks to eight same-origin routes the host half registers (`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`); builds still run in the host process, never in the browser. A headless profile simply shows no panel — the four tools work everywhere.
 
 ## Platform support
 

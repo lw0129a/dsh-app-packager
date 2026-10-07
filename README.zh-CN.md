@@ -59,7 +59,7 @@ dsh plugin --profile desktop add dsh-app-packager
 | `app_packager_list` | 列出已配置项目、启用平台、源码目录是否有效 |
 | `app_packager_doctor` | 检查 Node / shell 桥接 / Xcode / HBuilderX / JDK / Android SDK / DevEco Studio / 项目配置 |
 | `app_packager_check` | 调用引擎对某平台做打包环境检查（证书、SDK、CLI） |
-| `app_packager_build` | 执行打包（`ios` / `android` / `harmony` / `all`），可上传 pgyer、覆盖版本号 |
+| `app_packager_build` | 执行打包（`ios` / `android` / `harmony` / `all`）；不给项目即该平台全部已启用项目，上传可给多个平台（`pgyer,huawei`），可覆盖版本号 |
 
 首次调用会自动把引擎物化到 `~/AppPackager`；`app_packager_doctor` 在 Windows 上同样可用。
 
@@ -69,10 +69,12 @@ dsh plugin --profile desktop add dsh-app-packager
 
 - **引擎** —— 引擎目录、版本、是否已物化、探测到的 bash 桥接，缺引擎时一键初始化。
 - **环境检查** —— 与 `app_packager_doctor` 同一份报告，可只查某个平台或全部，每个失败项都带修复提示。
-- **项目** —— 列出 `config/projects/*.env`：源码目录、启用的平台、公共打包选项（版本号、上传 pgyer、HarmonyOS debug、保留构建目录），以及每个项目的「环境检查 / 打包」按钮。
+- **项目** —— 列出 `config/projects/*.env`：源码目录、启用的平台，以及每个项目的「环境检查 / 打包」按钮。
+- **打包范围** —— 平台 × 项目批量打包（不勾项目 = 该平台全部项目），在一个任务里串行执行，日志用 `▶ i/n` 标出。
+- **公共打包选项** —— 版本号；上传平台来自引擎的 `config/upload.env`，不可用的灰掉并注明原因，勾选的拼成一个逗号分隔的 `--upload`；*HarmonyOS debug 包* 与 *保留构建目录* 收进「高级选项」。
 - **任务** —— 当前 check/build 的实时引擎日志、判定结果（出现 `[FAIL]` 或非零退出码即失败）与「停止」按钮。
 
-面板只调用宿主侧注册的六条同源路由（`/api/app-packager/state|init|doctor|job|job/log|job/kill`），打包始终在宿主进程里跑，不在浏览器里执行。headless profile 里不出现面板，四个工具照常可用。
+面板只调用宿主侧注册的八条同源路由（`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`），打包始终在宿主进程里跑，不在浏览器里执行。headless profile 里不出现面板，四个工具照常可用。
 
 ## 平台支持
 
