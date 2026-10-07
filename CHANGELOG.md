@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
+- **Each SDK row now names the archive to download, not just the page that lists it.** A platform row shows the `package` field the engine already returns (`sdk urls` prints the same value), so a manual download can be matched to the series without guessing: Android's name carries its build number, HarmonyOS is labelled `ohpm 包名` because `@dcloudio/uni-app-x-runtime` is a DevEco ohpm package that `npm` cannot resolve.
 - **The panel now says what to do after an in-panel plugin upgrade.** An upgrade replaces the very package the host loads, and the client module scan is incremental per package and only ever reads loader entries that still have a live fiber — so the browser half (sidebar entry included) only comes back on the next page load. A successful `upgrade` job now shows a heads-up in the job card with a **Reload page** button (`location.reload()`), and points at a DeepSeek Harness restart as the fallback. The reload stays a button on purpose: reloading automatically would throw away a build log the user may still be reading.
 
 ### Changed

@@ -769,6 +769,13 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
     assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
   }
+  // 每行 SDK 也要写出该平台该找的包名/文件名（Android 的名字带构建号），
+  // HarmonyOS 的是 DevEco 的 ohpm 包，标签不能写成「文件名/包名」。
+  assert.match(source, /item\.id === 'harmony' \? 'sdk\.package\.ohpm' : 'sdk\.package'/);
+  for (const key of ['sdk.package', 'sdk.package.ohpm']) {
+    assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
+    assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
+  }
 
   // Render with the real dictionaries: a typo in the panel path throws here.
   const zh = dictionaries[0].dict.zh;

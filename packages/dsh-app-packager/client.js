@@ -60,6 +60,8 @@ window.__ModuleLoader__.load({
       'sdk.dir': '目录',
       'sdk.page': '官方下载页',
       'sdk.direct': '官方直链',
+      'sdk.package': '文件名/包名',
+      'sdk.package.ohpm': 'ohpm 包名',
       'sdk.install': '一键配置',
       'sdk.installAll': '一键配置全部',
       'sdk.process': '处理已下载的 SDK',
@@ -183,6 +185,8 @@ window.__ModuleLoader__.load({
       'sdk.dir': 'Directory',
       'sdk.page': 'Download page',
       'sdk.direct': 'Direct download',
+      'sdk.package': 'File name',
+      'sdk.package.ohpm': 'ohpm package',
       'sdk.install': 'Set up',
       'sdk.installAll': 'Set up all',
       'sdk.process': 'Process downloaded SDKs',
@@ -700,6 +704,9 @@ window.__ModuleLoader__.load({
           button(t('sdk.install'), () => startSdkJob({ platforms: [item.id] }), { disabled: Boolean(busy) || jobRunning }),
           h('a', { href: item.page, target: '_blank', rel: 'noreferrer', style: styles.link }, t('sdk.page')),
           item.direct ? h('a', { href: item.direct, target: '_blank', rel: 'noreferrer', style: styles.link }, t('sdk.direct')) : null,
+          // 手动下载时要照着找哪个包：Android 的文件名带构建号，HarmonyOS 的「包名」是 ohpm 包
+          // （npm 上查不到，标签单独写），与 `sdk urls` 打印的是同一个 package 字段。
+          item.package ? h('div', { style: styles.hint }, `${t(item.id === 'harmony' ? 'sdk.package.ohpm' : 'sdk.package')}: ${item.package}`) : null,
           h('div', { style: styles.hint }, `${t('sdk.dir')}: ${item.dir}`),
         )),
         sdkInfo && sdkInfo.archives && sdkInfo.archives.length
