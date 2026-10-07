@@ -1103,6 +1103,17 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.ok(stateTexts.includes('2 KB'), '产物大小按本机文件算出来');
   assert.ok(stateTexts.some((text) => text.includes('蒲公英 API Key')), 'API Key 一行');
   assert.ok(stateTexts.some((text) => text.includes('蒲公英 User Key')), 'User Key 一行');
+  // 两把密钥的「配没配」都要直接看得见，而不是只有点过保存才出现一个徽标。
+  assert.ok(stateTexts.includes(zh['options.cred.unconfigured']), '没配的密钥标成未配置');
+  assert.ok(!stateTexts.includes(zh['options.cred.saved']), '都没配时不该出现「已配置」');
+  const configuredTexts = flatten(renderWithState({
+    ...realState,
+    uploaders: [{ ...realState.uploaders[0], credentialConfigured: true, userKeyConfigured: true }],
+  }));
+  assert.ok(configuredTexts.includes(zh['options.cred.saved']), '两把都配好时标成已配置');
+  // 打包选项里的「打包后上传」：打包完照样能把这次新打出来的包传上去。
+  assert.ok(stateTexts.includes(zh['options.uploadAfterBuild']), '打包选项带打包后上传勾选');
+  assert.ok(stateTexts.includes(zh['options.uploadAfterBuild.hint']), '并说清一个都不勾就只打包');
   assert.ok(!stateTexts.some((text) => text.includes('undefined')), '面板不应该渲染出 undefined');
   const emptyTexts = flatten(renderWithState({}));
   assert.ok(emptyTexts.length > 0, '字段缺失的 state 也不能崩，至少要渲染出壳');
