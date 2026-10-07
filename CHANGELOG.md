@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+
+- **One-click setup is now repeatable and cheap** (engine script version `2026.10.10.3`). `sdk install` skips any platform that is already `ready` with an `已就绪，跳过` line, so pressing *One-click setup* again no longer re-downloads the 800 MB-class iOS archive; `--file` is an explicit request and still runs.
+- **The SDK paths persisted in `config/settings.local.env` now follow the engine directory.** Paths inside the engine directory are written as `"$PIPELINE_ROOT/..."`, so when the engine directory is renamed as a whole (for example `~/AppPackager` → `<plugin>/home`) the installed SDKs are still found instead of being reported as `missing`.
+
 ### Fixed
 
 - **`sdk install` no longer reports success when nothing was installed** (engine script version `2026.10.10.2`). The result is now decided by whether the platform is actually `ready` afterwards, so declining the HarmonyOS prompt, a missing DevEco `ohpm`, or a failed download/unpack exits non-zero with a `<platform> SDK 未就绪` line instead of printing `SDK 配置完成` and exiting 0.

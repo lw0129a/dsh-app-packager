@@ -1094,6 +1094,15 @@ ensure_parallel_local_config() {
   fi
 }
 
+persist_path() { # 引擎目录内的路径写成「跟着引擎目录走」的形式：引擎目录整体挪走后仍然有效
+  local dir="${1:-}"
+  case "$dir" in
+    "") printf '' ;;
+    "$PIPELINE_ROOT"/*) printf '"$PIPELINE_ROOT/%s"' "${dir#"$PIPELINE_ROOT"/}" ;;
+    *) printf '%q' "$dir" ;;
+  esac
+}
+
 write_local_settings() {
   local file="$PIPELINE_ROOT/config/settings.local.env" upload_local=""
   if [ -f "$file" ]; then
@@ -1103,9 +1112,9 @@ write_local_settings() {
     printf '# 由初始化向导生成，本文件已加入 .gitignore。\n'
     printf 'HBUILDERX_APP=%q\n' "$HBUILDERX_APP"
     printf 'HBUILDERX_CLI=%q\n' "$HBUILDERX_CLI"
-    printf 'LOCAL_IOS_SDK_DIR=%q\n' "$LOCAL_IOS_SDK_DIR"
-    printf 'LOCAL_ANDROID_SDK_DIR=%q\n' "$LOCAL_ANDROID_SDK_DIR"
-    printf 'LOCAL_HARMONY_SDK_DIR=%q\n' "$LOCAL_HARMONY_SDK_DIR"
+    printf 'LOCAL_IOS_SDK_DIR=%s\n' "$(persist_path "$LOCAL_IOS_SDK_DIR")"
+    printf 'LOCAL_ANDROID_SDK_DIR=%s\n' "$(persist_path "$LOCAL_ANDROID_SDK_DIR")"
+    printf 'LOCAL_HARMONY_SDK_DIR=%s\n' "$(persist_path "$LOCAL_HARMONY_SDK_DIR")"
     printf 'LOCAL_IOS_RUNTIME_VERSION=%q\n' "$LOCAL_IOS_RUNTIME_VERSION"
     printf 'HARMONY_RUNTIME_VERSION=%q\n' "$HARMONY_RUNTIME_VERSION"
     printf 'ANDROID_SDK_DIR=%q\n' "${ANDROID_SDK_DIR:-$HOME/Library/Android/sdk}"
@@ -1123,9 +1132,9 @@ write_init_state() {
     printf 'INITIALIZED_AT=%q\n' "$(date '+%Y-%m-%d %H:%M:%S %z')"
     printf 'HBUILDERX_VERSION=%q\n' "$HX_VERSION"
     printf 'HX_SERIES=%q\n' "$HX_SERIES"
-    printf 'IOS_SDK_DIR=%q\n' "$LOCAL_IOS_SDK_DIR"
-    printf 'ANDROID_SDK_DIR=%q\n' "$LOCAL_ANDROID_SDK_DIR"
-    printf 'HARMONY_SDK_DIR=%q\n' "$LOCAL_HARMONY_SDK_DIR"
+    printf 'IOS_SDK_DIR=%s\n' "$(persist_path "$LOCAL_IOS_SDK_DIR")"
+    printf 'ANDROID_SDK_DIR=%s\n' "$(persist_path "$LOCAL_ANDROID_SDK_DIR")"
+    printf 'HARMONY_SDK_DIR=%s\n' "$(persist_path "$LOCAL_HARMONY_SDK_DIR")"
   } >"$INIT_STATE"
   ok "初始化状态已写入: $INIT_STATE"
 }

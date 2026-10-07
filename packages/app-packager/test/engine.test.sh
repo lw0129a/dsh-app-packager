@@ -138,6 +138,28 @@ engine_sdk 'mkdir -p "$(harmony_sdk_dir)/oh_modules/@dcloudio/uni-app-x-runtime"
   if harmony_sdk_ready; then printf 0; else printf 1; fi'
 check "harmony_sdk_ready 认 uni-app-x-runtime" "0" "$OUT"
 
+# 已就绪的平台不能重复下载/安装（否则点一次「一键配置」就重下 800M+）。
+engine_sdk 'mkdir -p "$(harmony_sdk_dir)/oh_modules/@dcloudio/uni-app-x-runtime"; \
+  find_hbuilderx() { return 0; }; read_hbuilderx_version() { HX_VERSION=5.26.2026091802; HX_SERIES=5.26; }; \
+  sdk_install harmony --yes; printf "|rc=%s" "$?"'
+check_contains "sdk_install 已就绪的平台打印「已就绪，跳过」" "已就绪，跳过" "$OUT"
+check_contains "sdk_install 已就绪时整体仍然成功" "|rc=0" "$OUT"
+engine_sdk 'mkdir -p "$(harmony_sdk_dir)/oh_modules/@dcloudio/uni-app-x-runtime"; \
+  find_hbuilderx() { return 0; }; read_hbuilderx_version() { HX_VERSION=5.26.2026091802; HX_SERIES=5.26; }; \
+  install_harmony_runtime() { printf "SHOULD_NOT_RUN"; return 1; }; \
+  sdk_install harmony --yes 2>&1 | grep -c SHOULD_NOT_RUN'
+check "sdk_install 已就绪时不再调用安装动作" "0" "$OUT"
+
+# settings.local.env 里的 SDK 路径写成跟随引擎目录的形式：引擎目录整体挪走后不失效。
+engine_sdk 'LOCAL_IOS_SDK_DIR="$PIPELINE_ROOT/sdk/iOS/5.26"; LOCAL_ANDROID_SDK_DIR=""; \
+  LOCAL_HARMONY_SDK_DIR=""; write_local_settings >/dev/null; \
+  grep "^LOCAL_IOS_SDK_DIR=" "$PIPELINE_ROOT/config/settings.local.env"'
+check "settings 里引擎目录内的 SDK 路径跟着引擎目录走" \
+  'LOCAL_IOS_SDK_DIR="$PIPELINE_ROOT/sdk/iOS/5.26"' "$OUT"
+engine_sdk 'LOCAL_IOS_SDK_DIR="$PIPELINE_ROOT/sdk/iOS/5.26"; write_local_settings >/dev/null; \
+  source "$PIPELINE_ROOT/config/settings.local.env"; printf "%s" "$LOCAL_IOS_SDK_DIR"'
+check "settings source 回来仍是同一个绝对路径" "$TMP/sdk/iOS/5.26" "$OUT"
+
 engine_sdk_json 'sdk_status_json'
 check "sdk_status_json 退出码" "0" "$STATUS"
 PARSED="$(printf '%s' "$OUT" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{const v=JSON.parse(s);

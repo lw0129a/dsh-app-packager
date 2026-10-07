@@ -224,6 +224,11 @@ sdk_install() {
 
   for current in "${kinds[@]}"; do
     printf '\n-- %s SDK --\n' "$(sdk_label "$current")"
+    # 已经就绪的平台不重下也不重装（点击「一键配置」天然幂等）；--file 是显式意图，照常执行。
+    if [ -z "$file" ] && [ "$(sdk_state_for "$current")" = ready ]; then
+      ok "$(sdk_label "$current") SDK 已就绪，跳过：$(sdk_dir_for "$current")"
+      continue
+    fi
     if [ -n "$file" ]; then
       import_sdk_archive "$current" "$file" "$series" || true
     else
