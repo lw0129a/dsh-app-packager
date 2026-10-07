@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { apply, inject, name } from '../index.js';
 import { createJobRunner, createPanel, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../web.js';
@@ -956,8 +956,10 @@ test('引擎主目录：显式配置 > 环境变量 > 插件目录内；旧目�
   const home = homeInPlugin(plugin);
   assert.equal(pluginRoot(moduleUrl, env), plugin);
   assert.equal(pluginRoot(moduleUrl, { DSH_PROFILE_DIR: join(root, 'nothing') }), plugin, '能按 import.meta.url 定位就不看环境变量');
-  assert.equal(resolvePluginHome('/tmp/given', { moduleUrl, env }), '/tmp/given');
-  assert.equal(resolvePluginHome('', { moduleUrl, env: { ...env, APP_PACKAGER_HOME: '/tmp/from-env' } }), '/tmp/from-env');
+  // 期望值也过一遍 path.resolve：Windows 上 '/tmp/given' 会解析成 'D:\tmp\given'，
+  // 写死 POSIX 字面量会让这套断言在 windows-latest 上必挂（产品行为本来就是 resolve）。
+  assert.equal(resolvePluginHome('/tmp/given', { moduleUrl, env }), resolve('/tmp/given'));
+  assert.equal(resolvePluginHome('', { moduleUrl, env: { ...env, APP_PACKAGER_HOME: '/tmp/from-env' } }), resolve('/tmp/from-env'));
   // 没有旧目录可搬时，位置就是插件目录内的 home（legacy 指一个不存在的路径）。
   assert.equal(resolvePluginHome('', { moduleUrl, env, legacy: join(root, 'no-home', LEGACY_HOME_NAME) }), home);
 
