@@ -122,6 +122,18 @@ npm view app-packager version     # 期望 0.2.0
 > - 发错了内容可以 `npm unpublish app-packager@<version>`，但 24 小时后同名同版本不可复用，优先发新版本。
 > - 包发出去后，去 npmjs.com 的包设置里配 **trusted publishing（OIDC）**，让 GitHub Actions 用仓库身份发布，之后连暂存批准都省了。
 
+### 别把欠着的那一版跳过去
+
+`publish.yml` 发的是**被触发的那次 ref 上的包版本**，所以「GitHub 上已经有 release 资产、npm 上却查不到这个版本」时，补发要从**那个 tag** 出发，并且在它上线之前**不要动 main 的版本号**：
+
+```bash
+npm view app-packager version              # registry 上是哪一版
+gh release view v0.6.1                     # 有 tag、有资产，但上一行还没到 0.6.1
+gh workflow run publish.yml --ref v0.6.1   # tag 自带的 workflow 与 main 相同，可直接补发
+```
+
+若先把 main 改成 0.6.2 再 dispatch，工作流会照着 main 的版本发 0.6.2，欠着的那版就永远停在「只有 GitHub release、没有 npm 包」的状态。等它真的上了 npm（`npm view <包> versions` 里能看到）再抬 main 的版本号、打新 tag 发后面的改动。
+
 ## 三、让插件出现在插件市场
 
 Harness 的插件市场（dshmarket）**不接收插件条目 PR**，也**不搜索你本地装了什么**：它的搜索和列表只有一份数据源 —— 精选清单 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)。插件只装进自己 profile、没进这份清单时，在市场里怎么搜都搜不到，这不是坏了。
@@ -171,6 +183,7 @@ description:
 
 ### 本项目的上架记录
 
+- 2026-10-07（续5）：**0.6.1 仍未上 npm**（卡在 security hold 上，见「续4」；最晚 2026-10-10 17:11 本地解除）。本轮把「补发不能跳过欠着的那版」写成上面第二节的规则：`publish.yml` 按触发 ref 的包版本发布，所以 0.6.1 上线前 main 的版本号必须留在 0.6.1，补发用 `gh workflow run publish.yml --ref v0.6.1`（tag 自带的 workflow 与 main 相同）。同时 ③ 可视化入口确认恢复 —— 用户约 17:00 重启宿主后，宿主侧工具正常应答（`app_packager_list`：引擎目录 `~/.dsh/profiles/desktop/node_modules/dsh-app-packager/home`、引擎版本 0.6.1、两个项目），`app_packager_check all` 退出码 0、两项目三平台全 `errors=0`，且客户端 code cache 17:05 新写入且含 `dsh-app-packager`。
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
 - 2026-10-07（晚）：PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) 仍是 **OPEN**（未合并）；条目里**没有版本号**，所以以后发新版本不需要再改它。顺手把条目描述更新成 0.6.0 的能力（HBuilderX 版本感知的 SDK 一键配置 + 官方下载入口），fork 分支 `add-dsh-app-packager` 的新提交 `94f01a2` 已进 PR。
 - 2026-10-08：发布 **0.2.0**：
@@ -183,7 +196,7 @@ registry 上仍是 0.2.0。
 - 2026-10-07：**0.6.0** 完成：引擎新增 `sdk status|urls|install|process` 子命令，面板新增按本机 HBuilderX 版本（`5.26.2026091802`、series `5.26`）推荐并一键配置三平台离线 SDK 的卡片；引擎目录默认改到插件内 `<plugin>/home`（旧的 `~/AppPackager` 首次解析时改名搬入，升级期间暂存到 `<profile>/node_modules/.app-packager-home-backup`）。GitHub release `v0.6.0` 已发布并附两个离线 tgz；**npm 0.6.0 尚未发出** —— 账号在「恢复码当 OTP」的尝试后被临时封禁（见第二节的警告），发布路径已改为 GitHub Actions + trusted publishing（`.github/workflows/publish.yml`，见第一节）：账号恢复并在 npmjs.com 配好 trusted publisher 后，跑一次工作流即可把 0.6.0 发出去。 **当天首次真跑 CI**：工作流本身全绿（npm 11.19.0），发布步骤以 `npm error code ENEEDAUTH`（`need auth … requires you to be logged in`）收尾 —— 工作流里没有任何 token、注册表也没做 OIDC 交换，说明两个包上还没配 trusted publisher。账号解除封禁并在 npmjs.com 配好后，重跑一次工作流（或再推一次 `v0.6.0` tag）即可。
 - 2026-10-07：两个包**先以带 scope 的名字**（`@lw0129a/app-packager`、`@lw0129a/dsh-app-packager`）用 staged publishing 发出、由维护者在 npmjs.com 批准上线（0.1.0，暂存区已清空）；随后按需求**去掉 scope 改名**为 `app-packager` / `dsh-app-packager`（命令里不再出现 `@lw0129a/`），以同样流程重新发布 0.1.0。`@lw0129a/*` 那两个旧名只留在 registry 上，不再更新，可选择性 `npm deprecate` 指向新名。
 - 2026-10-07：本机 `desktop` profile 已从「本地 tarball + `pnpm-workspace.yaml` override」改回从 registry 安装，并在一个全新临时 profile 里验证过 `dsh plugin --profile <name> add dsh-app-packager` 无需任何 override 即可装载（`--dump-config` 里能看到 `- id: app-packager` 那一层）。
-此后 0.6.0/0.6.1 期间是例外：registry 上还只有 0.2.0，所以 `desktop` profile 一直用 `file:…/.app-packager-local/dsh-app-packager-0.6.1.tgz` 安装，并保留 `pnpm-workspace.yaml` 里对 `app-packager` 的 `file:` override；0.6.0 发上 registry 后应改回 `dsh plugin --profile desktop add dsh-app-packager` 并删掉那行 override。另外 `dsh` CLI 不允许操作 `desktop` profile（`error: profile "desktop" is managed exclusively by the Electron application`），要复核组装结果只能复刻一份 profile（拷 `package.json`/`cordis.yml`/`cordis.patch.yml`/`pnpm-workspace.yaml`/`pnpm-lock.yaml`，`node_modules` 符号链接指回原目录），再 `DSH_HOME=<临时根> dsh --profile <复刻名> --dump-config`。
+此后 0.6.0/0.6.1 期间是例外：registry 上还只有 0.2.0，所以 `desktop` profile 一直用 `file:…/.app-packager-local/dsh-app-packager-0.6.1.tgz` 安装，并保留 `pnpm-workspace.yaml` 里对 `app-packager` 的 `file:` override；0.6.1 发上 registry 后应改回 `dsh plugin --profile desktop add dsh-app-packager` 并删掉那行 override。另外 `dsh` CLI 不允许操作 `desktop` profile（`error: profile "desktop" is managed exclusively by the Electron application`），要复核组装结果只能复刻一份 profile（拷 `package.json`/`cordis.yml`/`cordis.patch.yml`/`pnpm-workspace.yaml`/`pnpm-lock.yaml`，`node_modules` 符号链接指回原目录），再 `DSH_HOME=<临时根> dsh --profile <复刻名> --dump-config`。
 - 当天唯一的红项是仓库年龄（仓库建于 `2026-10-07T02:50:28Z`，24 小时门槛在 `2026-10-08T02:50Z`），按第 3 条的机制等它自己转绿。
 - 收录后市场是打开时实时拉的，重新打开插件市场即可搜到；npm 已发布，下载量与一键安装命令会自动补上。
 

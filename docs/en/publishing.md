@@ -122,6 +122,18 @@ npm view app-packager version      # expect the new version
 > - A bad release can be removed with `npm unpublish <pkg>@<version>`, but the same name+version is unusable for 24 hours; prefer a new version. Unpublishing a whole package requires a one-time password (`EOTP`) and must be done from a browser session (`npm unpublish <pkg> --force` opens `https://www.npmjs.com/auth/cli/...`), or via package Settings → Delete package.
 > - Once a package is out, configure **trusted publishing (OIDC)** in its npm settings so GitHub Actions publishes as the repository, which removes the staging approval step entirely.
 
+### Do not skip the version that is still owed
+
+`publish.yml` publishes **the package version on the ref it was triggered with**, so when the GitHub release exists but npm does not know that version yet, catch up **from that tag** and **leave the version on `main` alone until it is live**:
+
+```bash
+npm view app-packager version              # what the registry actually has
+gh release view v0.6.1                     # tag and assets exist, the line above has not caught up
+gh workflow run publish.yml --ref v0.6.1   # the tag carries the same workflow as main, so it can catch up
+```
+
+Bump `main` to 0.6.2 first and the dispatch publishes 0.6.2 instead, leaving the owed version stuck forever as "a GitHub release with no npm package". Wait until it really is on npm (`npm view <package> versions` lists it), then bump `main`, tag, and ship the changes queued behind it.
+
 ## 3. Getting the plugin into the market
 
 The Harness plugin market (dshmarket) **does not take entry PRs** and **does not search what you installed locally**: its search and list have exactly one data source — the curated catalogue [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin). A plugin that only lives in your profile is simply not in that catalogue, which is not a bug.
