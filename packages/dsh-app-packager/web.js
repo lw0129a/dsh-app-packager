@@ -22,6 +22,7 @@ import {
   listProjects,
   listUploaders,
   materialize,
+  materializedVersion,
   packageVersion,
   parseEnvFile,
   runDoctor,
@@ -681,13 +682,20 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       const sdk = await sdkStatusOf(home);
       const root = pluginRoot(moduleUrl, env);
       const list = Array.isArray(projects) ? projects : [];
+      // The home holds a copy of the engine: report the version actually on
+      // disk so the panel can flag a stale copy instead of claiming "ready".
+      const engineVersion = packageVersion();
+      const materialized = isMaterialized(home);
+      const homeVersion = materialized ? materializedVersion(home) || '' : '';
       return {
         home,
         // The engine home lives inside the plugin; show it so the download
         // directory is never a mystery (plus any one-time migration notice).
         plugin: { root, home, notices: homeNotices },
-        engineVersion: packageVersion(),
-        materialized: isMaterialized(home),
+        engineVersion,
+        materialized,
+        homeVersion,
+        engineDrift: materialized && homeVersion !== engineVersion,
         shell: shellAvailable(),
         projects: list,
         projectsError: Array.isArray(projects) ? '' : projects.error,
@@ -714,7 +722,9 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
 
     doctor({ platform = 'all' } = {}) {
       const home = homeOf();
-      if (!isMaterialized(home)) materialize(home);
+      // No-op while the home already carries the current engine; otherwise this
+      // refreshes the scripts a plugin upgrade left behind (user data stays).
+      materialize(home);
       const report = runDoctor({ home, platform });
       return {
         ok: report.ok,
@@ -730,7 +740,9 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
     /** Start a `check` / `build` / `sdk` / `upgrade` run; returns the job record. */
     startJob(spec = {}) {
       const home = homeOf();
-      if (!isMaterialized(home)) materialize(home);
+      // No-op while the home already carries the current engine; otherwise this
+      // refreshes the scripts a plugin upgrade left behind (user data stays).
+      materialize(home);
       const shell = shellAvailable();
       if (!shell.available) {
         throw new Error(`当前系统上无法运行 bash 引擎：${shell.error}\nWindows 请安装 Git for Windows（推荐）或启用 WSL。`);
@@ -819,7 +831,9 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
         .filter(Boolean);
       if (dirs.length === 0) throw new Error('请先选择或输入项目目录');
       const home = homeOf();
-      if (!isMaterialized(home)) materialize(home);
+      // No-op while the home already carries the current engine; otherwise this
+      // refreshes the scripts a plugin upgrade left behind (user data stays).
+      materialize(home);
       const shell = shellAvailable();
       if (!shell.available) throw new Error(`当前系统上无法运行 bash 引擎：${shell.error}`);
       const result = await spawn(home, ['register', ...dirs], {

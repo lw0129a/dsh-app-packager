@@ -17,7 +17,6 @@ import {
   PLATFORM_LABELS,
   listProjects,
   materialize,
-  isMaterialized,
   packageVersion,
   runDoctor,
   runEngine,
@@ -71,11 +70,15 @@ function homeFor(config, args) {
   return resolvePluginHome(args.home || config.home || '', { moduleUrl: import.meta.url });
 }
 
-/** Materialize the engine on first use so a fresh install needs no extra step. */
+/**
+ * Materialize the engine before a call so a fresh install needs no extra step.
+ * `materialize` itself no-ops while the home already carries the current
+ * version, so this also refreshes the engine scripts after a plugin upgrade —
+ * a home materialized by an older plugin used to keep running its old engine.
+ */
 function ensureReady(home) {
-  if (isMaterialized(home)) return { ready: true, materialized: false };
   const result = materialize(home);
-  return { ready: true, materialized: true, copied: result.copied };
+  return { ready: true, materialized: !result.upToDate, copied: result.copied };
 }
 
 function requireShell(home) {

@@ -213,6 +213,29 @@ test('app_packager_list 物化引擎并读出项目', async () => {
   rmSync(home, { recursive: true, force: true });
 });
 
+test('home 里的引擎版本落后时，下一次工具调用刷新它并保留用户数据', async () => {
+  const home = fixtureHome();
+  const { ctx } = harness();
+  apply(ctx);
+  const definition = toolOf(ctx, 'app_packager_list');
+
+  await definition.execute({ home });
+  mkdirSync(join(home, 'config'), { recursive: true });
+  const settings = join(home, 'config', 'settings.local.env');
+  writeFileSync(settings, 'LOCAL_ENGINE_MARK=keep-me\n');
+  writeFileSync(join(home, '.engine-version'), '0.0.1\n');
+
+  const refreshed = await definition.execute({ home });
+  assert.equal(refreshed.materialized, true, '版本落后时应重新物化引擎');
+  assert.notEqual(readFileSync(join(home, '.engine-version'), 'utf8').trim(), '0.0.1', '版本标记应更新');
+  assert.equal(readFileSync(settings, 'utf8'), 'LOCAL_ENGINE_MARK=keep-me\n', '用户自己的配置不能被覆盖');
+
+  const stable = await definition.execute({ home });
+  assert.equal(stable.materialized, false, '版本一致后不再重复复制');
+
+  rmSync(home, { recursive: true, force: true });
+});
+
 test('app_packager_doctor 返回结构化检查项', async () => {
   const home = fixtureHome();
   const { ctx } = harness();
@@ -322,6 +345,7 @@ test('面板路由：state / init / doctor 走通，非法平台报错且不启�
   const state = stateRes.json();
   assert.equal(state.home, home);
   assert.equal(state.materialized, false, '未物化时 state 如实报告');
+  assert.equal(state.engineDrift, false, '未物化时没有可比的目录版本');
   assert.ok(Array.isArray(state.projects));
   assert.ok(state.shell && typeof state.shell.available === 'boolean');
 
@@ -329,6 +353,13 @@ test('面板路由：state / init / doctor 走通，非法平台报错且不启�
   await routes.get('/api/app-packager/init')(fakeReq({ method: 'POST', body: {} }), initRes);
   assert.equal(initRes.statusCode, 200);
   assert.equal(initRes.json().materialized, true);
+
+  // A home left on an older engine reports the drift instead of "已就绪".
+  writeFileSync(join(home, '.engine-version'), '0.0.1\n');
+  const staleRes = fakeRes();
+  await routes.get('/api/app-packager/state')(fakeReq(), staleRes);
+  assert.equal(staleRes.json().engineDrift, true, '目录里是旧引擎时要报过期');
+  assert.equal(staleRes.json().homeVersion, '0.0.1');
 
   const doctorRes = fakeRes();
   await routes.get('/api/app-packager/doctor')(fakeReq({ method: 'POST', body: { platform: 'android' } }), doctorRes);

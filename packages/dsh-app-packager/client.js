@@ -41,6 +41,8 @@ window.__ModuleLoader__.load({
       'engine.version': '引擎版本',
       'engine.ready': '已就绪',
       'engine.missing': '未物化',
+      'engine.stale': '目录里是 {home}，需要刷新（点「初始化引擎」或任意操作即可）',
+      'engine.status': '引擎状态',
       'engine.shell': 'Shell 桥接',
       'engine.shell.none': '不可用',
       'engine.location': '引擎位置',
@@ -160,6 +162,8 @@ window.__ModuleLoader__.load({
       'engine.version': 'Engine version',
       'engine.ready': 'Ready',
       'engine.missing': 'Not materialized',
+      'engine.stale': 'the directory holds {home} — needs a refresh (init engine, or any action)',
+      'engine.status': 'Engine status',
       'engine.shell': 'Shell bridge',
       'engine.shell.none': 'unavailable',
       'engine.location': 'Engine location',
@@ -621,8 +625,12 @@ window.__ModuleLoader__.load({
             : t('engine.location.other'),
         ),
         row(
-          t('engine.ready'),
-          state.materialized ? t('engine.ready') : t('engine.missing'),
+          t('engine.status'),
+          !state.materialized
+            ? t('engine.missing')
+            : state.engineDrift
+              ? t('engine.stale', { home: state.homeVersion || '—' })
+              : t('engine.ready'),
         ),
         row(
           t('engine.shell'),

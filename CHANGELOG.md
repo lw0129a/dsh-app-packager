@@ -16,6 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Fixed
 
 - **`sdk install` no longer reports success when nothing was installed** (engine script version `2026.10.10.2`). The result is now decided by whether the platform is actually `ready` afterwards, so declining the HarmonyOS prompt, a missing DevEco `ohpm`, or a failed download/unpack exits non-zero with a `<platform> SDK 未就绪` line instead of printing `SDK 配置完成` and exiting 0.
+- **A plugin upgrade now actually refreshes the engine copy in `<plugin>/home`.** The host only materialized the engine when the home was missing entirely, so a home created by an older plugin kept running its old scripts (a 0.6.0 home ran the engine without the `sdk install` fixes above). Materialization now runs on every call and no-ops while `.engine-version` matches, so the scripts are refreshed in place and user-owned files (`config/*.local.env`, `config/projects/*.env`, `certificates/`, `sdk/`) are still never overwritten. The panel reports the version actually on disk and shows `目录里是 <version>，需要刷新` instead of a blanket *Ready* while the copy is stale.
 
 ## [0.6.0] - 2026-10-10
 

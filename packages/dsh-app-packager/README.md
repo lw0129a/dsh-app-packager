@@ -151,7 +151,10 @@ into place on first use — a rename, never a copy, so multi-GB SDKs and
 registered projects move instantly.
 
 The first tool call (or the panel's *Init engine*) releases the bundled engine
-there; later upgrades refresh the engine files but never overwrite your own
+there; later upgrades refresh the engine files (when the `.engine-version` in the
+directory differs from the package version, the next tool call or panel button
+refreshes it in place, and until then that panel row reads "the directory holds
+X — needs a refresh") but never overwrite your own
 config, certificates, SDKs or artifacts. *Upgrade plugin* in the panel goes one
 step further and reinstalls the npm package, keeping the engine directory
 stashed until the install finishes.
