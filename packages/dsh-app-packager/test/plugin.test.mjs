@@ -913,7 +913,9 @@ test('升级插件：走插件自己的 node 脚本，并用引擎目录暂存�
   assert.equal(nodes[0].cwd, plugin);
   assert.match(panel.jobLog(started.id).output, /升级完成/);
 
-  const outside = createPanel({ config: { home }, spawn: fakeSpawn([]), nodeSpawn, moduleUrl: 'file:///tmp/elsewhere/web.js', env: {} });
+  // 用平台原生的临时路径造 URL：Windows 上 fileURLToPath('file:///tmp/elsewhere/web.js')
+  // 直接抛 'File URL path must be absolute'，就连「路径里没有 node_modules」这条断言都进不去。
+  const outside = createPanel({ config: { home }, spawn: fakeSpawn([]), nodeSpawn, moduleUrl: pathToFileURL(join(root, 'elsewhere', 'web.js')).href, env: {} });
   assert.throws(() => outside.startJob({ kind: 'upgrade' }), /无法自动升级/);
   rmSync(home, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
