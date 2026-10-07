@@ -31,6 +31,15 @@ npm login
 
 一次性配置（两个包各做一次，账号恢复后）：npmjs.com → 包 → **Settings → Trusted Publisher → GitHub Actions**，填 `Organization or user = lw0129a`、`Repository = dsh-app-packager`、`Workflow filename = publish.yml`（工作流里没声明 `environment`，这一栏就留空 —— 两边必须一致）。
 
+也可以让 npm CLI 代劳（npm ≥ 11.5.1；系统自带的 npm 10.x 没有这个子命令，用 `npx --yes npm@11` 或 Node 20 里的 npm 11）：
+
+```bash
+npx --yes npm@11 trust github app-packager     --file publish.yml --repo lw0129a/dsh-app-packager --allow-publish
+npx --yes npm@11 trust github dsh-app-packager --file publish.yml --repo lw0129a/dsh-app-packager --allow-publish
+```
+
+它会先把 `package` / `file` / `repository` / `permissions: publish` 打出来给人核对，然后要一次 2FA：npm 打印（并尝试打开）`https://www.npmjs.com/auth/cli/<id>`，在浏览器里批准即可 —— **整个过程只有这一步必须人工**，bypass-2FA 的 granular token 做不了账号级改动。`npm trust list <包>` 随时可查当前配置（同样要 2FA）。
+
 要求与坑：
 
 - 需要 npm ≥ 11.5.1；工作流用 `node-version: '24'`（自带 npm 11.x），并**故意不设** `setup-node` 的 `registry-url`：那会写入 `_authToken` 占位，反而让 npm 不走 OIDC。
@@ -165,6 +174,7 @@ description:
 - 2026-10-08：发布 **0.2.0**：
 registry 上仍是 0.2.0。
 插件新增 Web GUI 面板（宿主侧 `web.js` 六条同源路由 + 浏览器侧 `client.js`），仓库文档改为中英双份并补上协作规范。
+- 2026-10-07（续2）：**npm 账号已不再处于封禁状态**：`npm whoami` → `lw0129a`、`npm profile get` 正常、`npm stage list` → `No staged packages found.`、`npm trust github …` 一路走到 `Two-factor authentication is required for this operation` 才停 —— 每个探测都只差那一次浏览器 2FA 授权（`https://www.npmjs.com/auth/cli/<id>`），没有 403、没有再提临时封禁。`npm trust github app-packager --file publish.yml --repo lw0129a/dsh-app-packager --allow-publish` 已把 package/file/repository 校验通过并报 `permissions: publish`。两个包各批一次（或走网页表单），再跑一次 `publish.yml` 就能发 0.6.1。
 - 2026-10-07（续）：**0.6.1** 准备发布：把 0.6.0 之后 main 上的引擎修复收进这一版 —— `sdk install` 改为以平台是否真的就绪判定成败（没装成不再打印「SDK 配置完成」）；已就绪的平台重复执行会打印「已就绪，跳过」，所以「一键配置」可以反复点、不再重下 800MB 级离线包；`config/settings.local.env` 与 `config/init.local.env` 里位于引擎目录内的 SDK 路径改写为 `"$PIPELINE_ROOT/..."`，引擎目录整体改名搬走后已装好的 SDK 不会变 `missing`。GitHub release `v0.6.1` 已发布（附两个离线 tgz）；**npm 0.6.1 仍等账号解封 + 两个包各配一次 trusted publisher**，随后跑 `publish.yml` 即发。当天又发现并修掉「插件升级后 `home` 里的引擎副本不跟着刷新」——宿主原来只在 `home` 完全缺失时才物化引擎，所以 0.6.0 的 `home` 会一直跑旧引擎（正是上面那几条引擎修复到不了的原因）；现在每次调用都会物化、版本一致时自动空转，面板也会显示「目录里是 X，需要刷新」。因为资产要含这个修复，`v0.6.1` 的 tag 与两个资产在 `4c0cdd9` 上重切了一次（`dsh-app-packager-0.6.1.tgz` 45318B sha256 `7175ad228c9151a212a13296d952ba6450d9b5409b37d12e15c0d680eeb8e49c`；`app-packager-0.6.1.tgz` 未变，144621B sha256 `dbe6450f4c3b64312a4ed91eaca492c42b79257cdb1c3e88b0f3682478d94ed2`）；本机 `desktop` profile 已就地升到这一版，`home` 里的引擎也刷到 0.6.1（`copied 39`），SDK、证书与项目一个没动。
 - 2026-10-07：**0.6.0** 完成：引擎新增 `sdk status|urls|install|process` 子命令，面板新增按本机 HBuilderX 版本（`5.26.2026091802`、series `5.26`）推荐并一键配置三平台离线 SDK 的卡片；引擎目录默认改到插件内 `<plugin>/home`（旧的 `~/AppPackager` 首次解析时改名搬入，升级期间暂存到 `<profile>/node_modules/.app-packager-home-backup`）。GitHub release `v0.6.0` 已发布并附两个离线 tgz；**npm 0.6.0 尚未发出** —— 账号在「恢复码当 OTP」的尝试后被临时封禁（见第二节的警告），发布路径已改为 GitHub Actions + trusted publishing（`.github/workflows/publish.yml`，见第一节）：账号恢复并在 npmjs.com 配好 trusted publisher 后，跑一次工作流即可把 0.6.0 发出去。 **当天首次真跑 CI**：工作流本身全绿（npm 11.19.0），发布步骤以 `npm error code ENEEDAUTH`（`need auth … requires you to be logged in`）收尾 —— 工作流里没有任何 token、注册表也没做 OIDC 交换，说明两个包上还没配 trusted publisher。账号解除封禁并在 npmjs.com 配好后，重跑一次工作流（或再推一次 `v0.6.0` tag）即可。
 - 2026-10-07：两个包**先以带 scope 的名字**（`@lw0129a/app-packager`、`@lw0129a/dsh-app-packager`）用 staged publishing 发出、由维护者在 npmjs.com 批准上线（0.1.0，暂存区已清空）；随后按需求**去掉 scope 改名**为 `app-packager` / `dsh-app-packager`（命令里不再出现 `@lw0129a/`），以同样流程重新发布 0.1.0。`@lw0129a/*` 那两个旧名只留在 registry 上，不再更新，可选择性 `npm deprecate` 指向新名。
