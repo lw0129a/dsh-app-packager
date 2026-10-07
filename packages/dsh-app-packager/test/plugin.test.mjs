@@ -1084,9 +1084,12 @@ test('client half：每个板块都能折叠，且互不影响', () => {
   // 注意别把箭头（`ap-fold-arrow`）也算成开关：按空格切分类名。
   const folds = () => elements(tree).filter((node) => String(node.props.className || '').split(' ').includes('ap-fold'));
   const opened = folds();
-  assert.equal(opened.length, 7, `引擎/环境检查/SDK/项目/打包范围/任务 + 每个项目一行 都要能折叠，实际 ${opened.length}`);
+  assert.equal(opened.length, 7, `引擎/环境检查/SDK/项目列表/打包选项/打包范围/任务 都要能折叠，实际 ${opened.length}`);
   assert.ok(opened.every((node) => node.props['aria-expanded'] === 'true'), '默认是展开的');
   assert.ok(opened.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
+  assert.ok(opened.some((node) => textOf(node).includes(dict['projects'])), '项目列表整体一个开关');
+  assert.ok(opened.some((node) => textOf(node).includes(dict['options'])), '打包选项自己一个开关（不再塞在项目列表里）');
+  assert.ok(opened.some((node) => textOf(node).includes(dict['scope'])), '打包范围自己一个开关');
   // 拿「引擎目录」这行当探针：顶栏也印着同一个 home 路径，用路径断言会误伤。
   const probe = dict['engine.home'];
   assert.ok(probe && textOf(tree).includes(probe), '展开时能看到引擎目录那一行');
@@ -1101,16 +1104,19 @@ test('client half：每个板块都能折叠，且互不影响', () => {
   assert.equal(collapsed.props['aria-expanded'], 'false', '开关状态跟着翻');
   assert.ok(!String(collapsed.props.className).includes('ap-fold-open'), '箭头方向靠这个类名翻转');
 
-  // 项目列表里每一行也是开关：合上只藏自己那段（源码目录/平台），删除按钮留在标题行上。
-  const projectFold = opened.find((node) => textOf(node).includes('演示项目'));
-  assert.ok(projectFold, '每个已登记的项目本身也是一个开关');
-  const headOf = (name) => elements(tree).find((node) => String(node.props.className || '').split(' ').includes('ap-card-head') && textOf(node).includes(name));
-  assert.ok(textOf(headOf('演示项目')).includes(dict['projects.remove']), '删除按钮留在头行、不跟着内容收起');
+  // 项目列表是**整体**折叠：里面的每个项目不再各自带箭头。
+  const projectFold = opened.find((node) => textOf(node).includes(dict['projects']));
+  const projectRow = () => elements(tree).find((node) => String(node.props.className || '').split(' ').includes('ap-project'));
+  assert.ok(projectRow(), '项目行还是照常渲染');
+  assert.ok(!String(projectRow().props.className).includes('ap-fold'), '项目行本身不是开关');
+  assert.equal(elements(projectRow()).filter((node) => String(node.props.className || '').split(' ').includes('ap-fold')).length, 0, '项目行里没有自己的折叠箭头');
+  assert.ok(textOf(projectRow()).includes(dict['projects.remove']), '删除按钮在项目行上');
   assert.ok(textOf(tree).includes('/tmp/demo-src'), '展开时能读到这个项目的源码目录');
   projectFold.props.onClick();
-  assert.ok(!textOf(tree).includes('/tmp/demo-src'), '合上后这个项目的内容不再渲染');
-  assert.ok(textOf(headOf('演示项目')).includes(dict['projects.remove']), '合上后删除按钮依然在头行上');
-  assert.ok(textOf(tree).includes('环境检查'), '项目折叠不影响别的板块');
+  assert.ok(!textOf(tree).includes('/tmp/demo-src'), '合上项目列表后整个列表不再渲染');
+  assert.ok(textOf(tree).includes(dict['options']), '合上项目列表不影响打包选项');
+  assert.ok(textOf(tree).includes(dict['options.uploaders.none']), '打包选项的内容照常渲染');
+  assert.ok(textOf(tree).includes(dict['scope.hint']), '打包范围照常渲染');
 });
 
 test('升级前比版本：registry 不比本机新就不动手', () => {

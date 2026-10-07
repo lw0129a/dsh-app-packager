@@ -69,7 +69,7 @@ dsh plugin --profile desktop add dsh-app-packager
 
 - **引擎** —— 引擎目录、版本、是否已物化、探测到的 bash 桥接，缺引擎时一键初始化。
 - **环境检查** —— 与 `app_packager_doctor` 同一份报告，可只查某个平台或全部，每个失败项都带修复提示。
-- **项目** —— 登记/删除项目：填「项目总文件夹」即可（例如 `/Users/lw/work/anjuyi`，也可以填多个，逗号或换行分隔），引擎会自动往下扫一层，把里面的 uni-app x 项目一次性全部登记；每个已登记的项目自己一个折叠箭头，展开显示源码目录与启用的平台，头行始终留着两步确认的「删除」——只删引擎目录里的 `config/projects/<id>.env`，不动项目源码。
+- **项目** —— 登记/删除项目：填「项目总文件夹」即可（例如 `/Users/lw/work/anjuyi`，也可以填多个，逗号或换行分隔），引擎会自动往下扫一层，把里面的 uni-app x 项目一次性全部登记；整个列表用「项目列表」一个折叠开关；每个已登记项目显示源码目录与启用的平台，并各自带两步确认的「删除」——只删引擎目录里的 `config/projects/<id>.env`，不动项目源码。
 - **打包范围** —— 打包的唯一入口：平台 × 项目批量打包（不勾项目 = 该平台全部项目），在一个任务里串行执行，日志用 `▶ i/n` 标出。**打包前会先按同一组项目与平台跑一次环境检查**，有 `[FAIL]` 就停下并把失败项列出来，让用户先处理，通过后才真正开始打包。
 - **打包选项** —— 版本号；**全量权限**开关（默认跟随 `config/settings.env` 的 `FULL_PERMISSION_PROFILE`，可以只对这一次打包改）；**iOS 包型**（测试包 Ad Hoc / 正式包 App Store / development / enterprise，按项目 Bundle ID 挑描述文件，本机没有该类型时灰掉并说明原因）；**描述文件**下拉（列出签名目录里的 `.mobileprovision`，带包型、Bundle ID 与是否过期，留空＝按包型或项目接线自动选）；**自定义配置项**（每行一个 `KEY=VALUE` 覆盖打包参数，如 `MARKETING_VERSION=1.2.3`，可从项目自带的 `scripts/ios-package/env/*.env` 载入预设，路径类键不允许覆盖）；上传平台来自引擎的 `config/upload.env`，不可用的灰掉并注明原因，勾选的拼成一个逗号分隔的 `--upload`；*HarmonyOS debug 包* 与 *保留构建目录* 收进「高级选项」。
 - **SDK** —— 读出本机 HBuilderX 与其版本系列，逐平台显示 SDK 状态（`ready` / `mismatch` / `missing`）与目录；「一键配置」按需下载并解压对应的 iOS / Android / HarmonyOS SDK，「处理已下载的 SDK」导入已经放在 `sdk/` 里的压缩包，每行还给 DCloud 官方下载页、并写出该平台该找的压缩包文件名（HarmonyOS 标的是 DevEco 的 ohpm 包名），iOS 另有系列推出的官方直链）。

@@ -80,7 +80,7 @@ window.__ModuleLoader__.load({
       'doctor.run': '开始检查',
       'doctor.ok': '结论：当前环境可以打包。',
       'doctor.bad': '结论：{failures} 项失败、{warnings} 项警告。',
-      projects: '项目',
+      projects: '项目列表',
       'projects.empty': '未发现项目配置 config/projects/*.env。用下面的「选择目录…」指定项目总文件夹，里面的 uni-app x 项目会全部登记。',
       'projects.dir': '项目总文件夹',
       'projects.dirHint': '放项目的那一层目录（里面的 uni-app x 项目会全部登记）',
@@ -208,7 +208,7 @@ window.__ModuleLoader__.load({
       'doctor.run': 'Run check',
       'doctor.ok': 'This machine can build.',
       'doctor.bad': '{failures} failed, {warnings} warnings.',
-      projects: 'Projects',
+      projects: 'Project list',
       'projects.empty': 'No project configs (config/projects/*.env) found. Use “Choose folder…” below to pick the folder that holds your projects; every uni-app x project inside it is registered.',
       'projects.dir': 'Projects folder',
       'projects.dirHint': 'The folder that holds your projects (every uni-app x project inside is registered)',
@@ -931,10 +931,43 @@ window.__ModuleLoader__.load({
           button(t('projects.pick'), pickDirectory, { disabled: Boolean(busy) }),
           button(t('projects.add'), addProject, { primary: true, disabled: Boolean(busy) || !projectDir.trim() }),
         ),
+        state && state.projectsError ? h('div', { style: styles.error }, state.projectsError) : null,
+        projects.length === 0 ? null : h('div', { style: styles.muted }, t('projects.remove.hint')),
+        projects.length === 0
+          ? h('div', { style: styles.muted }, t('projects.empty'))
+          : projects.map((project) => {
+              const enabled = project.enabledPlatforms && project.enabledPlatforms.length ? project.enabledPlatforms : ['ios', 'android', 'harmony'];
+              return h(
+                'div',
+                { key: project.id, className: 'ap-project' },
+                h(
+                  'div',
+                  { className: 'ap-card-head' },
+                  h('span', { className: 'ap-project-name' }, project.appName || project.id),
+                  project.appName ? h('span', { className: 'ap-muted' }, project.id) : null,
+                  h('span', { style: { flex: 1 } }),
+                  pendingRemove === project.id
+                    ? h(
+                        'span',
+                        { style: styles.actions },
+                        button(t('projects.remove.confirm'), () => removeProject(project.id), { disabled: Boolean(busy) }),
+                        button(t('projects.remove.cancel'), () => setPendingRemove(''), { disabled: Boolean(busy) }),
+                      )
+                    : button(t('projects.remove'), () => setPendingRemove(project.id), { disabled: Boolean(busy) }),
+                ),
+                h('div', { className: 'ap-note' }, `${project.sourceDir || t('projects.sourceMissing')}${project.sourceDir && !project.sourceDirExists ? ` — ${t('projects.sourceGone')}` : ''}`),
+                h('div', { className: 'ap-note' }, `${t('platforms')}: ${enabled.map(platformLabel).join(' / ')}`),
+                project.error ? h('div', { className: 'ap-box-error' }, project.error) : null,
+              );
+            }),
+      );
+
+      const optionsCard = h(
+        Section,
+        { t, title: t('options') },
         h(
           'div',
           { style: styles.actions },
-          h('span', { style: styles.muted }, t('options')),
           uploaders.length === 0
             ? h('span', { style: styles.muted }, t('options.uploaders.none'))
             : h(
@@ -1018,7 +1051,9 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
-        h(
+      );
+
+      const scopeCard = h(
           Section,
           {
             t,
@@ -1055,41 +1090,7 @@ window.__ModuleLoader__.load({
             button(t('build'), () => runBatch('build'), { primary: true, disabled: Boolean(busy) || jobRunning || effectivePlatforms.length === 0 }),
             effectivePlatforms.length === 0 ? h('span', { style: styles.muted }, t('scope.nonePicked')) : null,
           ),
-        ),
-        state && state.projectsError ? h('div', { style: styles.error }, state.projectsError) : null,
-        projects.length === 0 ? null : h('div', { style: styles.muted }, t('projects.remove.hint')),
-        projects.length === 0
-          ? h('div', { style: styles.muted }, t('projects.empty'))
-          : projects.map((project) => {
-              const enabled = project.enabledPlatforms && project.enabledPlatforms.length ? project.enabledPlatforms : ['ios', 'android', 'harmony'];
-              return h(
-                Section,
-                {
-                  key: project.id,
-                  t,
-                  className: 'ap-project',
-                  titleClass: 'ap-project-name',
-                  title: project.appName || project.id,
-                  actions: h(
-                    'div',
-                    { style: styles.actions },
-                    project.appName ? h('span', { className: 'ap-muted' }, project.id) : null,
-                    pendingRemove === project.id
-                      ? h(
-                          'span',
-                          { style: styles.actions },
-                          button(t('projects.remove.confirm'), () => removeProject(project.id), { disabled: Boolean(busy) }),
-                          button(t('projects.remove.cancel'), () => setPendingRemove(''), { disabled: Boolean(busy) }),
-                        )
-                      : button(t('projects.remove'), () => setPendingRemove(project.id), { disabled: Boolean(busy) }),
-                  ),
-                },
-                h('div', { className: 'ap-note' }, `${project.sourceDir || t('projects.sourceMissing')}${project.sourceDir && !project.sourceDirExists ? ` — ${t('projects.sourceGone')}` : ''}`),
-                h('div', { className: 'ap-note' }, `${t('platforms')}: ${enabled.map(platformLabel).join(' / ')}`),
-                project.error ? h('div', { className: 'ap-box-error' }, project.error) : null,
-              );
-            }),
-      );
+        );
 
       const jobCard = h(
         Section,
@@ -1135,6 +1136,8 @@ window.__ModuleLoader__.load({
         doctorCard,
         sdkCard,
         projectsCard,
+        optionsCard,
+        scopeCard,
         jobCard,
       );
     }

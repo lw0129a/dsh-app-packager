@@ -31,8 +31,8 @@ centre column:
   one platform or all of them, with hints for every failed item.
 - **Projects** — every `config/projects/*.env`, its source directory (flagging
   a missing one), the platforms it enables, and per-project *Env check* /
-  *Build* buttons; each row folds on its own arrow, with *Remove* kept on the
-  header line. The **Choose folder…** button opens the host's own folder
+  *Build* buttons; the whole list folds under the **Project list** header, and each
+  row keeps its own *Remove* button. The **Choose folder…** button opens the host's own folder
   dialog and *Add project* registers the picked directory through the engine's
   `register` subcommand, so a project anywhere on disk gets the same
   `config/projects/<id>.env` the wizard would write. The field is the folder
