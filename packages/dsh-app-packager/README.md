@@ -84,7 +84,7 @@ project id, app name, whether the source directory exists, enabled platforms.
 
 ```
 AppPackager 引擎目录：<plugin>/home
-引擎版本：0.6.1
+引擎版本：0.6.2
 项目（1）:
 - shop（商城）
   平台: iOS (IPA), Android (APK)

@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-10
+
 ### Added
 
 - **Each SDK row now names the archive to download, not just the page that lists it.** A platform row shows the `package` field the engine already returns (`sdk urls` prints the same value), so a manual download can be matched to the series without guessing: Android's name carries its build number, HarmonyOS is labelled `ohpm 包名` because `@dcloudio/uni-app-x-runtime` is a DevEco ohpm package that `npm` cannot resolve.
@@ -144,7 +146,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.6.1...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.6.2...main
+[0.6.2]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.2
 [0.6.1]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.1
 [0.6.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.0
 [0.5.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.5.0

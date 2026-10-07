@@ -134,6 +134,8 @@ gh workflow run publish.yml --ref v0.6.1   # tag 自带的 workflow 与 main 相
 
 若先把 main 改成 0.6.2 再 dispatch，工作流会照着 main 的版本发 0.6.2，欠着的那版就永远停在「只有 GitHub release、没有 npm 包」的状态。等它真的上了 npm（`npm view <包> versions` 里能看到）再抬 main 的版本号、打新 tag 发后面的改动。
 
+**例外：欠着的那一版本身有硬伤，就直接作废它。** 0.6.1 就是这种情况 —— 它的面板在数据到位后会白屏（客户端 `client.js` 里 SDK 卡片的派生 `const` 声明写在了卡片后面，时间死区）。这种版本发上 npm 只会白白烧掉一个版本号，正确做法是：把修复做进下一版（0.6.2）、撤掉旧 release 上有问题的资产，然后按新版本发，并把这段历史记进下面的上架记录。判断标准不是「有没有发布出去」，而是「装上去能不能用」。
+
 ## 三、让插件出现在插件市场
 
 Harness 的插件市场（dshmarket）**不接收插件条目 PR**，也**不搜索你本地装了什么**：它的搜索和列表只有一份数据源 —— 精选清单 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)。插件只装进自己 profile、没进这份清单时，在市场里怎么搜都搜不到，这不是坏了。
@@ -183,6 +185,7 @@ description:
 
 ### 本项目的上架记录
 
+- 2026-10-07（续6）：**0.6.1 作废，改发 0.6.2**。用户报告「应用打包界面一闪而过，然后一直空白」：根因在客户端 —— `client.js` 里 SDK 卡片的派生 `const`（`sdkInfo` / `sdkList` / `hb` / `sdkMark` / `sdkStateText`）声明在卡片**之后**，卡片却是立刻求值的，于是 `GET state` 一到就抛 `ReferenceError: Cannot access 'hb' before initialization`（`client.js` 旧 :688），React 卸载整块面板；`state` 为 null 的那次渲染里所有卡片短路成 null，所以只是「闪一下」。已把声明上移到卡片之前（提交 `aad8e0a`），并在 `plugin.test.mjs` 补一条**用真实 state 再渲染一遍**的断言 —— 此前用例只渲染 `state = null`，正好绕开所有卡片，这就是 0.6.1 带着白屏 bug 全绿发布的原因。两个包版本升到 0.6.2（插件依赖 `workspace:^0.6.2`），本机 desktop profile 已按「暂存 `home/` → `pnpm add file:<新 tgz>` → 移回 `home/`」的安装流程装上 0.6.2：`home/.engine-version` 0.6.1→0.6.2，3.5G 离线 SDK、证书、配置、两个项目全保留，`sdk urls` 现在能打出真实 HBuilderX 版本。npm 侧仍在 security hold 上，上线顺序统一改成按 **0.6.2** 发。
 - 2026-10-07（续5）：**0.6.1 仍未上 npm**（卡在 security hold 上，见「续4」；最晚 2026-10-10 17:11 本地解除）。本轮把「补发不能跳过欠着的那版」写成上面第二节的规则：`publish.yml` 按触发 ref 的包版本发布，所以 0.6.1 上线前 main 的版本号必须留在 0.6.1，补发用 `gh workflow run publish.yml --ref v0.6.1`（tag 自带的 workflow 与 main 相同）。同时 ③ 可视化入口确认恢复 —— 用户约 17:00 重启宿主后，宿主侧工具正常应答（`app_packager_list`：引擎目录 `~/.dsh/profiles/desktop/node_modules/dsh-app-packager/home`、引擎版本 0.6.1、两个项目），`app_packager_check all` 退出码 0、两项目三平台全 `errors=0`，且客户端 code cache 17:05 新写入且含 `dsh-app-packager`。
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
 - 2026-10-07（晚）：PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) 仍是 **OPEN**（未合并）；条目里**没有版本号**，所以以后发新版本不需要再改它。顺手把条目描述更新成 0.6.0 的能力（HBuilderX 版本感知的 SDK 一键配置 + 官方下载入口），fork 分支 `add-dsh-app-packager` 的新提交 `94f01a2` 已进 PR。
