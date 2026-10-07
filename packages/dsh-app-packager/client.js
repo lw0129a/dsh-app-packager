@@ -62,6 +62,8 @@ window.__ModuleLoader__.load({
       'sdk.direct': '官方直链',
       'sdk.package': '文件名/包名',
       'sdk.package.ohpm': 'ohpm 包名',
+      'section.expand': '展开',
+      'section.collapse': '折叠',
       'sdk.install': '一键配置',
       'sdk.installAll': '一键配置全部',
       'sdk.process': '处理已下载的 SDK',
@@ -187,6 +189,8 @@ window.__ModuleLoader__.load({
       'sdk.direct': 'Direct download',
       'sdk.package': 'File name',
       'sdk.package.ohpm': 'ohpm package',
+      'section.expand': 'Expand',
+      'section.collapse': 'Collapse',
       'sdk.install': 'Set up',
       'sdk.installAll': 'Set up all',
       'sdk.process': 'Process downloaded SDKs',
@@ -297,6 +301,12 @@ window.__ModuleLoader__.load({
       .ap-card { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.26)); border-radius: 10px; background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.05)); }
       .ap-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .ap-card-title { font-size: 13px; font-weight: 600; margin-right: auto; }
+      /* 折叠：标题本身是个按钮（键盘也能收放），右侧的操作按钮留在按钮之外，
+         点「刷新」之类的不会顺手把板块合上。 */
+      .ap-fold { display: flex; align-items: center; gap: 6px; margin-right: auto; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+      .ap-fold:hover { color: var(--dsw-alias-brand-primary, #4a8cff); }
+      .ap-fold-arrow { display: inline-block; font-size: 10px; line-height: 1; transition: transform .12s ease; }
+      .ap-fold:not(.ap-fold-open) .ap-fold-arrow { transform: rotate(-90deg); }
       .ap-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 2px 10px; font-size: 12.5px; }
       .ap-row-label { color: var(--dsw-alias-label-tertiary, inherit); }
       .ap-row-value { min-width: 0; overflow-wrap: anywhere; }
@@ -402,6 +412,37 @@ window.__ModuleLoader__.load({
         'select',
         { className: 'ap-input', value: props.value, onChange: (event) => props.onChange(event.target.value) },
         props.platforms.map((key) => h('option', { key, value: key }, props.label(key))),
+      );
+    }
+
+    /**
+     * 一个可折叠板块：标题是收放开关，`actions` 里的按钮不算（点刷新不会顺手合上）。
+     * 收放状态跟着组件走，面板重渲染（state 刷新、任务日志轮询）不会把用户的收放弄丢。
+     */
+    function Section(props) {
+      const t = props.t || ((key) => key);
+      const [open, setOpen] = useState(props.open !== false);
+      return h(
+        'div',
+        { className: props.className || 'ap-card' },
+        h(
+          'div',
+          { className: 'ap-card-head' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: `ap-fold${open ? ' ap-fold-open' : ''}`,
+              onClick: () => setOpen(!open),
+              'aria-expanded': open ? 'true' : 'false',
+              title: open ? t('section.collapse') : t('section.expand'),
+            },
+            h('span', { className: 'ap-fold-arrow' }, '▼'),
+            h('span', { className: props.titleClass || 'ap-card-title' }, props.title),
+          ),
+          props.actions,
+        ),
+        open ? props.children : null,
       );
     }
 
@@ -688,9 +729,8 @@ window.__ModuleLoader__.load({
       );
 
       const engineCard = !state ? null : h(
-        'div',
-        { className: 'ap-card' },
-        h('div', { className: 'ap-card-head' }, h('span', { className: 'ap-card-title' }, t('engine'))),
+        Section,
+        { t, title: t('engine') },
         row(t('engine.home'), state.home, { mono: true, title: state.home }),
         row(t('engine.version'), state.engineVersion),
         row(
@@ -720,15 +760,17 @@ window.__ModuleLoader__.load({
       );
 
       const doctorCard = h(
-        'div',
-        { className: 'ap-card' },
-        h(
-          'div',
-          { className: 'ap-card-head' },
-          h('span', { className: 'ap-card-title' }, t('doctor')),
-          h(PlateformSelect, { value: platform, platforms: PLATFORMS, onChange: setPlatform, label: platformLabel }),
-          button(t('doctor.run'), runDoctor, { disabled: Boolean(busy) }),
-        ),
+        Section,
+        {
+          t,
+          title: t('doctor'),
+          actions: h(
+            'div',
+            { style: styles.actions },
+            h(PlateformSelect, { value: platform, platforms: PLATFORMS, onChange: setPlatform, label: platformLabel }),
+            button(t('doctor.run'), runDoctor, { disabled: Boolean(busy) }),
+          ),
+        },
         doctor
           ? h(
               'div',
@@ -760,16 +802,18 @@ window.__ModuleLoader__.load({
           ? tf('sdk.mismatch', { series: item.series })
           : t('sdk.missing'));
       const sdkCard = !state ? null : h(
-        'div',
-        { className: 'ap-card' },
-        h(
-          'div',
-          { className: 'ap-card-head' },
-          h('span', { className: 'ap-card-title' }, t('sdk')),
-          button(t('sdk.installAll'), () => startSdkJob({ platforms: ['ios', 'android', 'harmony'] }), { disabled: Boolean(busy) || jobRunning }),
-          button(t('sdk.process'), () => startSdkJob({ processOnly: true }), { disabled: Boolean(busy) || jobRunning }),
-          state.canUpgrade ? button(t('upgrade.run'), upgradePlugin, { disabled: Boolean(busy) || jobRunning }) : null,
-        ),
+        Section,
+        {
+          t,
+          title: t('sdk'),
+          actions: h(
+            'div',
+            { style: styles.actions },
+            button(t('sdk.installAll'), () => startSdkJob({ platforms: ['ios', 'android', 'harmony'] }), { disabled: Boolean(busy) || jobRunning }),
+            button(t('sdk.process'), () => startSdkJob({ processOnly: true }), { disabled: Boolean(busy) || jobRunning }),
+            state.canUpgrade ? button(t('upgrade.run'), upgradePlugin, { disabled: Boolean(busy) || jobRunning }) : null,
+          ),
+        },
         state.sdkError ? h('div', { className: 'ap-box-error' }, state.sdkError) : null,
         h('div', { className: 'ap-note' }, t('sdk.hint')),
         hb && hb.found
@@ -842,14 +886,16 @@ window.__ModuleLoader__.load({
         if (found) setOverrides(presetLines(found.text, overrideKeys).join('\n'));
       };
       const projectsCard = h(
-        'div',
-        { className: 'ap-card' },
-        h(
-          'div',
-          { className: 'ap-card-head' },
-          h('span', { className: 'ap-card-title' }, `${t('projects')}（${projects.length}）`),
-          button(t('refresh'), refresh, { disabled: !state || Boolean(busy) }),
-        ),
+        Section,
+        {
+          t,
+          title: `${t('projects')}（${projects.length}）`,
+          actions: h(
+            'div',
+            { style: styles.actions },
+            button(t('refresh'), refresh, { disabled: !state || Boolean(busy) }),
+          ),
+        },
         h(
           'div',
           { style: styles.actions },
@@ -952,14 +998,14 @@ window.__ModuleLoader__.load({
           ),
         ),
         h(
-          'div',
-          { className: 'ap-scope' },
-          h(
-            'div',
-            { style: styles.actions },
-            h('span', { className: 'ap-sdk-name' }, t('scope')),
-            h('span', { style: styles.muted }, t('scope.hint')),
-          ),
+          Section,
+          {
+            t,
+            className: 'ap-scope',
+            titleClass: 'ap-sdk-name',
+            title: t('scope'),
+            actions: h('span', { style: styles.muted }, t('scope.hint')),
+          },
           h(
             'div',
             { style: styles.actions },
@@ -1021,16 +1067,18 @@ window.__ModuleLoader__.load({
       );
 
       const jobCard = h(
-        'div',
-        { className: 'ap-card' },
-        h(
-          'div',
-          { className: 'ap-card-head' },
-          h('span', { className: 'ap-card-title' }, t('job')),
-          job ? h('span', { className: 'ap-muted' }, `${t(`job.kind.${job.kind}`)} · ${platformLabel(job.platform)}${job.project ? ` · ${job.project}` : ''}`) : null,
-          job ? h('span', { className: `ap-tag ${job.running ? 'warn' : job.ok ? 'ok' : 'fail'}` }, jobStatus(job)) : null,
-          jobRunning ? button(t('job.stop'), stopJob, { disabled: Boolean(busy) }) : null,
-        ),
+        Section,
+        {
+          t,
+          title: t('job'),
+          actions: h(
+            'div',
+            { style: styles.actions },
+            job ? h('span', { className: 'ap-muted' }, `${t(`job.kind.${job.kind}`)} · ${platformLabel(job.platform)}${job.project ? ` · ${job.project}` : ''}`) : null,
+            job ? h('span', { className: `ap-tag ${job.running ? 'warn' : job.ok ? 'ok' : 'fail'}` }, jobStatus(job)) : null,
+            jobRunning ? button(t('job.stop'), stopJob, { disabled: Boolean(busy) }) : null,
+          ),
+        },
         job && job.blockedByCheck ? h('div', { style: styles.error }, t('job.blockedByCheck')) : null,
         job && job.error && job.error !== '已被取消' ? h('div', { style: styles.error }, job.error) : null,
         // 升级换掉的正是宿主里那个插件条目：成功后客户端半边要等一次页面加载才回来

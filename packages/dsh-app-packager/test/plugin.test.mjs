@@ -105,6 +105,34 @@ function fakeSpawn(record, { code = 0, hang = false, stdout = 'done\n' } = {}) {
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+/**
+ * 假 react 的 `createElement`：函数组件（Panel 里的 Section、PlateformSelect 等）
+ * 像真 react 一样被调用一次，否则「标题在 props 里」的可折叠板块在测试里渲染不出来。
+ */
+const createElement = (type, props, ...children) => (typeof type === 'function'
+  ? type({ ...(props || {}), children: children.length === 1 ? children[0] : children })
+  : { type, props: props || {}, children });
+
+/** 渲染树里的所有元素节点（不含字符串）。 */
+function elements(node, out = []) {
+  if (Array.isArray(node)) {
+    for (const child of node) elements(child, out);
+    return out;
+  }
+  if (node === null || typeof node !== 'object') return out;
+  out.push(node);
+  elements(node.children, out);
+  return out;
+}
+
+/** 节点下的全部文本，拼在一起便于断言。 */
+function textOf(node) {
+  if (Array.isArray(node)) return node.map(textOf).join(' ');
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node !== 'object') return String(node);
+  return textOf(node.children);
+}
+
 /** A fake engine home with one configured project and its source tree. */
 function fixtureHome() {
   const home = mkdtempSync(join(tmpdir(), 'app-packager-plugin-'));
@@ -700,7 +728,7 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.equal(definition.id, 'dsh-app-packager');
 
   const react = {
-    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    createElement,
     useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
     useEffect: () => {},
     useCallback: (fn) => fn,
@@ -824,7 +852,7 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   const renderWithState = (value) => {
     let call = 0;
     const stateful = {
-      createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+      createElement,
       useState: (initial) => {
         const first = typeof initial === 'function' ? initial() : initial;
         return [call++ === 0 ? value : first, () => {}];
@@ -901,7 +929,7 @@ test('client half：父链没有确定高度时，把最近的裁剪祖先改成
     const effects = [];
     const refs = [];
     const react = {
-      createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+      createElement,
       useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
       useEffect: (fn) => { effects.push(fn); },
       useCallback: (fn) => fn,
@@ -942,6 +970,83 @@ test('client half：父链没有确定高度时，把最近的裁剪祖先改成
   unmount();
   assert.equal(clipped.grandparent.style.overflowY, undefined, '卸载后还原宿主的 overflowY');
   assert.equal(clipped.grandparent.style.minHeight, undefined, '卸载后还原宿主的 minHeight');
+});
+
+// 板块折叠：假 react 这次要真的记账（useState 能改值并触发重渲染），
+// 不然「点了开关内容就没了」这条根本验不到。
+test('client half：每个板块都能折叠，且互不影响', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8');
+  let definition;
+  new Function('window', source)({ __ModuleLoader__: { load: (value) => { definition = value; } } });
+
+  const state = {
+    engineVersion: '0.6.2', home: '/tmp/home', homeVersion: '0.6.2', materialized: true, engineDrift: false,
+    canUpgrade: false, sdkError: '', projectsError: '', uploadersError: '', profilesError: '',
+    options: { fullPermission: true }, presets: {}, overrideKeys: [], jobs: [],
+    plugin: { root: '/tmp/plugin' }, shell: { available: true, shell: { kind: 'native', command: '/bin/bash' } },
+    sdk: { sdkRoot: '/tmp/home/sdk', archives: [], incompleteDownloads: 0, hbuilderx: { found: true, version: '5.26.1', series: '5.26' }, platforms: [] },
+    projects: [], profiles: [], uploaders: [],
+  };
+
+  const hookValues = [];
+  // 第 0 个 hook 就是面板的 `useState`（state 本身）：真机上由 effect 拉取，
+  // 这里直接塞进去，否则引擎/SDK 两块会走 `!state` 分支，板块数就少两个。
+  hookValues[0] = state;
+  let slotCount = 0;
+  let tree = null;
+  let dictionaries = [];
+  let dict = {};
+  const render = () => {
+    slotCount = 0;
+    const react = {
+      createElement,
+      useState: (initial) => {
+        const slot = slotCount++;
+        if (!(slot in hookValues)) hookValues[slot] = typeof initial === 'function' ? initial() : initial;
+        const set = (next) => {
+          hookValues[slot] = typeof next === 'function' ? next(hookValues[slot]) : next;
+          tree = render();
+        };
+        return [hookValues[slot], set];
+      },
+      useEffect: () => {},
+      useCallback: (fn) => fn,
+      useRef: () => ({ current: null }),
+    };
+    const made = definition.factory((id) => {
+      if (id === 'react') return react;
+      throw new Error(`意外的 require：${id}`);
+    });
+    const slots = [];
+    made.apply({
+      effect: (fn) => { fn(); },
+      locale: { register: (namespace, dict) => { dictionaries.push(dict); return () => {}; }, bind: () => (key) => key },
+      slots: { inject: (slot, register) => { register(); return () => {}; }, register: (options, component) => { slots.push({ options, component }); return () => {}; } },
+    });
+    dict = dictionaries.at(-1).zh;
+    return slots[1].component({ t: (key) => (key in dict ? dict[key] : key) });
+  };
+  tree = render();
+
+  // 注意别把箭头（`ap-fold-arrow`）也算成开关：按空格切分类名。
+  const folds = () => elements(tree).filter((node) => String(node.props.className || '').split(' ').includes('ap-fold'));
+  const opened = folds();
+  assert.ok(opened.length >= 6, `引擎/环境检查/SDK/项目/打包范围/任务都要能折叠，实际 ${opened.length}`);
+  assert.ok(opened.every((node) => node.props['aria-expanded'] === 'true'), '默认是展开的');
+  assert.ok(opened.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
+  // 拿「引擎目录」这行当探针：顶栏也印着同一个 home 路径，用路径断言会误伤。
+  const probe = dict['engine.home'];
+  assert.ok(probe && textOf(tree).includes(probe), '展开时能看到引擎目录那一行');
+
+  const engineFold = opened.find((node) => textOf(node).includes('引擎'));
+  assert.ok(engineFold, '能按标题找到引擎板块的开关');
+  engineFold.props.onClick();
+
+  assert.ok(!textOf(tree).includes(probe), '合上后引擎那块的内容不再渲染');
+  assert.ok(textOf(tree).includes('环境检查'), '别的板块不受影响');
+  const collapsed = folds().find((node) => textOf(node).includes('引擎'));
+  assert.equal(collapsed.props['aria-expanded'], 'false', '开关状态跟着翻');
+  assert.ok(!String(collapsed.props.className).includes('ap-fold-open'), '箭头方向靠这个类名翻转');
 });
 
 test('升级前比版本：registry 不比本机新就不动手', () => {
