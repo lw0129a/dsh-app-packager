@@ -1,5 +1,5 @@
 {
-  "name": "@lw0129a/dsh-app-packager",
+  "name": "dsh-app-packager",
   "version": "0.1.0",
   "description": "AppPackager for DeepSeek Harness: list uni-app x projects, check the local toolchain, and build iOS / Android / HarmonyOS packages on macOS, Windows and Linux.",
   "keywords": [
@@ -64,7 +64,7 @@
     "capability": {
       "id": "app-packager",
       "kind": "tools",
-      "invocation": "mount the @lw0129a/dsh-app-packager bundle row",
+      "invocation": "mount the dsh-app-packager bundle row",
       "expected": "exposes app_packager_list / app_packager_doctor / app_packager_check / app_packager_build, driving the bundled bash engine (or the Node half on Windows)"
     },
     "evidence": {
@@ -81,7 +81,7 @@
     "test": "node --test test/plugin.test.mjs"
   },
   "dependencies": {
-    "@lw0129a/app-packager": "workspace:^0.1.0"
+    "app-packager": "workspace:^0.1.0"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"

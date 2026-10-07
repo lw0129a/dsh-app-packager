@@ -1,4 +1,4 @@
-# @lw0129a/dsh-app-packager
+# dsh-app-packager
 
 DeepSeek Harness 的 [AppPackager](https://github.com/lw0129a/dsh-app-packager) 插件：让 Harness 里可以直接列出项目、体检环境、检查打包条件、执行打包（iOS IPA / Android APK / HarmonyOS HAP）。
 
@@ -9,10 +9,10 @@ DeepSeek Harness 的 [AppPackager](https://github.com/lw0129a/dsh-app-packager) 
 在 Harness 插件市场搜索 **AppPackager** 安装，或者：
 
 ```bash
-dsh plugin --profile desktop add @lw0129a/dsh-app-packager
+dsh plugin --profile desktop add dsh-app-packager
 ```
 
-装好后重启该 profile 生效。插件依赖 `@lw0129a/app-packager`（CLI + 打包引擎），会一并装上，无需单独安装。
+装好后重启该 profile 生效。插件依赖 `app-packager`（CLI + 打包引擎），会一并装上，无需单独安装。
 
 ## 工具
 
@@ -67,7 +67,7 @@ AppPackager 引擎目录：/Users/me/AppPackager
 ```yaml
 - insert:
     - id: app-packager
-      name: '@lw0129a/dsh-app-packager'
+      name: 'dsh-app-packager'
       config:
         home: ''                 # 引擎目录；留空用 ~/AppPackager 或 APP_PACKAGER_HOME
         searchRoots: []          # 额外项目扫描目录（在引擎目录的父目录之外）
@@ -85,7 +85,7 @@ AppPackager 引擎目录：/Users/me/AppPackager
 想走交互式初始化向导（登记同级目录下的 uni-app x 项目、选择平台、配置签名），用 CLI 跑：
 
 ```bash
-npx @lw0129a/app-packager init
+npx app-packager init
 ```
 
 ## 平台

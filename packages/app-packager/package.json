@@ -1,5 +1,5 @@
 {
-  "name": "@lw0129a/app-packager",
+  "name": "app-packager",
   "version": "0.1.0",
   "description": "AppPackager CLI: package uni-app x projects into iOS IPA, Android APK and HarmonyOS HAP from one command, on macOS today and Windows through a Git-Bash/WSL bridge.",
   "license": "MIT",

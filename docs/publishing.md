@@ -14,10 +14,10 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 先看 tarball 内容再发布
 
 1. `packages/app-packager` 的 tarball 里带上了 `engine/`（约 46 个文件、~124 KB），入口 `engine/打包工具.command` 与 `engine/lib/common.sh` 都在。
    注意 **pnpm 打的包里所有文件都是 644**（`npm pack` 才保留 755），所以别指望 tarball 里的权限位：CLI 物化引擎时会把 `.command`/`.sh` 一律补回 755（`src/home.mjs` 的 `EXECUTABLE` 规则，有单测），用户手里那份是可双击的。
-2. `packages/dsh-app-packager` 的 tarball 里 `package.json` 的 `@lw0129a/app-packager` 依赖已从 `workspace:^0.1.0` 被 pnpm 重写成 `^0.1.0`（npm 不认 workspace 协议，未重写的包装上去会装不上）。
+2. `packages/dsh-app-packager` 的 tarball 里 `package.json` 的 `app-packager` 依赖已从 `workspace:^0.1.0` 被 pnpm 重写成 `^0.1.0`（npm 不认 workspace 协议，未重写的包装上去会装不上）。
 3. 两个 `package.json` 的 `version` 已递增。
 
-npm 账号需已登录（`npm whoami`），且 `@lw0129a` 这个 scope 归你所有：
+两个包都发布在 npm 公共仓库上、**包名不带 scope**（`app-packager` 与 `dsh-app-packager`），发布前只需确认 `npm whoami` 是本人（`lw0129a`）：
 
 ```bash
 npm login
@@ -46,42 +46,32 @@ npm i -g --prefix /tmp/ap-npm11 npm@11
 
 ## 二、发布到 npm
 
-先在本地用 tarball 验证一遍再打真包：
+先用 `pnpm pack` 打出真正的发布件（**插件必须用 pnpm 打包**：它依赖 `app-packager` 时写的是 `workspace:^0.1.0`，只有 pnpm 会在打包时改写成 `^0.1.0`，`npm pack` 会原样保留 workspace 协议，装到 profile 里直接报 `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`）：
 
 ```bash
-npm pack packages/app-packager --pack-destination /tmp/ap-pack
-npm install -g --prefix /tmp/ap-prefix /tmp/ap-pack/lw0129a-app-packager-*.tgz
+pnpm -r pack --pack-destination /tmp/ap-pack2
+ls /tmp/ap-pack2                   # app-packager-0.1.0.tgz / dsh-app-packager-0.1.0.tgz（另有 private 的根包）
+
+tar -xzOf /tmp/ap-pack2/dsh-app-packager-0.1.0.tgz package/package.json | grep -A2 '"dependencies"'
+# 期望看到 "app-packager": "^0.1.0"
+```
+
+也可以先本地装一遍验证（可选）：
+
+```bash
+npm install -g --prefix /tmp/ap-prefix /tmp/ap-pack2/app-packager-0.1.0.tgz
 /tmp/ap-prefix/bin/app-packager doctor
 ```
 
-> **`@lw0129a/dsh-app-packager` 只能用 `pnpm pack` / `pnpm publish` 打包。**
-> 它依赖 `@lw0129a/app-packager` 时写的是 `workspace:^0.1.0`，只有 pnpm 会在打包/发布时改写成 `^0.1.0`；
-> `npm pack` 会原样保留 workspace 协议，装到 profile 里会直接报
-> `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` 或 `ERR_PNPM_FETCH_404`。
-> 要单独检查插件 tarball：
->
-> ```bash
-> pnpm --filter @lw0129a/dsh-app-packager pack --pack-destination /tmp/ap-pack
-> tar -xzOf /tmp/ap-pack/lw0129a-dsh-app-packager-*.tgz package/package.json | grep -A2 '"dependencies"'
-> # 期望看到 "@lw0129a/app-packager": "^0.1.0"
-> ```
->
-> CI 的 `pack` 任务已自动校验这一点。
+CI 的 `pack` 任务已自动校验「tarball 里不含 `workspace:`」与「引擎入口在位」。
 
-确认无误后上传到暂存区（两个包都要，先 CLI）：
+确认无误后把两个 tarball 送进暂存区（`stage publish` 直接吃 tarball 路径，不需要额外的改写步骤）：
 
 ```bash
 NPM=/tmp/ap-npm11/bin/npm          # 系统 npm 10.x 没有 stage 子命令
 
-# CLI 包：在包目录里直接 stage
-(cd packages/app-packager && $NPM stage publish --access public)
-
-# 插件包：npm stage publish 不会重写 workspace: 协议，先在临时副本里等价重写
-rm -rf /tmp/ap-plugin-stage && mkdir -p /tmp/ap-plugin-stage
-cp -R packages/dsh-app-packager/. /tmp/ap-plugin-stage/
-rm -rf /tmp/ap-plugin-stage/node_modules /tmp/ap-plugin-stage/test
-sed -i '' 's#"@lw0129a/app-packager": "workspace:\^0.1.0"#"@lw0129a/app-packager": "^0.1.0"#' /tmp/ap-plugin-stage/package.json
-(cd /tmp/ap-plugin-stage && $NPM stage publish --access public)
+$NPM stage publish /tmp/ap-pack2/app-packager-0.1.0.tgz
+$NPM stage publish /tmp/ap-pack2/dsh-app-packager-0.1.0.tgz
 
 $NPM stage list                    # 看 stage id 与状态：validating → staged
 ```
@@ -94,14 +84,14 @@ $NPM stage list                    # 看 stage id 与状态：validating → sta
 
 ```bash
 $NPM stage list                            # 批准成功的条目会消失
-npm view @lw0129a/app-packager version     # 期望 0.1.0
+npm view app-packager version     # 期望 0.1.0
 ```
 
 > - 刚 stage 完是 `status: validating`（注册表异步校验 tarball），此时批准/查看可能报 `staged version "…" not found`，等它变成 `staged` 再批。
 > - **不要在这上面反复试 CLI**：`npm stage approve` 对这类凭证固定 404（见上一节），`--otp` 也救不回来。
 > - `npm stage download <id>` 目前在注册表侧 404（`GET /-/stage/***/tarball`），所以**发布前在本地用 `pnpm -r pack` 检查 tarball**，别指望下载回来验。
 > - 若本地 npm 缓存目录权限有问题（`EPERM … _cacache`），加 `npm_config_cache=/tmp/ap-npmcache`。
-> - 发错了内容可以 `npm unpublish @lw0129a/app-packager@<version>`，但 24 小时后同名同版本不可复用，优先发新版本。
+> - 发错了内容可以 `npm unpublish app-packager@<version>`，但 24 小时后同名同版本不可复用，优先发新版本。
 > - 包发出去后，去 npmjs.com 的包设置里配 **trusted publishing（OIDC）**，让 GitHub Actions 用仓库身份发布，之后连暂存批准都省了。
 
 ## 三、让插件出现在插件市场
@@ -154,7 +144,8 @@ description:
 ### 本项目的上架记录
 
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
-- 2026-10-07：两个包以 staged publishing 发出并由维护者在 npmjs.com 批准，`@lw0129a/app-packager@0.1.0` 与 `@lw0129a/dsh-app-packager@0.1.0` 已上线（`latest` 均指向 0.1.0，暂存区已清空）。随后本机 `desktop` profile 已从「本地 tarball + `pnpm-workspace.yaml` override」改回从 registry 安装，并在一个全新临时 profile 里验证过 `dsh plugin --profile <name> add @lw0129a/dsh-app-packager` 无需任何 override 即可装载（`--dump-config` 里能看到 `- id: app-packager` 那一层）。
+- 2026-10-07：两个包**先以带 scope 的名字**（`@lw0129a/app-packager`、`@lw0129a/dsh-app-packager`）用 staged publishing 发出、由维护者在 npmjs.com 批准上线（0.1.0，暂存区已清空）；随后按需求**去掉 scope 改名**为 `app-packager` / `dsh-app-packager`（命令里不再出现 `@lw0129a/`），以同样流程重新发布 0.1.0。`@lw0129a/*` 那两个旧名只留在 registry 上，不再更新，可选择性 `npm deprecate` 指向新名。
+- 2026-10-07：本机 `desktop` profile 已从「本地 tarball + `pnpm-workspace.yaml` override」改回从 registry 安装，并在一个全新临时 profile 里验证过 `dsh plugin --profile <name> add dsh-app-packager` 无需任何 override 即可装载（`--dump-config` 里能看到 `- id: app-packager` 那一层）。
 - 当天唯一的红项是仓库年龄（仓库建于 `2026-10-07T02:50:28Z`，24 小时门槛在 `2026-10-08T02:50Z`），按第 3 条的机制等它自己转绿。
 - 收录后市场是打开时实时拉的，重新打开插件市场即可搜到；npm 已发布，下载量与一键安装命令会自动补上。
 
@@ -167,7 +158,7 @@ description:
 # 1) 插件市场 UI：搜索 AppPackager 点击安装
 
 # 2) 命令行：把包装进指定 profile
-dsh plugin --profile <profile> add @lw0129a/dsh-app-packager
+dsh plugin --profile <profile> add dsh-app-packager
 ```
 
 `dsh plugin` 是把参数透传给该 profile 目录的 pnpm（`dsh plugin --profile <name> <pnpm-args...>`），因此也可以 `add` 本地 tarball、`remove`、`update`。

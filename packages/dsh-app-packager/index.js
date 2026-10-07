@@ -11,7 +11,7 @@
  * contract with plain JSON Schema parameters, so the plugin carries no build
  * step and no harness-package import beyond the optional Config schema.
  *
- * @module @lw0129a/dsh-app-packager
+ * @module dsh-app-packager
  */
 import {
   PLATFORM_LABELS,
@@ -23,7 +23,7 @@ import {
   runDoctor,
   runEngine,
   shellAvailable,
-} from '@lw0129a/app-packager';
+} from 'app-packager';
 
 export const name = 'app-packager';
 
@@ -133,7 +133,7 @@ function renderList(value) {
   const lines = [`AppPackager 引擎目录：${value.home}`, `引擎版本：${value.engineVersion}`];
   if (value.projects.length === 0) {
     lines.push('未发现项目配置 config/projects/*.env。');
-    lines.push('把 uni-app x 项目放到引擎同级目录，或运行 `npx @lw0129a/app-packager init` 打开初始化向导。');
+    lines.push('把 uni-app x 项目放到引擎同级目录，或运行 `npx app-packager init` 打开初始化向导。');
     return lines.join('\n');
   }
   lines.push(`项目（${value.projects.length}）:`);

@@ -170,7 +170,7 @@ importers:
 
   packages/dsh-app-packager:
     dependencies:
-      '@lw0129a/app-packager':
+      app-packager:
         specifier: workspace:^0.1.0
         version: link:../app-packager
     devDependencies:

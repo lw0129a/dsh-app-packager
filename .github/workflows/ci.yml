@@ -58,7 +58,8 @@ jobs:
           # pnpm pack 会把 tarball 内所有文件记成 644（npm pack 才保留 755），所以这里只校验入口文件在不在；
           # 可执行位由 CLI 物化引擎时补回来（src/home.mjs 的 EXECUTABLE 规则，有单测覆盖）。
           tmp="$RUNNER_TEMP/tarball-check"; rm -rf "$tmp"; mkdir -p "$tmp"
-          tar -xzf "$RUNNER_TEMP"/tarballs/lw0129a-app-packager-*.tgz -C "$tmp"
+          # 注意用 [0-9]* 排除根包的 app-packager-monorepo-*.tgz（private，不发布）
+          tar -xzf "$RUNNER_TEMP"/tarballs/app-packager-[0-9]*.tgz -C "$tmp"
           [ -f "$tmp/package/engine/打包工具.command" ] \
             || { echo "::error::tarball 缺少引擎入口 engine/打包工具.command"; exit 1; }
           [ -f "$tmp/package/engine/lib/common.sh" ] \

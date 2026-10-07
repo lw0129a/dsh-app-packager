@@ -1,4 +1,4 @@
-# @lw0129a/app-packager
+# app-packager
 
 把 uni-app x 项目一键打成 **iOS IPA / Android APK / HarmonyOS HAP** 的命令行工具，零运行时依赖（只用 Node 内置模块）。
 
@@ -10,15 +10,15 @@
 ## 安装
 
 ```bash
-npm i -g @lw0129a/app-packager
+npm i -g app-packager
 # 或
-pnpm add -g @lw0129a/app-packager
+pnpm add -g app-packager
 ```
 
 不安装也能用：
 
 ```bash
-npx @lw0129a/app-packager doctor
+npx app-packager doctor
 ```
 
 ## 用法

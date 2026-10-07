@@ -1,15 +1,15 @@
 # AppPackager（打包工具）
 
 [![CI](https://github.com/lw0129a/dsh-app-packager/actions/workflows/ci.yml/badge.svg)](https://github.com/lw0129a/dsh-app-packager/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@lw0129a/app-packager.svg)](https://www.npmjs.com/package/@lw0129a/app-packager)
+[![npm](https://img.shields.io/npm/v/app-packager.svg)](https://www.npmjs.com/package/app-packager)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 仓库：<https://github.com/lw0129a/dsh-app-packager>（MIT 开源）
 
 把 uni-app x 项目一键打成 **iOS IPA / Android APK / HarmonyOS HAP** 的本地离线工具链：现在既能按原来的方式在 macOS 上直接运行，也能作为 npm 包安装、作为 **DeepSeek Harness 插件**在插件市场安装使用。
 
-- CLI：`@lw0129a/app-packager` —— 一个零运行时依赖的 Node 命令行，把打包引擎（bash）交付到你机器上的 `~/AppPackager`。
-- 插件：`@lw0129a/dsh-app-packager` —— 在 DeepSeek Harness 里用四个工具完成「看项目 / 查环境 / 检查 / 打包」，无需记命令。
+- CLI：`app-packager` —— 一个零运行时依赖的 Node 命令行，把打包引擎（bash）交付到你机器上的 `~/AppPackager`。
+- 插件：`dsh-app-packager` —— 在 DeepSeek Harness 里用四个工具完成「看项目 / 查环境 / 检查 / 打包」，无需记命令。
 - 开源协议：MIT。
 
 > 本仓库不内置业务项目，不上传业务源码；项目在运行时从 `config/projects/*.env` 读取，构建复制到隔离工作区，产物归档到 `packages/`。SDK、签名、产物、工作区与本地配置都不进 Git。
@@ -20,8 +20,8 @@
 
 ```bash
 # 全局安装（也可以直接用 npx）
-npm i -g @lw0129a/app-packager
-# 或 pnpm add -g @lw0129a/app-packager
+npm i -g app-packager
+# 或 pnpm add -g app-packager
 
 app-packager init          # 首次：把打包引擎复制到 ~/AppPackager，并进入初始化向导
 app-packager doctor        # 检查这台机器能打哪些平台
@@ -33,8 +33,8 @@ app-packager build ios --all
 不安装也能开箱试用：
 
 ```bash
-npx @lw0129a/app-packager doctor
-npx @lw0129a/app-packager build harmony my-project
+npx app-packager doctor
+npx app-packager build harmony my-project
 ```
 
 引擎目录默认 `~/AppPackager`，可用 `APP_PACKAGER_HOME` 环境变量或 `--dir <路径>` 指定。初始化向导会把同级目录下的 uni-app x 项目自动登记到 `config/projects/`；也可以用 `--search-roots` 追加扫描目录。
@@ -44,7 +44,7 @@ npx @lw0129a/app-packager build harmony my-project
 在 Harness 的插件市场搜索 **AppPackager** 安装；也可以直接把包装进某个 profile（`dsh plugin` 会把参数透传给该 profile 的 pnpm）：
 
 ```bash
-dsh plugin --profile desktop add @lw0129a/dsh-app-packager
+dsh plugin --profile desktop add dsh-app-packager
 ```
 
 装好后需要重启该 profile 才会挂载下面的工具。上架与发布流程见 [docs/publishing.md](docs/publishing.md)。

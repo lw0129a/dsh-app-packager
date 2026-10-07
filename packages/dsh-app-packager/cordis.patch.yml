@@ -5,7 +5,7 @@
 # cordis.patch.yml by re-inserting the row with id `app-packager`.
 - insert:
     - id: app-packager
-      name: '@lw0129a/dsh-app-packager'
+      name: 'dsh-app-packager'
       config:
         # Engine home (APP_PACKAGER_HOME). Empty means ~/AppPackager, or the
         # APP_PACKAGER_HOME environment variable when set.
