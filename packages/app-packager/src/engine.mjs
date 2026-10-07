@@ -150,10 +150,12 @@ export function engineCommand(home, args, { searchRoots, shell = resolveShell(),
  *   engine's trailing `read` sees EOF instead of hanging a child process.
  * @param {number} [options.timeoutMs]
  * @param {(line: string, stream: 'stdout'|'stderr') => void} [options.onLine]
+ * @param {(child: import('node:child_process').ChildProcess) => void} [options.onSpawn]
+ *   called with the child right after spawn, so a caller can cancel the run.
  * @param {string[]} [options.searchRoots]
  * @param {string} [options.script]
  */
-export function runEngine(home, args, { stdio = 'inherit', stdin = 'ignore', timeoutMs, onLine, searchRoots, shell, script } = {}) {
+export function runEngine(home, args, { stdio = 'inherit', stdin = 'ignore', timeoutMs, onLine, onSpawn, searchRoots, shell, script } = {}) {
   const prepared = engineCommand(home, args, { searchRoots, shell, script });
   return new Promise((resolve, reject) => {
     const child = spawn(prepared.command, prepared.args, {
@@ -161,6 +163,7 @@ export function runEngine(home, args, { stdio = 'inherit', stdin = 'ignore', tim
       env: prepared.env,
       stdio: [ stdin, stdio === 'pipe' ? 'pipe' : stdio, stdio === 'pipe' ? 'pipe' : stdio ],
     });
+    onSpawn?.(child);
 
     const stdout = [];
     const stderr = [];

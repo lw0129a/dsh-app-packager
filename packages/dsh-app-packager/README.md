@@ -1,97 +1,137 @@
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # dsh-app-packager
 
-DeepSeek Harness 的 [AppPackager](https://github.com/lw0129a/dsh-app-packager) 插件：让 Harness 里可以直接列出项目、体检环境、检查打包条件、执行打包（iOS IPA / Android APK / HarmonyOS HAP）。
+DeepSeek Harness bundle for [AppPackager](https://github.com/lw0129a/dsh-app-packager):
+list your uni-app x projects, check the local toolchain, and build iOS IPA /
+Android APK / HarmonyOS HAP without leaving a Harness session — from the agent
+(four tools) or from a panel in the web GUI.
 
-宿主侧插件（host-only），没有 Web UI；装上后会注册四个工具。
+## Install
 
-## 安装
-
-在 Harness 插件市场搜索 **AppPackager** 安装，或者：
+Search for **AppPackager** in the Harness plugin market, or:
 
 ```bash
 dsh plugin --profile desktop add dsh-app-packager
 ```
 
-装好后重启该 profile 生效。插件依赖 `app-packager`（CLI + 打包引擎），会一并装上，无需单独安装。
+Restart the profile afterwards. The plugin depends on `app-packager` (the CLI
+and the packaging engine), which is installed with it.
 
-## 工具
+## Panel in the web GUI
+
+The bundle ships a client half (`./client.js`), so the web GUI gains an
+**App packaging** entry in the sidebar's own panel list, with its page in the
+centre column:
+
+- **Engine** — engine directory, engine version, whether it is materialized,
+  and which bash bridge was found (macOS/Linux `bash`, Windows Git Bash or WSL).
+  *Init engine* materializes a missing engine in one click.
+- **Environment check (Node)** — the same report as `app_packager_doctor`, for
+  one platform or all of them, with hints for every failed item.
+- **Projects** — every `config/projects/*.env`, its source directory (flagging
+  a missing one), the platforms it enables, and per-project *Env check* /
+  *Build* buttons. Shared build options: version override, upload to pgyer,
+  HarmonyOS debug HAP, keep the intermediate work directory.
+- **Job** — the running check/build with its live engine log, its verdict
+  (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
+
+The panel only calls same-origin routes registered by this plugin
+(`/api/app-packager/state|init|doctor|job|job/log|job/kill`) — no build logic
+runs in the browser. It needs a profile that ships the web app
+(`@deepseek-ai/dsh-web-app`, as the desktop and web profiles do); in a headless
+profile the panel is simply absent and the four tools keep working.
+
+## Tools
 
 ### `app_packager_list`
 
-列出引擎目录里已配置的项目（读 `config/projects/*.env`），返回项目 ID、应用名、源码目录是否存在、启用的平台。
+Lists the projects configured in the engine directory (`config/projects/*.env`):
+project id, app name, whether the source directory exists, enabled platforms.
 
 ```
 AppPackager 引擎目录：/Users/me/AppPackager
-引擎版本：0.1.0
+引擎版本：0.2.0
 项目（1）:
 - shop（商城）
   平台: iOS (IPA), Android (APK)
   源码: /Users/me/work/shop
 ```
 
-纯 Node 实现，Windows 上也能用。第一次调用会把引擎物化到引擎目录。
+Pure Node, so it also works on Windows. The first call materializes the engine.
 
 ### `app_packager_doctor`
 
-体检这台机器能不能打包：Node 版本、bash 桥接（macOS/Linux 的 bash，Windows 的 Git Bash / WSL）、Xcode / 证书工具、HBuilderX CLI、JDK、Android SDK、DevEco Studio、HarmonyOS 签名目录、项目配置是否齐全。
-
-参数 `platform`：`ios` / `android` / `harmony` / `all`（默认 `all`）。同样是纯 Node 实现。
+Reports whether this machine can build: Node version, the bash bridge, Xcode /
+signing tools, HBuilderX CLI, JDK, Android SDK, DevEco Studio, the HarmonyOS
+signing directory and the project config. `platform`: `ios` / `android` /
+`harmony` / `all` (default `all`). Also pure Node.
 
 ### `app_packager_check`
 
-调用引擎做某平台的打包前检查（证书、SDK 目录、HBuilderX CLI 等），返回引擎输出尾部与判定结果（`[FAIL]` 或非零退出码即判定失败）。
-
-参数：`platform`（默认 `all`）、`project`（项目 ID，省略则全部）、`home`。
+Runs the engine's `check` subcommand for one platform (certificates, SDK
+directories, HBuilderX CLI) and returns the tail of its output plus a verdict.
+Parameters: `platform` (default `all`), `project` (project id, omit for all),
+`home`.
 
 ### `app_packager_build`
 
-执行打包，耗时以分钟计（iOS 尤其），默认超时 90 分钟。
+Runs a real build; minutes per platform (iOS especially), timeout 90 minutes.
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `platform` | 必填，`ios` / `android` / `harmony` / `all` |
-| `project` | 项目 ID；`platform=all` 时可省略，表示全部项目 |
-| `upload` | 打包后上传，例如 `pgyer` |
-| `noUpload` | 跳过上传 |
-| `version` | 覆盖产物版本号 |
-| `harmonyDebug` | HarmonyOS 输出 debug 侧载包 |
-| `keepWork` | 保留中间构建目录 |
-| `home` | 引擎目录（一般不用传，见下） |
+| `platform` | required, `ios` / `android` / `harmony` / `all` |
+| `project` | project id; optional with `platform=all` (means every project) |
+| `upload` | upload after building, e.g. `pgyer` |
+| `noUpload` | skip the upload stage |
+| `version` | override the artifact version |
+| `harmonyDebug` | emit a HarmonyOS debug side-load HAP |
+| `keepWork` | keep the intermediate work directory |
+| `home` | engine directory (usually omitted, see below) |
 
-拿不准就先 `app_packager_check`，确认环境齐了再 `app_packager_build`。
+When unsure, run `app_packager_check` first.
 
-## 配置
+## Configuration
 
-插件的配置项由 bundle patch 提供，可在自己的 profile `cordis.patch.yml` 里按 `id: app-packager` 重新插入覆盖：
+The bundle patch provides the config; override it in your own profile
+`cordis.patch.yml` by re-inserting `id: app-packager`:
 
 ```yaml
 - insert:
     - id: app-packager
       name: 'dsh-app-packager'
       config:
-        home: ''                 # 引擎目录；留空用 ~/AppPackager 或 APP_PACKAGER_HOME
-        searchRoots: []          # 额外项目扫描目录（在引擎目录的父目录之外）
-        checkTimeoutMs: 600000   # check 超时（毫秒）
-        buildTimeoutMs: 5400000  # build 超时（毫秒）
-        outputLimit: 12000       # 工具结果里保留的引擎输出字符数（取尾部）
+        home: ''                 # engine dir; empty = ~/AppPackager or APP_PACKAGER_HOME
+        searchRoots: []          # extra project scan roots (outside the engine's parent)
+        checkTimeoutMs: 600000   # check timeout (ms)
+        buildTimeoutMs: 5400000  # build timeout (ms)
+        outputLimit: 12000       # engine output kept in a tool result (tail)
 ```
 
-也可在 Harness 的 **设置 → 插件 → 插件配置** 里改。
+The same values are editable in Harness under **Settings → Plugins → Plugin
+config**.
 
-## 引擎目录与首次使用
+## Engine directory and first use
 
-默认引擎目录是 `~/AppPackager`（可用配置项或环境变量 `APP_PACKAGER_HOME` 覆盖）。第一次调用工具时，插件会把包内的打包引擎释放到那里；之后升级插件会更新引擎文件，但不会覆盖你本地的配置、证书、SDK 与产物。
+The default engine directory is `~/AppPackager` (override with the config key or
+`APP_PACKAGER_HOME`). The first tool call (or the panel's *Init engine*)
+releases the bundled engine there; later upgrades refresh the engine files but
+never overwrite your own config, certificates, SDKs or artifacts.
 
-想走交互式初始化向导（登记同级目录下的 uni-app x 项目、选择平台、配置签名），用 CLI 跑：
+For the interactive wizard (register uni-app x projects found next to the
+engine, pick platforms, configure signing), use the CLI:
 
 ```bash
 npx app-packager init
 ```
 
-## 平台
+## Platform support
 
-`list` / `doctor` 在任何平台都可用。`check` / `build` 需要 bash：macOS/Linux 自带，Windows 需 Git for Windows（推荐）或 WSL。iOS 打包只能在 macOS 上做 —— 非 macOS 时 `doctor` 会直接把 iOS 标为失败。
+`list` / `doctor` work anywhere. `check` / `build` need bash: built in on
+macOS/Linux, and on Windows through Git for Windows (recommended) or WSL. iOS
+packaging is macOS only — elsewhere `doctor` reports iOS as failed rather than
+pretending otherwise.
 
-## 许可
+## Licence
 
 MIT

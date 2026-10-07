@@ -24,6 +24,7 @@ import {
   runEngine,
   shellAvailable,
 } from 'app-packager';
+import { PLATFORM_VALUES, engineArgsFor, mountWebPanel } from './web.js';
 
 export const name = 'app-packager';
 
@@ -54,8 +55,6 @@ const DEFAULT_CONFIG = {
   buildTimeoutMs: 5400000,
   outputLimit: 12000,
 };
-
-const PLATFORM_VALUES = ['ios', 'android', 'harmony', 'all'];
 
 /** Trim a captured stream to its tail, so one huge build log cannot flood a turn. */
 function tail(text, limit) {
@@ -90,26 +89,11 @@ function requireShell(home) {
   return shell.shell;
 }
 
-/** Build the engine CLI argument list (`打包工具.command <平台> [项目] [选项]`). */
-function engineArgsFor(args) {
-  const platform = String(args.platform || '').toLowerCase();
-  if (!PLATFORM_VALUES.includes(platform)) {
-    throw new Error(`platform 必须是 ${PLATFORM_VALUES.join(' | ')}，收到 ${JSON.stringify(args.platform)}`);
-  }
-  const out = [platform];
-  if (args.project) out.push(String(args.project));
-  if (args.upload) out.push('--upload', String(args.upload));
-  if (args.noUpload) out.push('--no-upload');
-  if (args.version) out.push('--version', String(args.version));
-  if (args.harmonyDebug) out.push('--harmony-debug');
-  if (args.keepWork) out.push('--keep-work');
-  return out;
-}
-
-async function driveEngine(config, args, timeoutMs) {
+/** Run the engine once, after validating the arguments and the shell bridge. */
+async function driveEngine(config, args, timeoutMs, options = {}) {
   // Validate arguments before touching the disk: a bad platform must not
   // materialize an engine home as a side effect.
-  const engineArgs = engineArgsFor(args);
+  const engineArgs = engineArgsFor(args, options);
   const home = homeFor(config, args);
   ensureReady(home);
   const shell = requireShell(home);
@@ -259,7 +243,8 @@ export function apply(ctx, rawConfig = {}) {
     output: output((value) => renderEngineRun(value)),
     async execute(args) {
       const platform = String(args.platform || 'all');
-      const { home, result } = await driveEngine(config, { ...args, platform }, config.checkTimeoutMs);
+      // `check` is an engine subcommand: without the flag this would start a build.
+      const { home, result } = await driveEngine(config, { ...args, platform }, config.checkTimeoutMs, { check: true });
       return { ...engineRunValue(config, home, result), summary: `${platform} 打包环境检查` };
     },
   });
@@ -287,5 +272,22 @@ export function apply(ctx, rawConfig = {}) {
       const { home, result } = await driveEngine(config, args, config.buildTimeoutMs);
       return { ...engineRunValue(config, home, result), summary: `${platform} 打包` };
     },
+  });
+
+  mountPanelWhenReady(ctx, config);
+}
+
+/**
+ * Mount the GUI panel as soon as a web server exists.
+ *
+ * `webServer` is deliberately not an `inject` entry: cordis has no optional
+ * inject, so a hard dependency would keep the four tools unloaded in a headless
+ * profile. `ctx.inject(deps, cb)` runs the callback immediately when the service
+ * is already there and otherwise waits for it (cordis lib/index.js:1600).
+ */
+function mountPanelWhenReady(ctx, config) {
+  if (mountWebPanel(ctx, config)) return;
+  ctx.inject?.(['webServer'], (panelCtx) => {
+    mountWebPanel(panelCtx, config);
   });
 }
