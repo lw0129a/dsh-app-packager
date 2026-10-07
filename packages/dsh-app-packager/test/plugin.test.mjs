@@ -761,6 +761,14 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.match(source, /platforms: spec\.platforms \|\| \[spec\.platform\]/);
   assert.match(source, /projects: spec\.projects \|\| \(spec\.project \? \[spec\.project\] : \[\]\)/);
   assert.match(source, /uploaders\.filter\(\(item\) => uploads\[item\.id\]\)/);
+  // 面板里升级插件换掉的就是宿主里的那个条目：升级成功后客户端半边要等一次页面加载才回来，
+  // 所以必须明确提示刷新（并给按钮），否则用户会以为入口又丢了。
+  assert.match(source, /job\.kind === 'upgrade' && !job\.running && job\.ok/);
+  assert.match(source, /window\.location\.reload\(\)/);
+  for (const key of ['upgrade.after', 'upgrade.reload']) {
+    assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
+    assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
+  }
 
   // Render with the real dictionaries: a typo in the panel path throws here.
   const zh = dictionaries[0].dict.zh;

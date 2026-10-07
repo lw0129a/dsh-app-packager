@@ -60,7 +60,9 @@ centre column:
   profile. The engine directory is renamed out of the way for the duration, so
   an upgrade can never delete your downloaded SDKs, certificates or registered
   projects; the button is hidden when the plugin does not run from a profile's
-  `node_modules`.
+  `node_modules`. Once the upgrade job succeeds the card tells you to reload the
+  page (⌘R) — the browser half only comes back on the next page load — and offers
+  a *Reload page* button.
 - **Job** — the running check/build with its live engine log, its verdict
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
   Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above

@@ -24,7 +24,7 @@ dsh plugin --profile desktop add dsh-app-packager
 - **打包范围** —— 批量入口：平台多选（勾「全部」即三平台）与项目多选（一个都不勾 = 该平台下全部已启用项目），一组「环境检查 / 打包」按钮。引擎一次只接受一个平台和一个项目，所以一组选择会被拆成多次引擎调用在一个任务里串行执行，日志用 `▶ i/n` 标出每次调用；只有每次都成功才算成功，退出码取第一个失败的。
 - **公共打包选项** —— 版本号；**上传**列出引擎 `config/upload.env` 声明且真正可用的上传平台（`ENABLED=true` 且脚本与函数都在，本机默认是蒲公英），不可用的会灰掉并写出原因（未启用 / 引擎里还没有实现），勾选的平台拼成一个逗号分隔的 `--upload`；*HarmonyOS debug 包* 与 *保留构建目录* 收在「高级选项」里，各带一行说明。
 - **SDK** —— 读出本机 HBuilderX 与其版本系列，逐平台列出 SDK 目录与状态（`ready` / `mismatch` / `missing`）。「一键配置」让引擎按勾选的平台下载并解压对应 SDK，「处理已下载的 SDK」导入已经放在 `sdk/` 里的压缩包；每行还给 DCloud 官方下载页，iOS 另给只能由版本系列推出来的官方直链。
-- **升级插件** —— 把 `dsh-app-packager@latest` 装回当前 profile。升级期间引擎目录先改名让开，因此升级不会删掉你已下载的 SDK、证书与已登记项目；插件不是跑在 profile 的 `node_modules` 里时，这个按钮不显示。
+- **升级插件** —— 把 `dsh-app-packager@latest` 装回当前 profile。升级期间引擎目录先改名让开，因此升级不会删掉你已下载的 SDK、证书与已登记项目；插件不是跑在 profile 的 `node_modules` 里时，这个按钮不显示。升级成功后任务卡片会提示刷新页面（⌘R）——浏览器侧那半边要等一次页面加载才回来——并给一个「刷新页面」按钮。
 - **任务** —— 当前 check/build 的实时引擎日志、判定结果（出现 `[FAIL]` 或非零退出码即失败）与「停止」按钮。引擎输出里的 `[FAIL] …` / `[WARN] …` 行还会被单独提到日志上方的框里并给出总计，缺 Profile、缺 p12、SDK 不完整这类问题不用翻日志就能看到。
 
 面板只调用本插件注册的同源路由（`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`），打包逻辑不在浏览器里跑。它需要带 Web 应用的 profile（`@deepseek-ai/dsh-web-app`，desktop 与 web profile 都带）；headless profile 里面板不出现，四个工具照常可用。

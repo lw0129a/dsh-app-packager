@@ -70,6 +70,8 @@ window.__ModuleLoader__.load({
       'upgrade.hint': '升级会先把引擎目录（SDK、证书、项目配置）暂存到插件旁边，装完立即移回，不会丢；升级完成后重启 DeepSeek Harness 生效。',
       'upgrade.run': '升级插件',
       'upgrade.unavailable': '这段代码不在 DSH 插件目录里，无法从面板升级：请在终端执行 dsh plugin --profile <profile> add dsh-app-packager@latest。',
+      'upgrade.after': '插件已升级：先刷新页面（⌘R）让新版本加载，侧栏入口会跟着回来；刷新后仍看不到 AppPackager，再重启 DeepSeek Harness。',
+      'upgrade.reload': '刷新页面',
       doctor: '环境检查（Node）',
       'doctor.run': '开始检查',
       'doctor.ok': '结论：当前环境可以打包。',
@@ -191,6 +193,8 @@ window.__ModuleLoader__.load({
       'upgrade.hint': 'The upgrade parks the engine directory (SDKs, certificates, project configs) next to the plugin, installs, then moves it straight back, so nothing is lost. Restart DeepSeek Harness afterwards.',
       'upgrade.run': 'Upgrade plugin',
       'upgrade.unavailable': 'This code is not inside a DSH plugin directory, so the panel cannot upgrade it: run dsh plugin --profile <profile> add dsh-app-packager@latest.',
+      'upgrade.after': 'The plugin has been upgraded: reload the page (⌘R) so the new version loads — the sidebar entry comes back with it. Still no AppPackager after the reload? Restart DeepSeek Harness.',
+      'upgrade.reload': 'Reload page',
       doctor: 'Environment check (Node)',
       'doctor.run': 'Run check',
       'doctor.ok': 'This machine can build.',
@@ -944,6 +948,18 @@ window.__ModuleLoader__.load({
         ),
         job && job.blockedByCheck ? h('div', { style: styles.error }, t('job.blockedByCheck')) : null,
         job && job.error && job.error !== '已被取消' ? h('div', { style: styles.error }, job.error) : null,
+        // 升级换掉的正是宿主里那个插件条目：成功后客户端半边要等一次页面加载才回来
+        // （客户端模块扫描是「按包增量、只认 fiber 存在的条目」）。给按钮不给自动刷新——
+        // 自动刷新会把用户正看着的构建日志一起丢掉。
+        job && job.kind === 'upgrade' && !job.running && job.ok
+          ? h(
+              'div',
+              { style: styles.warn },
+              t('upgrade.after'),
+              ' ',
+              button(t('upgrade.reload'), () => window.location.reload()),
+            )
+          : null,
         jobNotice(job),
         job && job.dropped ? h('div', { style: styles.muted }, tf('job.dropped', { n: job.dropped })) : null,
         job

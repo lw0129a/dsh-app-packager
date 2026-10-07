@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- **The panel now says what to do after an in-panel plugin upgrade.** An upgrade replaces the very package the host loads, and the client module scan is incremental per package and only ever reads loader entries that still have a live fiber — so the browser half (sidebar entry included) only comes back on the next page load. A successful `upgrade` job now shows a heads-up in the job card with a **Reload page** button (`location.reload()`), and points at a DeepSeek Harness restart as the fallback. The reload stays a button on purpose: reloading automatically would throw away a build log the user may still be reading.
+
 ### Changed
 
 - **The HarmonyOS line of `sdk urls` / `sdk text` is now labelled as an ohpm package** (engine script version `2026.10.10.5`). All three platforms shared the `文件名/包名:` label, so HarmonyOS printed `@dcloudio/uni-app-x-runtime@5.26.*`, which reads like an npm package; it is a DevEco **ohpm** package (`npm view` answers 404) that `ohpm install` unpacks into `sdk/HarmonyOS/<series>/oh_modules`. That line now reads `ohpm 包名: …（DevEco Studio 的 ohpm 仓库，不在 npm 上）`, matching the wording the interactive init flow already used.
