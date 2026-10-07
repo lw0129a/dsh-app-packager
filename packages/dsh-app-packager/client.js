@@ -113,10 +113,13 @@ window.__ModuleLoader__.load({
       'options.cred.placeholder.empty': '粘贴 API Key',
       'options.cred.save': '保存',
       'options.cred.saved': '已配置',
+      'options.cred.unconfigured': '未配置',
       'options.cred.missing': '未配置 API Key，上传会被跳过',
       'options.cred.cli.installed': '官方 CLI {package}{version} 已装在插件目录里',
       'options.cred.cli.missing': '首次上传时自动把官方 CLI 装进插件目录（需要 Node 18+）',
       upload: '上传',
+      'options.uploadAfterBuild': '打包后上传',
+      'options.uploadAfterBuild.hint': '打包完成后把这次新打出来的安装包按勾选的平台上传；一个都不勾就只打包。失败不影响打包结果。',
       'upload.hint': '上传只送「上一次打包」归档的安装包，不重新打包；没有产物就先打包一次。',
       'upload.empty': '还没有打包好的安装包。先在上面的「打包选项 / 打包范围」里打包一次。',
       'upload.target': '分发平台',
@@ -261,10 +264,13 @@ window.__ModuleLoader__.load({
       'options.cred.placeholder.empty': 'Paste the API key',
       'options.cred.save': 'Save',
       'options.cred.saved': 'Configured',
+      'options.cred.unconfigured': 'Not set',
       'options.cred.missing': 'No API key configured — the upload is skipped',
       'options.cred.cli.installed': 'Official CLI {package}{version} is installed in the plugin folder',
       'options.cred.cli.missing': 'The official CLI is installed into the plugin folder on the first upload (needs Node 18+)',
       upload: 'Upload',
+      'options.uploadAfterBuild': 'Upload after build',
+      'options.uploadAfterBuild.hint': 'When the build finishes, upload the installers it just produced to the ticked platforms. Tick none to only build; an upload failure never rolls the build back.',
       'upload.hint': 'Uploading ships the installer archived by the last build — it never rebuilds. No installer yet? Build one first.',
       'upload.empty': 'No installer has been built yet. Run a build from Build options / Build scope above.',
       'upload.target': 'Distribution',
@@ -613,8 +619,10 @@ window.__ModuleLoader__.load({
       const runDoctor = () => guard('doctor', async () => setDoctor(await call('doctor', { method: 'POST', body: { platform } })));
 
       // Upload targets are whatever the engine declares in config/upload.env; the
-      // ticked ones go to the engine as one comma separated `--to <a,b>`. They
-      // belong to the upload card only — a build never uploads on its own.
+      // ticked ones go to the engine as one comma separated `--upload <a,b>` when
+      // building and `--to <a,b>` when re-sending an archived installer. 分发平台
+      // 勾选只有一份 state：打包选项里决定「打包后顺手传哪些平台」，上传卡片里
+      // 决定「单独上传时送给哪些平台」。
       const uploaders = (state && state.uploaders) || [];
       // Installers the engine already archived (`<home>/packages/<平台>/*-latest.json`).
       const artifacts = (state && state.artifacts) || [];
@@ -626,6 +634,19 @@ window.__ModuleLoader__.load({
           ? tf('options.uploader.platforms', { platforms: item.platforms.map(onePlatform).join('/') })
           : '';
       };
+      const uploaderPicker = (label) => h(
+        'div',
+        { style: styles.actions, key: `pick-${label}` },
+        h('span', { style: styles.muted }, t(label)),
+        uploaders.length === 0
+          ? h('span', { style: styles.muted }, t('upload.target.none'))
+          : uploaders.map((item) => checkbox(
+              `${item.name}${uploaderNote(item) ? ` · ${uploaderNote(item)}` : ''}`,
+              item.available && uploads[item.id] !== false,
+              (on) => setUploads({ ...uploads, [item.id]: on }),
+              { disabled: !item.available, title: uploaderNote(item) || undefined },
+            )),
+      );
       // Uploaders that need a secret (pgyer's API key) get one row each: the
       // engine reads it from config/upload.local.env, and the panel only ever
       // learns whether one is set — the value never travels back to the browser.
@@ -674,7 +695,7 @@ window.__ModuleLoader__.load({
                 },
               }),
               button(t('options.cred.save'), () => saveCredential(item, field), { disabled: Boolean(busy), small: true }),
-              configured ? h('span', { className: 'ap-tag ok' }, t('options.cred.saved')) : null,
+              h('span', { className: configured ? 'ap-tag ok' : 'ap-tag warn' }, t(configured ? 'options.cred.saved' : 'options.cred.unconfigured')),
             ),
             h('div', { className: 'ap-note' }, field === 'userKey' ? t('options.cred.userKey.hint') : credentialNote(item)),
           ),
@@ -704,18 +725,20 @@ window.__ModuleLoader__.load({
       const setAllProjects = (on) => setBatchProjects(Object.fromEntries(projects.map((project) => [project.id, on])));
       const runBatch = (kind) => startJob(kind, { platforms: effectivePlatforms, projects: pickedProjects() });
 
-      // 打包与上传是两条流程：打包绝不顺带上传（noUpload），上传只带上要送的分发平台
-      // （`upload` 走引擎的 `--to`）与它自己的产物范围。
+      // 打包与上传是两条流程：打包时勾了分发平台就打包完顺手传（引擎侧上传失败不影响
+      // 打包结果），一个都没勾就明确 noUpload；上传卡片只送已归档的产物（`--to`）。
       const startJob = (kind, spec) => guard('job', async () => {
         const body = {
           kind,
           platforms: spec.platforms || [spec.platform],
           projects: spec.projects || (spec.project ? [spec.project] : []),
         };
+        const targets = uploadTargets();
         if (kind === 'upload') {
-          body.upload = spec.targets || uploadTargets();
+          body.upload = spec.targets || targets;
         } else {
-          body.noUpload = true;
+          if (targets) body.upload = targets;
+          else body.noUpload = true;
           body.version = version;
           body.harmonyDebug = harmonyDebug;
           body.keepWork = keepWork;
@@ -1152,6 +1175,12 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
+        h(
+          'div',
+          { style: { marginTop: '6px' } },
+          uploaderPicker('options.uploadAfterBuild'),
+          h('div', { className: 'ap-note' }, t('options.uploadAfterBuild.hint')),
+        ),
       );
 
       const scopeCard = h(
@@ -1231,19 +1260,7 @@ window.__ModuleLoader__.load({
                 ),
               )),
             ),
-        h(
-          'div',
-          { style: styles.actions },
-          h('span', { style: styles.muted }, t('upload.target')),
-          uploaders.length === 0
-            ? h('span', { style: styles.muted }, t('upload.target.none'))
-            : uploaders.map((item) => checkbox(
-                `${item.name}${uploaderNote(item) ? ` · ${uploaderNote(item)}` : ''}`,
-                item.available && uploads[item.id] !== false,
-                (on) => setUploads({ ...uploads, [item.id]: on }),
-                { disabled: !item.available, title: uploaderNote(item) || undefined },
-              )),
-        ),
+        uploaderPicker('upload.target'),
         uploaders.filter((item) => item.apiKeyVar).map((item) => credentialRow(item, 'apiKey')),
         uploaders.filter((item) => item.userKeyVar).map((item) => credentialRow(item, 'userKey')),
       );

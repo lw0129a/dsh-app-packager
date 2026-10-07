@@ -47,10 +47,12 @@ centre column:
   engine runs executed back to back inside one job, each marked `▶ i/n` in the
   log; the job succeeds only if every run did, keeping the first failing exit
   code.
-- **Shared build options** — version override; *HarmonyOS debug HAP* and *Keep
-  work dir* live in an *Advanced* fold, each with a one-line explanation. A
-  build never uploads any more: the panel always sends `noUpload`, because
-  uploading has a card of its own.
+- **Shared build options** — version override; a build can still upload what it
+  just produced: the **Upload after build** row ticks the distribution platforms
+  (the same selection the Upload card's *Distribution* row edits, sent as one
+  comma separated `--upload`), and ticking none sends `noUpload`, so uploading
+  without a rebuild stays the Upload card's job. *HarmonyOS debug HAP* and *Keep
+  work dir* live in an *Advanced* fold, each with a one-line explanation.
 - **Upload** — the installers the engine has already archived, straight from
   `state.artifacts` (`listArtifacts` reads `packages/iOS|Android|HarmonyOS/
   <项目ID>-latest.json`): display name, version, file size (or a *no installer
@@ -61,7 +63,8 @@ centre column:
   from `config/upload.env`, ticked ones sent as one comma separated `--to`) and
   the credential rows: an uploader that declares `UPLOAD_PLATFORM_<id>_API_KEY_VAR`
   (pgyer declares `PGYER_API_KEY`) or `_USER_KEY_VAR` (`PGYER_USER_KEY`, pgyer's
-  optional API 1.0 `uKey`) gets a masked row each. *Save* writes only the field
+  optional API 1.0 `uKey`) gets a masked row each, with a `Configured` / `Not
+  set` chip next to its *Save* button. *Save* writes only the field
   you typed into, so storing one never clears the other: `POST
   /api/app-packager/upload/credential` updates `config/upload.local.env` (mode
   600, the file `lib/init.sh` sources), and the key only ever travels

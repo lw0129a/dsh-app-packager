@@ -947,18 +947,22 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   // The notice must not depend on the host half sending `summary`: the panel
   // falls back to reading the raw log, so a page refresh alone is enough.
   assert.match(source, /value\.summary \|\| summarizeLog\(value\.output\)/);
-  // 打包范围走宿主的 platforms/projects 字段；打包选项绝不顺带上传。
+  // 打包范围走宿主的 platforms/projects 字段；打包时可以勾「打包后上传」的平台，
+  // 一个都不勾才明确 noUpload（打包与独立上传是两条流程，但共用同一份勾选状态）。
   assert.match(source, /platforms: spec\.platforms \|\| \[spec\.platform\]/);
   assert.match(source, /projects: spec\.projects \|\| \(spec\.project \? \[spec\.project\] : \[\]\)/);
-  assert.match(source, /body\.noUpload = true/);
+  assert.match(source, /if \(targets\) body\.upload = targets;/);
+  assert.match(source, /else body\.noUpload = true;/);
+  assert.match(source, /uploaderPicker\('options\.uploadAfterBuild'\)/);
   // 上传是独立板块：产物清单 + 每行一个上传按钮，分发平台与两把密钥都在这里。
-  assert.match(source, /body\.upload = spec\.targets \|\| uploadTargets\(\)/);
+  assert.match(source, /body\.upload = spec\.targets \|\| targets;/);
   assert.match(source, /artifacts\.map\(\(item\) => h\(/);
   assert.match(source, /button\(t\('upload\.action'\), \(\) => startUpload\(item\)/);
   assert.match(source, /uploaders\.map\(\(item\) => checkbox\(/);
+  assert.match(source, /uploaderPicker\('upload\.target'\)/);
   assert.match(source, /uploaders\.filter\(\(item\) => item\.apiKeyVar\)\.map\(\(item\) => credentialRow\(item, 'apiKey'\)\)/);
   assert.match(source, /uploaders\.filter\(\(item\) => item\.userKeyVar\)\.map\(\(item\) => credentialRow\(item, 'userKey'\)\)/);
-  for (const key of ['upload', 'upload.hint', 'upload.empty', 'upload.target', 'upload.target.none', 'upload.action', 'upload.missing', 'upload.builtAt', 'job.kind.upload']) {
+  for (const key of ['upload', 'upload.hint', 'upload.empty', 'upload.target', 'upload.target.none', 'upload.action', 'upload.missing', 'upload.builtAt', 'job.kind.upload', 'options.uploadAfterBuild', 'options.uploadAfterBuild.hint']) {
     assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
     assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
   }
@@ -985,12 +989,16 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.match(source, /await call\('upload\/credential', \{/);
   assert.match(source, /state\.pgyerCli/);
   assert.match(source, /item\.credentialConfigured/);
+  // 两把密钥的「配没配」都要看得见：不是只有保存成功那一刻才出现一个徽标。
+  assert.match(source, /configured \? 'ap-tag ok' : 'ap-tag warn'/);
+  assert.match(source, /t\(configured \? 'options\.cred\.saved' : 'options\.cred\.unconfigured'\)/);
   for (const key of [
     'options.cred.label',
     'options.cred.placeholder.saved',
     'options.cred.placeholder.empty',
     'options.cred.save',
     'options.cred.saved',
+    'options.cred.unconfigured',
     'options.cred.missing',
     'options.cred.cli.installed',
     'options.cred.cli.missing',
