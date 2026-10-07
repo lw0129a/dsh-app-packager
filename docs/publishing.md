@@ -23,19 +23,24 @@ npm 账号需已登录（`npm whoami`），且 `@lw0129a` 这个 scope 归你所
 npm login
 ```
 
-账号开了两步验证（2FA）时，发布必须带验证码，否则报 `403 … Two-factor authentication or granular access token with bypass 2fa enabled is required to publish packages.` 两种解法：
+### 账号开了 2FA 时：走 npm 的「暂存发布」（staged publishing）
+
+npm 从 2026-07 起收紧了 bypass-2FA granular token：这类 token 不能再做账号/组织/包管理动作，官方 roadmap 也已把「直接发布」列进下一批移除项（见 [Restricting npm bypass-2FA granular access tokens](https://github.blog/changelog/2026-07-31-restricting-npm-bypass-2fa-granular-access-tokens/)）。本机实测（账号 `lw0129a`，2FA 为 auth-and-writes，2026-10-07）：
+
+| 试的路径 | 结果 |
+| --- | --- |
+| `pnpm publish` / `npm publish`，npmrc 里是登录态 token | `403 … Two-factor authentication or granular access token with bypass 2fa enabled is required to publish packages.` |
+| 直接发布，npmrc 里是勾了 Bypass 2FA 的 granular token | 被屏蔽成 `404 Not found`；注册表实际返回 `E_STAGE_REQUIRED`：`this token can only publish to a staging area, and "<包名>" does not exist yet. Create it first with a direct-capable token, then use 'npm stage publish'.` |
+| `npm stage publish`（同一个 bypass token） | **成功**，无需验证码，且**能创建全新包**（npm 2026-10-02 起支持） |
+
+结论：**用 `npm stage publish` 上传，再由本人带 2FA `npm stage approve` 批准**。批准这一步 bypass token 做不了（实测被屏蔽成 `404 staged version "…" not found`），必须真人在终端 `npm login` 后操作。
+
+`npm stage` 需要 npm ≥ 11（`npm stage --help` 有输出即支持）。npm 12.2.0 要求 Node ≥ 22.22.2，所以 Node 20 上装 11.x：
 
 ```bash
-pnpm --filter @lw0129a/app-packager publish --access public --otp 123456   # 认证器里的 6 位码，30 秒内有效
+npm i -g --prefix /tmp/ap-npm11 npm@11
+/tmp/ap-npm11/bin/npm --version   # 期望 11.x
 ```
-
-或者去 npmjs.com → Access Tokens 建一个 **Granular Access Token**（Packages 选 `@lw0129a`、权限 Read and write、勾上 **Bypass 2FA**），把它写进 `~/.npmrc`：
-
-```text
-//registry.npmjs.org/:_authToken=npm_xxxxxxxx
-```
-
-之后发布就不需要验证码了。注意 token 是凭据，别提交进仓库。
 
 ## 二、发布到 npm
 
@@ -61,16 +66,39 @@ npm install -g --prefix /tmp/ap-prefix /tmp/ap-pack/lw0129a-app-packager-*.tgz
 >
 > CI 的 `pack` 任务已自动校验这一点。
 
-确认无误后发布（两个包都要发，顺序无所谓，但 CLI 先发更符合直觉）：
+确认无误后上传到暂存区（两个包都要，先 CLI）：
 
 ```bash
-pnpm --filter @lw0129a/app-packager publish --access public
-pnpm --filter @lw0129a/dsh-app-packager publish --access public
+NPM=/tmp/ap-npm11/bin/npm          # 系统 npm 10.x 没有 stage 子命令
+
+# CLI 包：在包目录里直接 stage
+(cd packages/app-packager && $NPM stage publish --access public)
+
+# 插件包：npm stage publish 不会重写 workspace: 协议，先在临时副本里等价重写
+rm -rf /tmp/ap-plugin-stage && mkdir -p /tmp/ap-plugin-stage
+cp -R packages/dsh-app-packager/. /tmp/ap-plugin-stage/
+rm -rf /tmp/ap-plugin-stage/node_modules /tmp/ap-plugin-stage/test
+sed -i '' 's#"@lw0129a/app-packager": "workspace:\^0.1.0"#"@lw0129a/app-packager": "^0.1.0"#' /tmp/ap-plugin-stage/package.json
+(cd /tmp/ap-plugin-stage && $NPM stage publish --access public)
+
+$NPM stage list                    # 看 stage id 与状态：validating → staged
 ```
 
-> `publishConfig.access` 已在两个包里设为 `public`，`pnpm publish` 会带上。
-> 若本地 npm 缓存目录权限有问题（`EPERM … _cacache`），可临时指定 `npm_config_cache=/tmp/ap-npmcache`。
-> 发错了内容可以 `npm unpublish @lw0129a/app-packager@<version>`，但 24 小时后同名同版本不可复用，优先发新版本。
+然后由包维护者**本人**在终端批准（会提示输入认证器里的 6 位码，30 秒内有效）：
+
+```bash
+$NPM login                         # 写新的 session token，会覆盖 ~/.npmrc 里的 granular token
+$NPM stage approve <CLI 的 stage id>
+$NPM stage approve <插件的 stage id>
+$NPM stage list                    # 批准成功的条目会消失
+npm view @lw0129a/app-packager version
+```
+
+> - 刚 stage 完是 `status: validating`（注册表异步校验 tarball），此时批准会报 `staged version "…" not found`，等它变成 `staged` 再批。
+> - `npm stage download <id>` 目前在注册表侧 404（`GET /-/stage/***/tarball`），所以**发布前在本地用 `pnpm -r pack` 检查 tarball**，别指望下载回来验。
+> - 若本地 npm 缓存目录权限有问题（`EPERM … _cacache`），加 `npm_config_cache=/tmp/ap-npmcache`。
+> - 发错了内容可以 `npm unpublish @lw0129a/app-packager@<version>`，但 24 小时后同名同版本不可复用，优先发新版本。
+> - 包发出去后，去 npmjs.com 的包设置里配 **trusted publishing（OIDC）**，让 GitHub Actions 用仓库身份发布，之后连暂存批准都省了。
 
 ## 三、让插件出现在插件市场
 
