@@ -408,6 +408,17 @@ export function createJobRunner({ spawn = runEngine, nodeSpawn = runNode, limit 
       return job ? jobView(job) : undefined;
     },
     /**
+     * Drop every settled job (the panel's 清除). A running job is never removed:
+     * the child process keeps going, so forgetting it would lose the only handle
+     * on it — `kill` would then have nothing to signal.
+     */
+    clear() {
+      for (let index = jobs.length - 1; index >= 0; index -= 1) {
+        if (!jobs[index].running) jobs.splice(index, 1);
+      }
+      return jobs.map(jobView);
+    },
+    /**
      * @param {object} spec `{kind, platform, project, home, args, commands, timeoutMs,
      *   searchRoots, shell}`
      *
@@ -872,6 +883,11 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
     killJob(id) {
       return runner.kill(id);
     },
+
+    /** Forget settled jobs so the panel's job card can go back to 「暂无任务」. */
+    clearJobs() {
+      return runner.clear();
+    },
   };
 }
 
@@ -933,6 +949,7 @@ export function mountWebPanel(ctx, config = {}) {
     { path: `${ROUTE_BASE}/job`, run: (_body) => panel.startJob(_body) },
     { path: `${ROUTE_BASE}/job/log`, run: (_body, query) => panel.jobLog(query.id) },
     { path: `${ROUTE_BASE}/job/kill`, run: (_body, query) => panel.killJob(query.id) },
+    { path: `${ROUTE_BASE}/job/clear`, run: () => panel.clearJobs() },
   ];
 
   const disposers = [];

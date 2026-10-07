@@ -142,6 +142,7 @@ window.__ModuleLoader__.load({
       'job.failed': '失败',
       'job.stopped': '已停止',
       'job.stop': '停止',
+      'job.clear': '清除',
       'job.exit': '退出码 {code}',
       'job.kind.check': '环境检查',
       'job.kind.build': '打包',
@@ -269,6 +270,7 @@ window.__ModuleLoader__.load({
       'job.failed': 'failed',
       'job.stopped': 'stopped',
       'job.stop': 'Stop',
+      'job.clear': 'Clear',
       'job.exit': 'exit code {code}',
       'job.kind.check': 'Environment check',
       'job.kind.build': 'Build',
@@ -514,6 +516,16 @@ window.__ModuleLoader__.load({
         };
       }, [jobId, jobRunning]);
 
+      // 客户端半边只活在面板组件里，宿主那半边（web.js 的 job runner）活在 DSH 进程里：
+      // 切到别的标签再回来时本地 job 是 null，而引擎进程其实还在跑，界面就成了「什么都没有」。
+      // 所以每次拿到 state 就从 state.jobs 认领最新的一条（日志、状态标签、停止按钮一起回来）。
+      // 本标签自己起的任务优先：state 只在挂载和操作后拉一次，可能比本站的 job 旧。
+      const latestJob = state && Array.isArray(state.jobs) ? state.jobs[0] : null;
+      useEffect(() => {
+        if (!latestJob) return;
+        setJob((current) => (current && current.running ? current : latestJob));
+      }, [latestJob]);
+
       const output = job && job.output;
       useEffect(() => {
         const element = logRef.current;
@@ -606,6 +618,12 @@ window.__ModuleLoader__.load({
       });
 
       const stopJob = () => guard('job', async () => setJob(await call(`job/kill?id=${encodeURIComponent(job.id)}`, { method: 'POST' })));
+      // 清除 = 让宿主把已结束的任务从列表里删掉，本站跟着回到「暂无任务」。
+      const clearJob = () =>
+        guard('job', async () => {
+          await call('job/clear', { method: 'POST' });
+          setJob(null);
+        });
 
       // SDK setup and the plugin upgrade ride the same job route as a build, so
       // they stream their log into the one job card below.
@@ -1077,6 +1095,7 @@ window.__ModuleLoader__.load({
             job ? h('span', { className: 'ap-muted' }, `${t(`job.kind.${job.kind}`)} · ${platformLabel(job.platform)}${job.project ? ` · ${job.project}` : ''}`) : null,
             job ? h('span', { className: `ap-tag ${job.running ? 'warn' : job.ok ? 'ok' : 'fail'}` }, jobStatus(job)) : null,
             jobRunning ? button(t('job.stop'), stopJob, { disabled: Boolean(busy) }) : null,
+            job && !jobRunning ? button(t('job.clear'), clearJob, { disabled: Boolean(busy), small: true }) : null,
           ),
         },
         job && job.blockedByCheck ? h('div', { style: styles.error }, t('job.blockedByCheck')) : null,

@@ -67,10 +67,15 @@ centre column:
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
   Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above
   the log together with the totals, so a missing profile, p12 or SDK is readable
-  without scrolling the raw output.
+  without scrolling the raw output. The job lives in the host process, not in the
+  browser tab: switching to another DeepSeek Harness tab (or reloading the panel)
+  re-adopts the newest job from `GET state`, so a build that is still running
+  comes back with its log, verdict and *Stop* button, and a finished one stays on
+  screen until you start another build or press *Clear* (settled jobs only — a
+  running one is never dropped, or there would be nothing left to stop).
 
 The panel only calls same-origin routes registered by this plugin
-(`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`) — no
+(`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill|job/clear`) — no
 build logic runs in the browser. It needs a profile that ships the web app
 (`@deepseek-ai/dsh-web-app`, as the desktop and web profiles do); in a headless
 profile the panel is simply absent and the four tools keep working.

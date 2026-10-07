@@ -308,6 +308,7 @@ test('apply 在存在 webServer 时挂上面板路由，缺席时不影响工具
       '/api/app-packager/doctor',
       '/api/app-packager/init',
       '/api/app-packager/job',
+      '/api/app-packager/job/clear',
       '/api/app-packager/job/kill',
       '/api/app-packager/job/log',
       '/api/app-packager/pick',
@@ -343,7 +344,7 @@ test('webServer 晚到：apply 用 ctx.inject 等它，服务出现后补挂路�
     },
   };
   waits[0].callback(withServices({}, { webServer: service }));
-  assert.equal(routes.size, 9);
+  assert.equal(routes.size, 10);
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -479,6 +480,48 @@ test('面板任务：check 传 check 子命令、日志可轮询、运行中可�
   assert.deepEqual(killed[0].args, ['ios', '--all'], 'build 不加 check；不给项目要补 --all，否则引擎 die');
   await canceller.killJob(running.id);
   assert.deepEqual(killed[1], { killed: 'SIGTERM' });
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板任务：切走再回来还能认领宿主里的任务，只有清除或新任务才丢', async () => {
+  const home = fixtureHome();
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
+  const first = panel.startJob({ kind: 'check', platform: 'android', project: 'demo' });
+  await settle();
+  await settle();
+
+  // 切到别的 DSH 标签会让面板客户端半边整块重挂载（自身的 job 状态归零），
+  // 而宿主进程里的 job runner 一直活着 —— 所以任务必须能从 state.jobs 里认回来。
+  const settledState = await panel.state();
+  assert.deepEqual(settledState.jobs.map((job) => job.id), [first.id]);
+  assert.equal(settledState.jobs[0].running, false);
+  assert.match(settledState.jobs[0].output, /engine line/);
+
+  // 认领的是最新一条：新任务进来后它排在 jobs[0]，旧任务不再显示（等价于「执行新任务即清除」）。
+  const second = panel.startJob({ kind: 'check', platform: 'ios', project: 'demo' });
+  const runningState = await panel.state();
+  assert.equal(runningState.jobs[0].id, second.id);
+  assert.equal(runningState.jobs.length, 2);
+  await settle();
+  await settle();
+  assert.equal(panel.clearJobs().length, 0, '两条都已经结束，清除要能一次收走');
+  assert.deepEqual((await panel.state()).jobs, []);
+
+  // 运行中的那条不能删：删了面板就再没有句柄去 kill 它。
+  // （state() 自己也会 spawn 引擎问 profiles，所以只让 check 那条挂住不返回。）
+  const hangCheck = fakeSpawn([], { hang: true });
+  const quick = fakeSpawn([]);
+  const hanging = createPanel({
+    config: { home },
+    spawn: (dir, args, options) => (args[0] === 'check' ? hangCheck(dir, args, options) : quick(dir, args, options)),
+  });
+  const live = hanging.startJob({ kind: 'check', platform: 'android', project: 'demo' });
+  assert.equal((await hanging.state()).jobs[0].running, true);
+  assert.deepEqual(hanging.clearJobs().map((job) => job.id), [live.id]);
+  await hanging.killJob(live.id);
+  // 假 spawn 挂住不返回，子进程永远不报「已退出」，所以在 runner 眼里它还在跑 ——
+  // 正好再钉一次不变量：清除绝不动一条 running 的任务。
+  assert.deepEqual(hanging.clearJobs().map((job) => job.id), [live.id]);
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -794,6 +837,16 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.match(source, /job\.kind === 'upgrade' && !job\.running && job\.ok/);
   assert.match(source, /window\.location\.reload\(\)/);
   for (const key of ['upgrade.after', 'upgrade.reload']) {
+    assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
+    assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
+  }
+  // 任务挂在宿主进程里，客户端半边却在切标签时整个重挂载：不认领 state.jobs[0]，
+  // 界面就变成「什么都没在跑」而引擎进程还在闷头构建。认领要避开自己在跑的那条。
+  assert.match(source, /state\.jobs\[0\]/);
+  assert.match(source, /setJob\(\(current\) => \(current && current\.running \? current : latestJob\)\)/);
+  assert.match(source, /await call\('job\/clear', \{ method: 'POST' \}\)/);
+  assert.match(source, /job && !jobRunning \? button\(t\('job\.clear'\)/);
+  for (const key of ['job.clear']) {
     assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
     assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
   }
