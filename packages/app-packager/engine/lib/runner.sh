@@ -41,6 +41,7 @@ usage() {
   打包工具.command harmony --all [选项]
   打包工具.command all [项目ID] [选项]
   打包工具.command list
+  打包工具.command profiles
   打包工具.command check ios <项目ID>
   打包工具.command check android <项目ID>
   打包工具.command check harmony <项目ID>
@@ -66,6 +67,11 @@ usage() {
   --version <版本>    覆盖 manifest 中的 versionName
   --keep-work         保留隔离构建工作区
   --harmony-debug     使用项目 default debug signingConfig 生成可侧载 HAP
+  --full-permission   本次构建合并全量 Android 权限与 iOS 隐私说明
+  --no-full-permission  本次构建不加全量权限，只保留项目自身声明
+  --package-kind <类型>  iOS 描述文件类型：adhoc(测试) | appstore(正式) | development | enterprise
+  --profile <路径>    本次构建使用指定描述文件（按类型自动校验）
+  --set KEY=VALUE     覆盖本次构建的打包参数，可重复；可用键见 config/settings.env 说明
   --upload <平台>     打包成功后上传；当前支持 pgyer，可逗号分隔多个平台
   --no-upload         显式跳过上传
   --all               当前平台的所有已启用项目
@@ -88,6 +94,7 @@ parse_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       list) ACTION="list"; shift ;;
+      profiles) ACTION="profiles"; shift ;;
       check) ACTION="check"; shift ;;
       ios|apple|苹果) PLATFORM="ios"; shift ;;
       android|安卓) PLATFORM="android"; shift ;;
@@ -99,6 +106,22 @@ parse_args() {
         CLI_VERSION="$2"; shift 2 ;;
       --keep-work) CLI_KEEP_WORK=1; shift ;;
       --harmony-debug) export HARMONY_PACKAGE_KIND="debug"; shift ;;
+      --full-permission) export APP_PACKAGER_FULL_PERMISSION="true"; shift ;;
+      --no-full-permission) export APP_PACKAGER_FULL_PERMISSION="false"; shift ;;
+      --package-kind)
+        [ "$#" -ge 2 ] || die "--package-kind 缺少参数"
+        case "$2" in
+          adhoc|appstore|development|enterprise) ;;
+          *) die "--package-kind 仅支持 adhoc、appstore、development、enterprise" ;;
+        esac
+        export APP_PACKAGER_PACKAGE_KIND="$2"; shift 2 ;;
+      --profile)
+        [ "$#" -ge 2 ] || die "--profile 缺少参数"
+        export APP_PACKAGER_PROFILE_FILE="$2"; shift 2 ;;
+      --set)
+        [ "$#" -ge 2 ] || die "--set 缺少参数"
+        set_package_override "$2"
+        shift 2 ;;
       --upload)
         [ "$#" -ge 2 ] || die "--upload 缺少平台参数"
         set_upload_platforms "$2"
@@ -291,6 +314,11 @@ main() {
 
   if [ "$ACTION" = "list" ]; then
     list_projects
+    return 0
+  fi
+
+  if [ "$ACTION" = "profiles" ]; then
+    profiles_json
     return 0
   fi
 

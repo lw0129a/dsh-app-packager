@@ -71,7 +71,7 @@ dsh plugin --profile desktop add dsh-app-packager
 - **环境检查** —— 与 `app_packager_doctor` 同一份报告，可只查某个平台或全部，每个失败项都带修复提示。
 - **项目** —— 列出 `config/projects/*.env`：源码目录、启用的平台，以及每个项目的「环境检查 / 打包」按钮。
 - **打包范围** —— 平台 × 项目批量打包（不勾项目 = 该平台全部项目），在一个任务里串行执行，日志用 `▶ i/n` 标出。
-- **公共打包选项** —— 版本号；上传平台来自引擎的 `config/upload.env`，不可用的灰掉并注明原因，勾选的拼成一个逗号分隔的 `--upload`；*HarmonyOS debug 包* 与 *保留构建目录* 收进「高级选项」。
+- **打包选项** —— 版本号；**全量权限**开关（默认跟随 `config/settings.env` 的 `FULL_PERMISSION_PROFILE`，可以只对这一次打包改）；**iOS 包型**（测试包 Ad Hoc / 正式包 App Store / development / enterprise，按项目 Bundle ID 挑描述文件，本机没有该类型时灰掉并说明原因）；**描述文件**下拉（列出签名目录里的 `.mobileprovision`，带包型、Bundle ID 与是否过期，留空＝按包型或项目接线自动选）；**自定义配置项**（每行一个 `KEY=VALUE` 覆盖打包参数，如 `MARKETING_VERSION=1.2.3`，可从项目自带的 `scripts/ios-package/env/*.env` 载入预设，路径类键不允许覆盖）；上传平台来自引擎的 `config/upload.env`，不可用的灰掉并注明原因，勾选的拼成一个逗号分隔的 `--upload`；*HarmonyOS debug 包* 与 *保留构建目录* 收进「高级选项」。
 - **任务** —— 当前 check/build 的实时引擎日志、判定结果（出现 `[FAIL]` 或非零退出码即失败）与「停止」按钮。
 
 面板只调用宿主侧注册的八条同源路由（`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`），打包始终在宿主进程里跑，不在浏览器里执行。headless profile 里不出现面板，四个工具照常可用。

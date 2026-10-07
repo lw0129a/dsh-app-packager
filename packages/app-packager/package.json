@@ -1,6 +1,6 @@
 {
   "name": "app-packager",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "AppPackager CLI: package uni-app x projects into iOS IPA, Android APK and HarmonyOS HAP from one command, on macOS today and Windows through a Git-Bash/WSL bridge.",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/packager.test.mjs"
+    "test": "node --test test/packager.test.mjs && bash test/engine.test.sh"
   },
   "repository": {
     "type": "git",

@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-07
+
+### Added
+
+- **The packaging decisions are now pickable per run, in the panel and in both tools.** Four engine options back them (engine script version `2026.10.08.2`): `--full-permission` / `--no-full-permission` overrides the full-permission merge for one build (both the Android permission list + iOS privacy strings and the first-launch runtime prompt, leaving `config/settings.env` alone); `--package-kind adhoc|appstore|development|enterprise` picks the iOS provisioning profile by bundle id and release kind; `--profile <path>` names one explicitly (a kind mismatch is an error, not a silent fallback); `--set KEY=VALUE` (repeatable) overrides build parameters such as `MARKETING_VERSION` or `APP_NAME`, restricted to the keys the engine itself writes into the package env — path-like keys (`SDK_ROOT`, `OUTPUT_ROOT`, `SOURCE_APP_DIR`) are refused.
+- **Panel: *full permissions*, *iOS release kind*, *profile* and *custom build parameters*.** The kind dropdown greys out a kind that has no local profile for the selected projects and says why; the profile dropdown lists what the engine found (kind, bundle id, expiry) and defaults to *Auto*; the parameter box takes one `KEY=VALUE` per line and can load the project's own `scripts/ios-package/env/*.env` as a preset (quotes and comments stripped, keys outside the engine's allow-list dropped). The panel keeps no second copy of that allow-list: the engine's `PACKAGE_ENV_OVERRIDE_KEYS` is read out of `lib/common.sh` and shipped with `state`.
+- **Engine: `profiles` subcommand** printing the signing profiles as JSON (`file`, `kind`, `bundleId`, `teamId`, `name`, `expiry`, `uuid`, `expired`) — the panel lists profiles by asking the engine instead of parsing `.mobileprovision` files itself, and the subcommand skips the usual closing banner so its output stays machine readable. Profile inspection was split into `extract_ios_profile_fields` / `extract_ios_profile_kind` / `find_ios_profile_by_kind`, which `read_profile_metadata` now reuses.
+- `app_packager_check` carries the same options as `app_packager_build`, because a check *is* the dry run of the same wiring: a missing or mismatched profile and a wrong permission switch are reported before anything is built.
+- `packages/app-packager/test/engine.test.sh` (wired into `pnpm test`) self-checks option parsing and the package-env overrides against a temporary engine root, so the bash half has a regression test without real certificates or a real build.
+
+### Fixed
+
+- **`--set` with an unknown key printed a shell error instead of the key.** The message expanded `$key` right before a full-width `（` and bash glued the multi-byte character onto the variable name (`lib/common.sh: line 304: key…: unbound variable`). Both messages now use `${key}` / `${PACKAGE_ENV_OVERRIDE_KEYS}`, and the engine scripts were swept for the same pattern.
+
 ## [0.3.0] - 2026-10-08
 
 ### Added
@@ -71,7 +85,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.3.0...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.4.0...main
+[0.4.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.4.0
 [0.3.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.3.0
 [0.2.3]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.3
 [0.2.2]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.2

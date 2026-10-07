@@ -195,6 +195,156 @@ find_matching_ios_profile() {
   return 1
 }
 
+ios_profile_files() {
+  find "$PIPELINE_ROOT/certificates/iOS" "$PIPELINE_ROOT/signing/current" \
+    -maxdepth 4 -type f -iname '*.mobileprovision' 2>/dev/null | sort
+}
+
+# 只解出描述文件字段，不做期望值/过期校验：清单展示与按类型查找复用同一套读取逻辑。
+extract_ios_profile_fields() {
+  local profile_file="$1" plist_file="$2" app_identifier
+  [ -f "$profile_file" ] || return 1
+  openssl smime -verify -inform DER -in "$profile_file" -noverify -out "$plist_file" >/dev/null 2>&1 || return 1
+
+  PROFILE_NAME="$(plutil -extract Name raw -o - "$plist_file" 2>/dev/null || true)"
+  PROFILE_UUID="$(plutil -extract UUID raw -o - "$plist_file" 2>/dev/null || true)"
+  PROFILE_EXPIRY="$(plutil -extract ExpirationDate raw -o - "$plist_file" 2>/dev/null || true)"
+  TEAM_ID="$(plutil -extract TeamIdentifier.0 raw -o - "$plist_file" 2>/dev/null || true)"
+  app_identifier="$(plutil -extract Entitlements.application-identifier raw -o - "$plist_file" 2>/dev/null || true)"
+  BUNDLE_ID="${app_identifier#*.}"
+  extract_ios_profile_kind "$plist_file"
+  return 0
+}
+
+extract_ios_profile_kind() {
+  local plist_file="$1" get_task_allow="false" provisions_all="false"
+  get_task_allow="$(plutil -extract Entitlements.get-task-allow raw -o - "$plist_file" 2>/dev/null || echo false)"
+  provisions_all="$(plutil -extract ProvisionsAllDevices raw -o - "$plist_file" 2>/dev/null || echo false)"
+  if [ "$provisions_all" = "true" ]; then
+    PROFILE_KIND="enterprise"
+  elif plutil -extract ProvisionedDevices raw -o - "$plist_file" >/dev/null 2>&1; then
+    if [ "$get_task_allow" = "true" ]; then
+      PROFILE_KIND="development"
+    else
+      PROFILE_KIND="adhoc"
+    fi
+  else
+    PROFILE_KIND="appstore"
+  fi
+}
+
+find_ios_profile_by_kind() {
+  local bundle_id="$1" kind="$2" file plist
+  [ -n "$bundle_id" ] || return 1
+  [ -n "$kind" ] || return 1
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    plist="$(mktemp)"
+    if extract_ios_profile_fields "$file" "$plist" \
+      && [ "$BUNDLE_ID" = "$bundle_id" ] && [ "$PROFILE_KIND" = "$kind" ]; then
+      rm -f "$plist"
+      printf '%s\n' "$file"
+      return 0
+    fi
+    rm -f "$plist"
+  done < <(ios_profile_files)
+  return 1
+}
+
+profiles_json() {
+  local file plist expired epoch now
+  {
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      plist="$(mktemp)"
+      if extract_ios_profile_fields "$file" "$plist"; then
+        expired="false"
+        epoch="$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$PROFILE_EXPIRY" '+%s' 2>/dev/null || echo 0)"
+        now="$(date '+%s')"
+        [ "$epoch" -gt "$now" ] || expired="true"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+          "$file" "$PROFILE_KIND" "$BUNDLE_ID" "$TEAM_ID" \
+          "${PROFILE_NAME//$'\t'/ }" "$PROFILE_EXPIRY" "$PROFILE_UUID" "$expired"
+      fi
+      rm -f "$plist"
+    done < <(ios_profile_files)
+  } | python3 -c '
+import json, sys
+rows = []
+for line in sys.stdin.read().splitlines():
+    parts = line.split("\t")
+    if len(parts) < 8:
+        continue
+    file, kind, bundle, team, name, expiry, uuid, expired = parts[:8]
+    rows.append({
+        "file": file,
+        "kind": kind,
+        "bundleId": bundle,
+        "teamId": team,
+        "name": name,
+        "expiry": expiry,
+        "uuid": uuid,
+        "expired": expired == "true",
+    })
+print(json.dumps(rows, ensure_ascii=False, indent=2))
+'
+}
+
+# --set 允许覆盖的键：只包含 write_package_env 生成的打包参数，
+# 引擎自己推导的路径类键（SDK_ROOT/OUTPUT_ROOT/SOURCE_APP_DIR）不在其中。
+PACKAGE_ENV_OVERRIDE_KEYS="APP_NAME APP_ID BUNDLE_ID TEAM_ID PROFILE_NAME SIGNING_CERTIFICATE EXPORT_METHOD PACKAGE_KIND SCHEME CONFIGURATION CHANNEL MARKETING_VERSION BUILD_NUMBER"
+
+set_package_override() {
+  local pair="$1" key="${1%%=*}" value=""
+  [ "$pair" != "$key" ] || die "--set 需要 KEY=VALUE 形式: $pair"
+  value="${pair#*=}"
+  [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "--set 键名不合法: $key"
+  case " $PACKAGE_ENV_OVERRIDE_KEYS " in
+    *" $key "*) ;;
+    *) die "--set 不支持的键: ${key}（可用: ${PACKAGE_ENV_OVERRIDE_KEYS}）" ;;
+  esac
+  case "$value" in
+    *$'\n'*) die "--set 的值不能包含换行: $key" ;;
+  esac
+  APP_PACKAGER_SET_OVERRIDES="${APP_PACKAGER_SET_OVERRIDES:-}${key}=${value}"$'\n'
+  export APP_PACKAGER_SET_OVERRIDES
+}
+
+# 命令行选项覆盖项目配置/全局设置，只影响本次调用。
+apply_build_option_overrides() {
+  if [ -n "${APP_PACKAGER_FULL_PERMISSION:-}" ]; then
+    case "$APP_PACKAGER_FULL_PERMISSION" in
+      true|false)
+        FULL_PERMISSION_PROFILE="$APP_PACKAGER_FULL_PERMISSION"
+        FULL_PERMISSION_PROMPT="$APP_PACKAGER_FULL_PERMISSION"
+        ;;
+    esac
+  fi
+
+  if [ -n "${APP_PACKAGER_PROFILE_FILE:-}" ]; then
+    [ -f "$APP_PACKAGER_PROFILE_FILE" ] || die "指定的描述文件不存在: $APP_PACKAGER_PROFILE_FILE"
+    PROFILE_FILE="$APP_PACKAGER_PROFILE_FILE"
+  fi
+
+  if [ -n "${APP_PACKAGER_PACKAGE_KIND:-}" ]; then
+    local plist kind="" matched=""
+    if [ -n "${APP_PACKAGER_PROFILE_FILE:-}" ]; then
+      plist="$(mktemp)"
+      extract_ios_profile_fields "$PROFILE_FILE" "$plist" && kind="$PROFILE_KIND"
+      rm -f "$plist"
+      if [ -n "$kind" ] && [ "$kind" != "$APP_PACKAGER_PACKAGE_KIND" ]; then
+        die "请求 $APP_PACKAGER_PACKAGE_KIND 包，但指定/接线的描述文件是 $kind 类型: $PROFILE_FILE"
+      fi
+    else
+      matched="$(find_ios_profile_by_kind "${EXPECTED_BUNDLE_ID:-}" "$APP_PACKAGER_PACKAGE_KIND" || true)"
+      if [ -z "$matched" ]; then
+        die "未找到 $APP_PACKAGER_PACKAGE_KIND 类型的描述文件（Bundle ID: ${EXPECTED_BUNDLE_ID:-未配置}）。把描述文件放到 signing/current/ 或 certificates/iOS/，或用 --profile <路径> 指定。"
+      fi
+      PROFILE_FILE="$matched"
+    fi
+  fi
+}
+
 project_search_roots() {
   local roots="${PROJECT_SEARCH_ROOTS:-$(dirname "$PIPELINE_ROOT")}"
   printf '%s\n' "$roots" | tr ':' '\n'
@@ -438,6 +588,7 @@ load_project() {
     DISPLAY_NAME="${DISPLAY_NAME:-$PROJECT_ID}"
   fi
   : "${APP_ID:?manifest.json 缺少 appid}"
+  apply_build_option_overrides
   : "${PROFILE_FILE:?项目配置缺少 PROFILE_FILE}"
 
   APP_NAME="${APP_NAME:-$PROJECT_ID}"
@@ -708,23 +859,15 @@ read_profile_metadata() {
   local plist_file="$2"
 
   [ -f "$profile_file" ] || die "描述文件不存在: $profile_file"
-  openssl smime -verify -inform DER -in "$profile_file" -noverify -out "$plist_file" >/dev/null 2>&1 \
+  extract_ios_profile_fields "$profile_file" "$plist_file" \
     || die "无法解析描述文件: $profile_file"
-
-  PROFILE_NAME="$(plutil -extract Name raw -o - "$plist_file" 2>/dev/null || true)"
-  PROFILE_UUID="$(plutil -extract UUID raw -o - "$plist_file" 2>/dev/null || true)"
-  PROFILE_EXPIRY="$(plutil -extract ExpirationDate raw -o - "$plist_file" 2>/dev/null || true)"
-  TEAM_ID="$(plutil -extract TeamIdentifier.0 raw -o - "$plist_file" 2>/dev/null || true)"
-  local app_identifier
-  app_identifier="$(plutil -extract Entitlements.application-identifier raw -o - "$plist_file" 2>/dev/null || true)"
-  BUNDLE_ID="${app_identifier#*.}"
 
   [ -n "$PROFILE_NAME" ] || die "描述文件缺少 Name"
   [ -n "$PROFILE_UUID" ] || die "描述文件缺少 UUID"
   [ -n "$TEAM_ID" ] || die "描述文件缺少 TeamIdentifier"
   [ -n "$BUNDLE_ID" ] || die "描述文件缺少 application-identifier"
   case "$BUNDLE_ID" in
-    '*') die "描述文件使用了通配 Bundle ID: $app_identifier" ;;
+    '*') die "描述文件使用了通配 Bundle ID: $BUNDLE_ID" ;;
   esac
 
   local get_task_allow="false"
@@ -1440,6 +1583,14 @@ write_package_env() {
     printf 'OUTPUT_ROOT=%q\n' "$RUN_DIR/native-output"
     if [ -n "${MARKETING_VERSION:-}" ]; then
       printf 'MARKETING_VERSION=%q\n' "$MARKETING_VERSION"
+    fi
+    # --set KEY=VALUE 覆盖项由用户显式给出，写在最后：同名键以用户值为准。
+    if [ -n "${APP_PACKAGER_SET_OVERRIDES:-}" ]; then
+      local override
+      while IFS= read -r override; do
+        [ -n "$override" ] || continue
+        printf '%s=%q\n' "${override%%=*}" "${override#*=}"
+      done <<<"$APP_PACKAGER_SET_OVERRIDES"
     fi
   } > "$PACKAGE_ENV"
 }

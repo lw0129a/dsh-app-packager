@@ -53,6 +53,7 @@
 - **补回可执行位**（`EXECUTABLE = /\.(command|sh)$/i` → 755），因为 pnpm 打的 tarball 里所有文件都是 644。
 - **成功不只看出口码**：输出里出现 `[FAIL]` 时插件判定为失败（`verdictOf`）。
 - **`check` 与 `build` 是两个子命令**：引擎 argv 由 `web.js` 的 `engineArgsFor` 拼装，因为在 `lib/runner.sh` 里裸平台参数意味着**打包**。检查某平台永远是 `打包工具.command check <平台> [项目]`。
+- **打包选项只有一份出处**：`--full-permission` / `--no-full-permission`、`--package-kind`、`--profile`、`--set KEY=VALUE` 都由 `engineArgsFor` 生成，**`check` 与 `build` 共用同一组**（check 就是同一套接线的预演：描述文件缺失或类型不符、权限开关写错都会先报出来）。`--package-kind` 是 iOS 概念，非 iOS 平台不传。面板描述文件清单不自己解析 `.mobileprovision`，而是调用引擎的 `profiles` 子命令（按 `signing/current`、`signing/apple`、`certificates/iOS` 的 mtime 缓存）；`--set` 允许的键从引擎 `lib/common.sh` 的 `PACKAGE_ENV_OVERRIDE_KEYS` 读出后随 `state` 下发，面板据此过滤项目预设，避免与引擎各维护一份白名单。
 - **物化出的引擎目录会写一份 `.gitignore`**（`HOME_GITIGNORE`），保护 `config/projects/*.env`、`certificates/*`、`*.p12`、`*.mobileprovision`、`*.ipa`、`*.apk`、`*.hap`。
 
 ## 测试与 CI

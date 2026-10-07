@@ -24,7 +24,7 @@ import {
   runEngine,
   shellAvailable,
 } from 'app-packager';
-import { PLATFORM_VALUES, engineArgsFor, mountWebPanel } from './web.js';
+import { PACKAGE_KINDS, PLATFORM_VALUES, engineArgsFor, mountWebPanel } from './web.js';
 
 export const name = 'app-packager';
 
@@ -177,6 +177,22 @@ export function apply(ctx, rawConfig = {}) {
   // whole entry down with it, tools and panel alike.
   const output = (render) => ({ schema: { type: 'object' }, render: (_args, value) => [{ type: 'text', text: render(value) }] });
   const homeParam = { type: 'string', description: 'AppPackager 引擎目录（默认 ~/AppPackager，或 APP_PACKAGER_HOME 环境变量）' };
+  // Both engine actions accept these: `check` is the dry run of exactly the same
+  // option set, so the model can pre-flight a release wiring change.
+  const optionParams = {
+    fullPermission: { type: 'boolean', description: '是否合入全量权限与首次启动权限申请；省略则跟随 config/settings.env 的 FULL_PERMISSION_PROFILE' },
+    packageKind: {
+      type: 'string',
+      enum: PACKAGE_KINDS,
+      description: 'iOS 发布形态：adhoc 测试包 / appstore 正式包 / development 开发 / enterprise 企业；按 Bundle ID 自动选描述文件（仅 iOS 生效）',
+    },
+    profile: { type: 'string', description: '显式指定 .mobileprovision 路径（覆盖按发布形态自动选择；与 packageKind 类型不符会报错）' },
+    set: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '覆盖打包参数，每项 KEY=VALUE，例如 MARKETING_VERSION=1.2.3；可覆盖 APP_NAME/BUNDLE_ID/TEAM_ID/EXPORT_METHOD/PACKAGE_KIND/SCHEME/CONFIGURATION/MARKETING_VERSION 等，路径类键不允许',
+    },
+  };
 
   ctx.tools.register({
     name: 'app_packager_list',
@@ -233,12 +249,13 @@ export function apply(ctx, rawConfig = {}) {
 
   ctx.tools.register({
     name: 'app_packager_check',
-    description: 'Run the AppPackager environment check for one platform (signing certificates, SDK dirs, HBuilderX CLI) and return its report.',
+    description: 'Run the AppPackager environment check for one platform (signing certificates, SDK dirs, HBuilderX CLI) and return its report. Carries the same build options as app_packager_build, so it doubles as a dry run of a release/test wiring change.',
     parameters: {
       type: 'object',
       properties: {
         platform: { type: 'string', enum: PLATFORM_VALUES, description: '平台，默认 all' },
         project: { type: 'string', description: '项目 ID（config/projects/<id>.env），省略则检查该平台全部已启用项目（引擎侧 --all）' },
+        ...optionParams,
         home: homeParam,
       },
       additionalProperties: false,
@@ -254,7 +271,7 @@ export function apply(ctx, rawConfig = {}) {
 
   ctx.tools.register({
     name: 'app_packager_build',
-    description: 'Build an AppPackager package (IPA / APK / HAP) for one platform or all platforms, optionally uploading to pgyer and overriding the version. Takes minutes; call app_packager_check first when unsure.',
+    description: 'Build an AppPackager package (IPA / APK / HAP) for one platform or all platforms, optionally uploading to pgyer and overriding the version. Can also pick the iOS release kind (test Ad Hoc vs App Store), an explicit signing profile, whether the full permission set is merged in, and KEY=VALUE build parameter overrides. Takes minutes; call app_packager_check first when unsure.',
     parameters: {
       type: 'object',
       properties: {
@@ -265,6 +282,7 @@ export function apply(ctx, rawConfig = {}) {
         version: { type: 'string', description: '覆盖产物版本号' },
         harmonyDebug: { type: 'boolean', description: 'HarmonyOS 生成 debug 侧载包' },
         keepWork: { type: 'boolean', description: '保留中间构建目录' },
+        ...optionParams,
         home: homeParam,
       },
       additionalProperties: false,

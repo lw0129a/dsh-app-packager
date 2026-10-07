@@ -70,6 +70,25 @@ window.__ModuleLoader__.load({
       'options.keepWork': '保留构建目录',
       'options.harmonyDebug.hint': '生成可侧载的 debug HAP（签名用调试证书），发布包不要勾。',
       'options.keepWork.hint': '保留中间构建目录，构建失败时用来查日志；会让磁盘占用变大。',
+      'options.fullPermission': '全量权限',
+      'options.fullPermission.hint': '合入全量 Android 权限与 iOS 隐私说明，并在 App 首次启动时申请；不勾则用项目自带的权限清单。',
+      'options.kind': 'iOS 包型',
+      'options.kind.auto': '跟随签名',
+      'options.kind.adhoc': '测试包 Ad Hoc',
+      'options.kind.appstore': '正式包 App Store',
+      'options.kind.development': '开发包 development',
+      'options.kind.enterprise': '企业包 enterprise',
+      'options.kind.hint': '正式/测试由 iOS 描述文件类型决定；没有该类型的描述文件时这个选项不可选。',
+      'options.kind.missing': '没有 {kind} 类型的描述文件',
+      'options.profile': '描述文件',
+      'options.profile.auto': '自动（按包型或项目接线）',
+      'options.profile.expired': '已过期',
+      'options.profiles.none': '签名目录里没有描述文件：把 .mobileprovision 放进 signing/current/，或放到 certificates/iOS/。',
+      'options.overrides': '自定义配置项',
+      'options.overrides.hint': '每行一个 KEY=VALUE，覆盖打包参数，如 MARKETING_VERSION=1.2.3、APP_NAME=我的应用、EXPORT_METHOD=release-testing；留空表示不改。',
+      'options.overrides.preset': '载入项目预设…',
+      'options.overrides.presets.none': '该项目没有预设 env 文件。',
+      'options.overrides.invalid': '第 {n} 行不是 KEY=VALUE',
       advanced: '高级选项',
       scope: '打包范围',
       'scope.platforms': '平台',
@@ -136,6 +155,25 @@ window.__ModuleLoader__.load({
       'options.keepWork': 'Keep work dir',
       'options.harmonyDebug.hint': 'Builds a debug-signed HAP you can sideload; do not tick it for a release.',
       'options.keepWork.hint': 'Keeps the intermediate build directory for inspecting a failed build; uses more disk.',
+      'options.fullPermission': 'Full permissions',
+      'options.fullPermission.hint': 'Merges the full Android permission list and iOS privacy strings, and asks for them on first launch; unticked uses the project’s own lists.',
+      'options.kind': 'iOS release kind',
+      'options.kind.auto': 'Follow signing',
+      'options.kind.adhoc': 'Ad Hoc (test)',
+      'options.kind.appstore': 'App Store (release)',
+      'options.kind.development': 'development',
+      'options.kind.enterprise': 'enterprise',
+      'options.kind.hint': 'Test or release is decided by the iOS provisioning profile type; a kind without a profile cannot be picked.',
+      'options.kind.missing': 'no {kind} profile found',
+      'options.profile': 'Profile',
+      'options.profile.auto': 'Auto (kind or project wiring)',
+      'options.profile.expired': 'expired',
+      'options.profiles.none': 'No provisioning profile in the signing directory: put one in signing/current/ or certificates/iOS/.',
+      'options.overrides': 'Custom build parameters',
+      'options.overrides.hint': 'One KEY=VALUE per line, overriding build parameters such as MARKETING_VERSION=1.2.3 or APP_NAME=MyApp; empty means unchanged.',
+      'options.overrides.preset': 'Load project preset…',
+      'options.overrides.presets.none': 'This project has no preset env file.',
+      'options.overrides.invalid': 'line {n} is not KEY=VALUE',
       advanced: 'Advanced',
       scope: 'Build scope',
       'scope.platforms': 'Platforms',
@@ -229,6 +267,29 @@ window.__ModuleLoader__.load({
       return status === 'ok' ? '✓' : status === 'warn' ? '!' : '✗';
     }
 
+    /**
+     * iOS release kinds, kept in step with the engine's `--package-kind`. The host
+     * validates the value too, so a drift here fails loudly rather than silently.
+     */
+    const PACKAGE_KINDS = ['adhoc', 'appstore', 'development', 'enterprise'];
+
+    /**
+     * Project preset env files quote their values (`APP_NAME="MyApp"`) and carry
+     * comments; `--set` wants bare KEY=VALUE. Keys the engine rejects are dropped
+     * when it hands us its allow-list.
+     */
+    function presetLines(text, allow) {
+      return String(text || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(line))
+        .map((line) => {
+          const at = line.indexOf('=');
+          return `${line.slice(0, at)}=${line.slice(at + 1).trim().replace(/^(['"])([\s\S]*)\1$/, '$2')}`;
+        })
+        .filter((line) => !allow || allow.includes(line.slice(0, line.indexOf('='))));
+    }
+
     function markColor(status) {
       return status === 'ok' ? '#3fb950' : status === 'warn' ? '#d29922' : '#ff6b6b';
     }
@@ -261,6 +322,10 @@ window.__ModuleLoader__.load({
       const [batchProjects, setBatchProjects] = useState({});
       const [harmonyDebug, setHarmonyDebug] = useState(false);
       const [keepWork, setKeepWork] = useState(false);
+      const [fullPermission, setFullPermission] = useState(null);
+      const [packageKind, setPackageKind] = useState('');
+      const [profileFile, setProfileFile] = useState('');
+      const [overrides, setOverrides] = useState('');
       const [rowPlatform, setRowPlatform] = useState({});
       const [projectDir, setProjectDir] = useState('');
       const logRef = useRef(null);
@@ -352,6 +417,10 @@ window.__ModuleLoader__.load({
             version,
             harmonyDebug,
             keepWork,
+            fullPermission,
+            packageKind,
+            profile: profileFile || undefined,
+            set: overrides,
           },
         });
         setJob(started);
@@ -497,6 +566,37 @@ window.__ModuleLoader__.load({
       );
 
       const projects = (state && state.projects) || [];
+      const profiles = (state && state.profiles) || [];
+      const profilesNote = (state && state.profilesError) || (profiles.length ? t('options.profile.auto') : t('options.profiles.none'));
+      // The engine owns this list; we only filter presets with it.
+      const overrideKeys = (state && state.overrideKeys) || null;
+      // Until settings.env has loaded, mirror the engine default (full permission on).
+      const fullPermissionOn = fullPermission === null ? !state || !state.options || state.options.fullPermission !== false : fullPermission;
+      const prettyKind = (kind) => t(`options.kind.${kind}`);
+      const scopedProjects = () => {
+        const picked = projects.filter((project) => batchProjects[project.id] !== false);
+        return picked.length ? picked : projects;
+      };
+      const kindAvailable = (kind) => {
+        const withKind = profiles.filter((profile) => profile.kind === kind);
+        if (withKind.length === 0) return false;
+        const bundles = scopedProjects().map((project) => project.bundleId).filter(Boolean);
+        return bundles.length === 0 || withKind.some((profile) => bundles.includes(profile.bundleId));
+      };
+      const profileLabel = (profile) =>
+        `${profile.name || profile.file} · ${prettyKind(profile.kind)} · ${profile.bundleId}${profile.expired ? ` · ${t('options.profile.expired')}` : ''}`;
+      const presetOptions = () => {
+        const out = [];
+        for (const project of scopedProjects()) {
+          const presets = (state && state.presets && state.presets[project.id]) || {};
+          for (const name of Object.keys(presets)) out.push({ key: `${project.id}/${name}`, text: presets[name] });
+        }
+        return out;
+      };
+      const applyPreset = (key) => {
+        const found = presetOptions().find((item) => item.key === key);
+        if (found) setOverrides(presetLines(found.text, overrideKeys).join('\n'));
+      };
       const projectsCard = h(
         'div',
         { style: styles.group },
@@ -545,6 +645,33 @@ window.__ModuleLoader__.load({
             onChange: (event) => setVersion(event.target.value),
           }),
           h(
+            'select',
+            {
+              className: 'ap-input',
+              style: { width: 'auto' },
+              title: t('options.kind.hint'),
+              value: packageKind,
+              onChange: (event) => setPackageKind(event.target.value),
+            },
+            h('option', { value: '' }, `${t('options.kind')}：${t('options.kind.auto')}`),
+            PACKAGE_KINDS.map((kind) =>
+              h('option', { key: kind, value: kind, disabled: !kindAvailable(kind), title: tf('options.kind.missing', { kind: prettyKind(kind) }) }, prettyKind(kind)),
+            ),
+          ),
+          h(
+            'select',
+            {
+              className: 'ap-input',
+              style: { width: 'auto', maxWidth: '320px' },
+              title: profilesNote,
+              value: profileFile,
+              onChange: (event) => setProfileFile(event.target.value),
+            },
+            h('option', { value: '' }, `${t('options.profile')}：${t('options.profile.auto')}`),
+            profiles.map((profile) => h('option', { key: profile.file, value: profile.file }, profileLabel(profile))),
+          ),
+          checkbox(t('options.fullPermission'), fullPermissionOn, setFullPermission, { title: t('options.fullPermission.hint') }),
+          h(
             'details',
             { style: styles.advanced },
             h('summary', null, t('advanced')),
@@ -553,6 +680,30 @@ window.__ModuleLoader__.load({
               { style: { ...styles.actions, marginTop: '6px' } },
               checkbox(t('options.harmonyDebug'), harmonyDebug, setHarmonyDebug, { title: t('options.harmonyDebug.hint') }),
               checkbox(t('options.keepWork'), keepWork, setKeepWork, { title: t('options.keepWork.hint') }),
+            ),
+            h(
+              'div',
+              { style: { marginTop: '6px' } },
+              h(
+                'div',
+                { style: styles.actions },
+                h('span', { style: styles.muted }, t('options.overrides')),
+                presetOptions().length === 0
+                  ? h('span', { style: styles.muted }, t('options.overrides.presets.none'))
+                  : h(
+                      'select',
+                      { className: 'ap-input', style: { width: 'auto' }, value: '', onChange: (event) => applyPreset(event.target.value) },
+                      h('option', { value: '' }, t('options.overrides.preset')),
+                      presetOptions().map((item) => h('option', { key: item.key, value: item.key }, item.key)),
+                    ),
+              ),
+              h('textarea', {
+                className: 'ap-input',
+                style: { width: '100%', minHeight: '56px', marginTop: '4px' },
+                placeholder: t('options.overrides.hint'),
+                value: overrides,
+                onChange: (event) => setOverrides(event.target.value),
+              }),
             ),
           ),
         ),

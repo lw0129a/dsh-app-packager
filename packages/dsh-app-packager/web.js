@@ -13,6 +13,8 @@
  * @module dsh-app-packager/web
  */
 import { execFile as execFileCallback } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import {
   PLATFORM_LABELS,
@@ -21,6 +23,7 @@ import {
   listUploaders,
   materialize,
   packageVersion,
+  parseEnvFile,
   resolveHome,
   runDoctor,
   runEngine,
@@ -45,8 +48,13 @@ const execFileAsync = promisify(execFileCallback);
  * spells `--all` for a single platform (`all` already means every project of
  * every platform); without it `selected_projects` dies on "请指定项目 ID".
  *
+ * Build options (iOS release kind, an explicit profile, full permissions, and
+ * `KEY=VALUE` overrides) are pass-through: omitting them leaves the engine's own
+ * `config/settings.env` and the wired profile in charge.
+ *
  * @param {{platform?: string, project?: string, upload?: string, noUpload?: boolean,
- *   version?: string, harmonyDebug?: boolean, keepWork?: boolean}} args
+ *   version?: string, harmonyDebug?: boolean, keepWork?: boolean, fullPermission?: boolean,
+ *   packageKind?: string, profile?: string, set?: string|string[]}} args
  * @param {{check?: boolean}} [options]
  * @returns {string[]}
  */
@@ -58,12 +66,86 @@ export function engineArgsFor(args = {}, { check = false } = {}) {
   const out = check ? ['check', platform] : [platform];
   if (args.project) out.push(String(args.project));
   else if (platform !== 'all') out.push('--all');
-  if (check) return out;
-  if (args.upload) out.push('--upload', String(args.upload));
-  if (args.noUpload) out.push('--no-upload');
-  if (args.version) out.push('--version', String(args.version));
-  if (args.harmonyDebug) out.push('--harmony-debug');
-  if (args.keepWork) out.push('--keep-work');
+  if (!check) {
+    if (args.upload) out.push('--upload', String(args.upload));
+    if (args.noUpload) out.push('--no-upload');
+    if (args.version) out.push('--version', String(args.version));
+    if (args.harmonyDebug) out.push('--harmony-debug');
+    if (args.keepWork) out.push('--keep-work');
+  }
+  // The rest is also carried by `check`: that run is the dry run of exactly
+  // these options, and the engine validates the profile and permission switch
+  // the same way before it builds anything.
+  if (args.fullPermission === true) out.push('--full-permission');
+  else if (args.fullPermission === false) out.push('--no-full-permission');
+  if (args.profile) out.push('--profile', String(args.profile));
+  // The release kind is an iOS concept: on another platform the engine would
+  // still look for the profile and fail the run for no good reason.
+  const kind = String(args.packageKind || '').trim();
+  if (kind) {
+    if (!PACKAGE_KINDS.includes(kind)) {
+      throw new Error(`packageKind 必须是 ${PACKAGE_KINDS.join(' | ')}，收到 ${JSON.stringify(args.packageKind)}`);
+    }
+    if (platform === 'ios' || platform === 'all') out.push('--package-kind', kind);
+  }
+  for (const pair of overrideList(args.set === undefined ? args.overrides : args.set)) out.push('--set', pair);
+  return out;
+}
+
+export const PACKAGE_KINDS = ['adhoc', 'appstore', 'development', 'enterprise'];
+
+/**
+ * `KEY=VALUE` overrides, from an array or one multi-line textarea value. Blank
+ * lines and `#` comments are dropped so a project preset can be pasted as is;
+ * a line without a `KEY=` is refused here rather than by a failing engine run.
+ *
+ * @param {string|string[]} [value]
+ * @returns {string[]}
+ */
+export function overrideList(value) {
+  const raw = value === undefined || value === null ? [] : Array.isArray(value) ? value : String(value).split(/\r?\n/);
+  const out = [];
+  for (const line of raw.map((item) => String(item).trim()).filter((item) => item && !item.startsWith('#'))) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(line)) throw new Error(`自定义配置项必须写成 KEY=VALUE：${line}`);
+    out.push(line);
+  }
+  return out;
+}
+
+/** Bash-style truthiness, matching the engine's own `is_true` on these switches. */
+function isOn(value, fallback) {
+  return value === undefined ? fallback : !/^(false|0|no|off)$/i.test(String(value).trim());
+}
+
+/** Directory mtime as a cheap change stamp; a missing directory is just "never". */
+function dirStamp(dir) {
+  try {
+    return String(fs.statSync(dir).mtimeMs);
+  } catch {
+    return '-';
+  }
+}
+
+/** The project's own env files (`--env-file` inputs) offered to the panel as presets. */
+function presetsOf(sourceDir) {
+  const out = {};
+  if (!sourceDir) return out;
+  for (const rel of ['scripts/ios-package/env', 'scripts/env']) {
+    let names;
+    try {
+      names = fs.readdirSync(path.join(sourceDir, rel));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!/\.env$/i.test(name)) continue;
+      try {
+        out[name.replace(/\.env$/i, '')] = fs.readFileSync(path.join(sourceDir, rel, name), 'utf8');
+      } catch {
+        /* unreadable preset: just leave it out of the list */
+      }
+    }
+  }
   return out;
 }
 
@@ -379,23 +461,90 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
     }
   }
 
+  /**
+   * Signing profiles, straight from the engine's own `profiles` subcommand: the
+   * panel must not re-implement `.mobileprovision` parsing (kind, bundle id and
+   * expiry all come from the same bash code that later picks the profile).
+   *
+   * Cached by the newest mtime under signing/ — a bash spawn per panel refresh
+   * would be wasted work, and adding a profile touches that directory.
+   */
+  let profileCache = null;
+  async function profilesOf(home) {
+    const stamp = [ 'signing/current', 'signing/apple', 'certificates/iOS' ].map((rel) => dirStamp(path.join(home, rel))).join('|');
+    if (profileCache && profileCache.home === home && profileCache.stamp === stamp) return profileCache.value;
+
+    const shell = shellAvailable();
+    if (!shell.available) return { error: `当前系统上无法运行 bash 引擎：${shell.error}` };
+    let result;
+    try {
+      result = await spawn(home, ['profiles'], { stdio: 'pipe', timeoutMs: 60_000, searchRoots: config.searchRoots, shell: shell.shell });
+    } catch (error) {
+      return { error: `无法读取签名描述文件：${String(error?.message || error)}` };
+    }
+    if (result.code !== 0) {
+      return { error: String(result.stderr || result.stdout || `profiles 退出码 ${result.code}`).trim() };
+    }
+    try {
+      const value = JSON.parse(String(result.stdout || '').trim() || '[]');
+      if (!Array.isArray(value)) return { error: 'profiles 输出不是数组' };
+      profileCache = { home, stamp, value };
+      return value;
+    } catch (error) {
+      return { error: `无法解析 profiles 输出：${String(error?.message || error)}` };
+    }
+  }
+
+  /** Defaults the panel mirrors from config/settings.env (the engine still owns them). */
+  function optionsOf(home) {
+    let env = {};
+    try {
+      env = parseEnvFile(path.join(home, 'config', 'settings.env'));
+    } catch {
+      /* no settings yet: fall back to the engine's own defaults below */
+    }
+    return { fullPermission: isOn(env.FULL_PERMISSION_PROFILE, true) };
+  }
+
+  /**
+   * The keys the engine accepts as `--set` overrides, read from the engine itself
+   * so the panel can filter project presets without duplicating the list.
+   */
+  async function overrideKeysOf(home) {
+    try {
+      const text = fs.readFileSync(path.join(home, 'lib', 'common.sh'), 'utf8');
+      const match = text.match(/^PACKAGE_ENV_OVERRIDE_KEYS="([^"]*)"/m);
+      return match ? match[1].trim().split(/\s+/).filter(Boolean) : null;
+    } catch {
+      return null;
+    }
+  }
+
   return {
     runner,
     homeOf,
 
-    state() {
+    async state() {
       const home = homeOf();
       const projects = projectsOf(home);
       const uploaders = uploadersOf(home);
+      const profiles = await profilesOf(home);
+      const list = Array.isArray(projects) ? projects : [];
       return {
         home,
         engineVersion: packageVersion(),
         materialized: isMaterialized(home),
         shell: shellAvailable(),
-        projects: Array.isArray(projects) ? projects : [],
+        projects: list,
         projectsError: Array.isArray(projects) ? '' : projects.error,
         uploaders: Array.isArray(uploaders) ? uploaders : [],
         uploadersError: Array.isArray(uploaders) ? '' : uploaders.error,
+        profiles: Array.isArray(profiles) ? profiles : [],
+        profilesError: Array.isArray(profiles) ? '' : profiles.error,
+        options: optionsOf(home),
+        overrideKeys: await overrideKeysOf(home),
+        // The project's own packaging env files, offered as `--set` presets.
+        presets: Object.fromEntries(list.map((project) => [project.id, presetsOf(project.sourceDir)])),
         jobs: runner.list(),
       };
     },

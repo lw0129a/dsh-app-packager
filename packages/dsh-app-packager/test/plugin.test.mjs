@@ -396,6 +396,30 @@ test('面板任务：check 传 check 子命令、日志可轮询、运行中可�
   rmSync(home, { recursive: true, force: true });
 });
 
+test('打包选项：全权限、包型、描述文件与 KEY=VALUE 覆盖', () => {
+  assert.deepEqual(
+    engineArgsFor({
+      platform: 'ios',
+      project: 'demo',
+      fullPermission: false,
+      packageKind: 'adhoc',
+      profile: '/p/a.mobileprovision',
+      set: 'MARKETING_VERSION=1.2.3\n# 注释\nAPP_NAME=A B',
+    }),
+    ['ios', 'demo', '--no-full-permission', '--profile', '/p/a.mobileprovision', '--package-kind', 'adhoc', '--set', 'MARKETING_VERSION=1.2.3', '--set', 'APP_NAME=A B'],
+    '面板剥掉预设里的引号与注释后再交给引擎，这里原样透传',
+  );
+  assert.deepEqual(
+    engineArgsFor({ platform: 'android', project: 'demo', packageKind: 'appstore', fullPermission: true }, { check: true }),
+    ['check', 'android', 'demo', '--full-permission'],
+    '非 iOS 不传 --package-kind；check 与 build 带同一套选项',
+  );
+  assert.deepEqual(engineArgsFor({ platform: 'all', set: ['A=1'] }, { check: true }), ['check', 'all', '--set', 'A=1']);
+  assert.deepEqual(engineArgsFor({ platform: 'ios', project: 'demo' }), ['ios', 'demo'], '省略全权限即跟随 settings.env');
+  assert.throws(() => engineArgsFor({ platform: 'ios', project: 'demo', set: ['NOPE'] }), /KEY=VALUE/);
+  assert.throws(() => engineArgsFor({ platform: 'ios', project: 'demo', packageKind: 'beta' }), /packageKind 必须是/);
+});
+
 test('范围参数：单/多平台、全项目/指定项目、上传多平台', () => {
   assert.deepEqual(engineArgsFor({ platform: 'ios', project: 'demo' }), ['ios', 'demo']);
   assert.deepEqual(engineArgsFor({ platform: 'all' }), ['all'], 'all 本身就是全部项目，不加 --all');
@@ -472,7 +496,7 @@ test('面板任务：批处理里某一条失败时保留首个失败退出码�
   rmSync(home, { recursive: true, force: true });
 });
 
-test('面板 state 带出上传平台清单与其可用性', () => {
+test('面板 state 带出上传平台清单与其可用性', async () => {
   const home = fixtureHome();
   mkdirSync(join(home, 'config'), { recursive: true });
   writeFileSync(
@@ -480,12 +504,32 @@ test('面板 state 带出上传平台清单与其可用性', () => {
     ['UPLOAD_PLATFORM_IDS="pgyer store"', 'UPLOAD_PLATFORM_pgyer_NAME="蒲公英"', 'UPLOAD_PLATFORM_store_ENABLED=false'].join('\n'),
   );
   const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
-  const state = panel.state();
+  const state = await panel.state();
   assert.deepEqual(state.uploaders, [
     { id: 'pgyer', name: '蒲公英', enabled: true, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'script' },
     { id: 'store', name: 'store', enabled: false, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'disabled' },
   ]);
   assert.equal(state.uploadersError, '');
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板 state 带出描述文件清单、全权限默认值与引擎的覆盖键白名单', async () => {
+  const home = fixtureHome();
+  mkdirSync(join(home, 'config'), { recursive: true });
+  mkdirSync(join(home, 'lib'), { recursive: true });
+  writeFileSync(join(home, 'config', 'settings.env'), 'FULL_PERMISSION_PROFILE="false"\n');
+  writeFileSync(join(home, 'lib', 'common.sh'), 'PACKAGE_ENV_OVERRIDE_KEYS="APP_NAME MARKETING_VERSION"\n');
+  const profiles = [{ file: '/s/current/a.mobileprovision', kind: 'adhoc', bundleId: 'com.a.b', name: 'A', expired: false }];
+  const spawn = (dir, args) => {
+    assert.equal(args[0], 'profiles', 'state 只应该向引擎问一次描述文件');
+    return Promise.resolve({ code: 0, signal: null, stdout: `${JSON.stringify(profiles)}\n`, stderr: '' });
+  };
+  const state = await createPanel({ config: { home }, spawn }).state();
+  assert.deepEqual(state.profiles, profiles);
+  assert.equal(state.profilesError, '');
+  assert.deepEqual(state.options, { fullPermission: false });
+  assert.deepEqual(state.overrideKeys, ['APP_NAME', 'MARKETING_VERSION'], '面板用引擎自己的白名单过滤预设');
+  assert.deepEqual(state.presets, {}, 'fixture 没有 config/projects，也就没有项目预设');
   rmSync(home, { recursive: true, force: true });
 });
 
