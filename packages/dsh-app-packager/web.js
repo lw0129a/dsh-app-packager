@@ -329,7 +329,10 @@ function queryOf(req) {
  * @returns {(() => void) | null} disposer, or null when no web server is up yet.
  */
 export function mountWebPanel(ctx, config = {}) {
-  const webServer = ctx?.get?.('webServer') ?? ctx?.webServer;
+  // `ctx.get` reads a service without the inject requirement; touching
+  // `ctx.webServer` from a plugin that does not inject it throws
+  // ("cannot get property \"webServer\" without inject"), so never do that here.
+  const webServer = ctx?.get?.('webServer');
   if (!webServer || typeof webServer.register !== 'function') return null;
 
   const panel = createPanel({ config });

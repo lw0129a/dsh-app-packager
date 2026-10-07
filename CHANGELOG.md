@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-08
+
+### Fixed
+
+- **Tool schemas are valid JSON Schema again.** `app_packager_build` and `app_packager_check` declared a property-level `required: true` / `required: false`. The host forwards a tool's `parameters` verbatim to the model API, where `required` is only legal on an object schema and must be an array, so *every* request carrying those tools failed before the turn could start: `Invalid schema for function 'app_packager_build': true is not of type "array"`. `build` now uses an object-level `required: ["platform"]` and `check` declares none. `output.schema` was also the unsupported shorthand `{ type: "json" }`, which the host rejects via `assertSupportedJsonSchema` and which takes the whole plugin entry down (tools *and* panel); it is now `{ type: "object" }`. `test/plugin.test.mjs` asserts all four tools are free of property-level `required` and that `build` requires exactly `platform`.
+- The web panel reads the web server with `ctx.get('webServer')` only. Touching `ctx.webServer` from a plugin that does not declare it in `inject` throws `cannot get property "webServer" without inject`, which killed plugin activation in every profile without a web server.
+
+### Changed
+
+- **Zero-impact principle** documented as the repository's highest-priority rule (`AGENTS.md`, `engine/AGENTS.md`, `engine/.cursor/rules/project-docs.mdc`, `engine/项目介绍.md` §14): a bug, misconfiguration, missing dependency or plugin failure in AppPackager must never affect the user's machine, software or projects — user projects are read-only, writes stay inside the engine directory and explicit output directories, the DeepSeek Harness installation and its other plugins are never modified, destructive actions ask first, and failures fail in place and leave a log.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added
@@ -31,6 +42,7 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.2.0...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.2.1...main
+[0.2.1]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.1
 [0.2.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.0
 [0.1.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.1.0

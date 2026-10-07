@@ -172,7 +172,10 @@ function engineRunValue(config, home, result) {
  */
 export function apply(ctx, rawConfig = {}) {
   const config = { ...DEFAULT_CONFIG, ...rawConfig };
-  const output = (render) => ({ schema: { type: 'json' }, render: (_args, value) => [{ type: 'text', text: render(value) }] });
+  // `output.schema` is validated as a real JSON Schema by ctx.tools.register
+  // (assertSupportedJsonSchema): `{ type: 'json' }` is rejected and takes the
+  // whole entry down with it, tools and panel alike.
+  const output = (render) => ({ schema: { type: 'object' }, render: (_args, value) => [{ type: 'text', text: render(value) }] });
   const homeParam = { type: 'string', description: 'AppPackager 引擎目录（默认 ~/AppPackager，或 APP_PACKAGER_HOME 环境变量）' };
 
   ctx.tools.register({
@@ -234,7 +237,7 @@ export function apply(ctx, rawConfig = {}) {
     parameters: {
       type: 'object',
       properties: {
-        platform: { type: 'string', enum: PLATFORM_VALUES, description: '平台，默认 all', required: false },
+        platform: { type: 'string', enum: PLATFORM_VALUES, description: '平台，默认 all' },
         project: { type: 'string', description: '项目 ID（config/projects/<id>.env），省略则检查全部项目' },
         home: homeParam,
       },
@@ -255,7 +258,7 @@ export function apply(ctx, rawConfig = {}) {
     parameters: {
       type: 'object',
       properties: {
-        platform: { type: 'string', enum: PLATFORM_VALUES, description: 'ios | android | harmony | all', required: true },
+        platform: { type: 'string', enum: PLATFORM_VALUES, description: 'ios | android | harmony | all' },
         project: { type: 'string', description: '项目 ID；platform=all 时可省略，表示全部项目' },
         upload: { type: 'string', description: '打包后上传的平台，例如 pgyer' },
         noUpload: { type: 'boolean', description: '跳过上传' },
@@ -265,6 +268,7 @@ export function apply(ctx, rawConfig = {}) {
         home: homeParam,
       },
       additionalProperties: false,
+      required: ['platform'],
     },
     output: output((value) => renderEngineRun(value)),
     async execute(args) {

@@ -16,6 +16,23 @@ import { join } from 'node:path';
 import { apply, inject, name } from '../index.js';
 import { createPanel, engineArgsFor, mountWebPanel } from '../web.js';
 
+/**
+ * Mirror cordis service access: reading `ctx.<service>` without declaring it in
+ * `inject` throws, and `ctx.get(name)` is the only allowed lookup.
+ */
+function withServices(ctx, services = {}) {
+  for (const name of Object.keys(services)) {
+    Object.defineProperty(ctx, name, {
+      configurable: true,
+      get() {
+        throw new Error(`cannot get property "${name}" without inject`);
+      },
+    });
+  }
+  ctx.get = (name) => services[name];
+  return ctx;
+}
+
 /** Capture what the plugin registers instead of mounting a real Harness. */
 function harness() {
   const tools = new Map();
@@ -23,19 +40,20 @@ function harness() {
     tools.set(definition.name, definition);
     return () => tools.delete(definition.name);
   };
-  return { tools, ctx: { tools } };
+  return { tools, ctx: withServices({ tools }, { webServer: undefined }) };
 }
 
 /** Fake harness context that also serves the panel's HTTP routes. */
 function webHarness() {
   const { tools, ctx } = harness();
   const routes = new Map();
-  ctx.webServer = {
+  const service = {
     register({ path, handler }) {
       routes.set(path, handler);
       return () => routes.delete(path);
     },
   };
+  withServices(ctx, { webServer: service });
   return { ctx, routes };
 }
 
@@ -105,12 +123,58 @@ test('plugin 暴露名称、inject 与四个工具', () => {
     [...tools.keys()].sort(),
     ['app_packager_build', 'app_packager_check', 'app_packager_doctor', 'app_packager_list'],
   );
+  // The host validates output.schema with assertSupportedJsonSchema before it
+  // inserts the tool; a bogus type here (e.g. the `json` shorthand) throws and
+  // deactivates the whole plugin entry, so mirror that rule exactly.
+  const SCHEMA_TYPES = ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'];
   for (const definition of tools.values()) {
     assert.equal(definition.parameters.type, 'object');
-    assert.equal(definition.output.schema.type, 'json');
+    assert.ok(SCHEMA_TYPES.includes(definition.output.schema.type), `${definition.name} output.schema.type`);
     assert.equal(typeof definition.output.render, 'function');
     assert.equal(typeof definition.execute, 'function');
   }
+});
+
+/**
+ * Mirror the harness rule that took the whole plugin down: `required` is only
+ * supported on object schemas and must be an array of property names — never
+ * `required: true` / `required: false` on an individual property.
+ */
+function requiredKeywordViolations(node, path, violations = []) {
+  if (Array.isArray(node)) {
+    node.forEach((entry, index) => requiredKeywordViolations(entry, `${path}[${index}]`, violations));
+    return violations;
+  }
+  if (!node || typeof node !== 'object') return violations;
+  if (Object.hasOwn(node, 'required')) {
+    if (node.type !== 'object') {
+      violations.push(`${path}.required is only supported on object schemas`);
+    } else if (!Array.isArray(node.required) || node.required.some((key) => typeof key !== 'string')) {
+      violations.push(`${path}.required must be an array of strings`);
+    } else {
+      const properties = node.properties && typeof node.properties === 'object' ? node.properties : {};
+      for (const key of node.required) {
+        if (!Object.hasOwn(properties, key)) violations.push(`${path}.required names "${key}" which is not in properties`);
+      }
+    }
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key !== 'required') requiredKeywordViolations(value, `${path}.${key}`, violations);
+  }
+  return violations;
+}
+
+test('四个工具的参数 schema 通过 Harness 的 required 子集校验', () => {
+  const { ctx, tools } = harness();
+  apply(ctx);
+  for (const definition of tools.values()) {
+    const violations = requiredKeywordViolations(definition.parameters, `${definition.name}.parameters`);
+    assert.deepEqual(violations, [], violations.join('; '));
+  }
+  const build = toolOf(ctx, 'app_packager_build');
+  assert.deepEqual(build.parameters.required, ['platform']);
+  assert.ok(!Object.hasOwn(build.parameters.properties.platform, 'required'));
+  assert.ok(!Object.hasOwn(toolOf(ctx, 'app_packager_check').parameters.properties.platform, 'required'));
 });
 
 test('app_packager_list 物化引擎并读出项目', async () => {
@@ -205,24 +269,21 @@ test('webServer 晚到：apply 用 ctx.inject 等它，服务出现后补挂路�
   const { ctx } = harness();
   const waits = [];
   ctx.inject = (deps, callback) => waits.push({ deps, callback });
-  // A service lookup that finds nothing yet, like cordis before webServer loads.
-  ctx.get = () => undefined;
 
   apply(ctx, { home });
   assert.equal(ctx.tools.size, 4, '工具照常注册');
   assert.equal(waits.length, 1);
   assert.deepEqual(waits[0].deps, ['webServer']);
 
-  // The host hands the service to the callback; the routes appear then.
+  // The host hands a context with the service injected; routes appear then.
   const routes = new Map();
-  waits[0].callback({
-    webServer: {
-      register({ path, handler }) {
-        routes.set(path, handler);
-        return () => routes.delete(path);
-      },
+  const service = {
+    register({ path, handler }) {
+      routes.set(path, handler);
+      return () => routes.delete(path);
     },
-  });
+  };
+  waits[0].callback(withServices({}, { webServer: service }));
   assert.equal(routes.size, 6);
   rmSync(home, { recursive: true, force: true });
 });
@@ -301,9 +362,11 @@ test('面板任务：check 传 check 子命令、日志可轮询、运行中可�
   rmSync(home, { recursive: true, force: true });
 });
 
-test('mountWebPanel 在没有 webServer 时返回 null', () => {
+test('mountWebPanel 在没有 webServer 时返回 null，且不直接读 ctx.webServer', () => {
   const { ctx } = harness();
   assert.equal(mountWebPanel(ctx, {}), null);
+  // cordis throws on that property access — the plugin must go through ctx.get.
+  assert.throws(() => ctx.webServer, /without inject/);
 });
 
 test('client half：注册侧栏行与主面板，并能渲染', () => {
