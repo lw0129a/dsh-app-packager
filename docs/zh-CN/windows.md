@@ -1,3 +1,5 @@
+[English](../en/windows.md) | 简体中文
+
 # Windows / Linux 说明
 
 打包引擎是 bash + macOS 工具链（`xcodebuild`、`codesign`、`security`、`plutil`）。Node 这一层负责让它尽量在别的系统上也能用起来，能用到什么程度，本文说清楚。

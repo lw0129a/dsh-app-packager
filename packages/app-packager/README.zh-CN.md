@@ -1,0 +1,90 @@
+[English](README.md) | 简体中文
+
+# app-packager
+
+一条命令把 uni-app x 项目打成 **iOS IPA / Android APK / HarmonyOS HAP**。零运行时依赖，只用 Node 内置模块。
+
+它做两件事：
+
+1. 把包内自带的打包引擎（原 `打包工具.command` bash 工具链）释放到引擎目录，默认 `~/AppPackager`；
+2. 用 Node 完成项目发现与环境体检，真正的打包转发给引擎 —— macOS 走系统 bash，Windows 走 Git Bash 或 WSL。
+
+完整文档见[仓库说明](https://github.com/lw0129a/dsh-app-packager#readme)。
+
+## 安装
+
+```bash
+npm i -g app-packager
+# 或
+pnpm add -g app-packager
+```
+
+不安装直接跑：
+
+```bash
+npx app-packager doctor
+```
+
+## 用法
+
+```bash
+app-packager init                 # 首次：释放引擎到 ~/AppPackager 并进入初始化向导
+app-packager init --no-wizard     # 只释放引擎，不走向导
+app-packager doctor               # 体检：Node / bash / Xcode / HBuilderX / JDK / SDK / 项目配置
+app-packager doctor --platform android
+app-packager list                 # 列出已发现的 uni-app x 项目（读 config/projects/*.env）
+app-packager env                  # 打印引擎目录、版本、shell 与扫描根
+
+app-packager check android shop   # 打包前检查某平台
+app-packager build android shop   # 打包
+app-packager build ios --all      # 打所有启用 iOS 的项目
+app-packager build harmony shop --harmony-debug
+app-packager build android shop --upload pgyer --version 1.2.0
+
+app-packager ios shop             # 可省略 build，参数直接透传给引擎
+app-packager run list             # 或用 run 显式转发任意引擎参数
+```
+
+### 选项
+
+| 选项 | 说明 |
+| --- | --- |
+| `--dir <路径>` | 引擎目录（等同 `APP_PACKAGER_HOME`，默认 `~/AppPackager`） |
+| `--json` | `doctor` / `list` / `env` 输出 JSON，便于脚本处理 |
+| `--search-roots <路径>` | 项目扫描根，`:` 分隔（默认引擎目录的上一级） |
+| `--upload pgyer` / `--no-upload` | 打包后上传 pgyer / 明确不上传 |
+| `--version <版本>` | 覆盖打包版本号 |
+| `--harmony-debug` | 打 HarmonyOS 调试侧载包 |
+| `--keep-work` | 保留本次临时工作区 |
+| `--force` | `init`：覆盖引擎文件（本地配置、证书、SDK、产物始终保留） |
+| `--no-wizard` | `init`：跳过交互向导 |
+
+## 引擎目录
+
+首次运行会把包内 `engine/` 复制到引擎目录，并写入 `.engine-version` 记录版本。之后：
+
+- 包内引擎更新时，`init` 只更新引擎文件，**不动你的本地文件**：`config/settings.local.env`、`config/*.local.env`、`config/projects/*.env`（`.example` 除外）、`certificates/`、`signing/`、`sdk/`、`packages/`、`logs/`、`workspaces/` 都保持原样；
+- 需要完全重置时用 `app-packager init --force`（用户文件仍然保留）；
+- `APP_PACKAGER_HOME` 可以让多个引擎目录共存，例如按业务线各一份。
+
+项目配置、签名与 SDK 的细节见引擎自带的 `项目介绍.md`。
+
+## 平台支持
+
+| 能力 | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| `list` / `doctor` / `env` | ✅ | ✅ | ✅ |
+| Android APK / HarmonyOS HAP | ✅ | ⚠️ 需 Git for Windows 或 WSL | ⚠️ 需自备工具链 |
+| iOS IPA | ✅ | ❌ | ❌ |
+
+Windows 的细节（bash 探测顺序、路径转换、为什么推荐 Git for Windows 而不是 WSL）见 [`docs/zh-CN/windows.md`](../../docs/zh-CN/windows.md)。
+
+## 开发
+
+```bash
+node --test test/
+```
+
+## 许可
+
+MIT

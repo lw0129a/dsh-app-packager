@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: DeepSeek Harness plugin market
+    url: https://github.com/lw0129a/dsh-app-packager#readme
+    about: Installation, supported platforms and the CLI reference live in the README.
+  - name: Security issue
+    url: https://github.com/lw0129a/dsh-app-packager/security/advisories/new
+    about: Please report vulnerabilities privately, never in a public issue.

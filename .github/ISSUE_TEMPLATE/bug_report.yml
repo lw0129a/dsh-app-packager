@@ -1,0 +1,86 @@
+name: Bug report
+description: Something in the CLI, the plugin tools or the engine bridge does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Two things make a bug reproducible here: the exact command and the `doctor` output for the platform involved.
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which part?
+      options:
+        - app-packager CLI
+        - dsh-app-packager plugin (agent tools)
+        - dsh-app-packager plugin (web panel)
+        - packaging engine (packages/app-packager/engine)
+        - documentation
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`app-packager version`, or the plugin version shown in the Harness plugin list."
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - WSL
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: "`node -v`"
+      placeholder: v20.20.2
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: The exact commands, with any private paths or credentials redacted.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: doctor output
+      description: "`app-packager doctor --json` (redact paths you do not want to share)."
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Engine log
+      description: Relevant tail of `<engine dir>/logs/…`, or the tool output, with secrets redacted.
+      render: text
+    validations:
+      required: false

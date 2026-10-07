@@ -1,3 +1,5 @@
+[English](../en/publishing.md) | 简体中文
+
 # 发布与上架
 
 本文档记录把两个包发到 npm、并让插件出现在 DeepSeek Harness 插件市场里的完整步骤。
@@ -14,7 +16,7 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 先看 tarball 内容再发布
 
 1. `packages/app-packager` 的 tarball 里带上了 `engine/`（约 46 个文件、~124 KB），入口 `engine/打包工具.command` 与 `engine/lib/common.sh` 都在。
    注意 **pnpm 打的包里所有文件都是 644**（`npm pack` 才保留 755），所以别指望 tarball 里的权限位：CLI 物化引擎时会把 `.command`/`.sh` 一律补回 755（`src/home.mjs` 的 `EXECUTABLE` 规则，有单测），用户手里那份是可双击的。
-2. `packages/dsh-app-packager` 的 tarball 里 `package.json` 的 `app-packager` 依赖已从 `workspace:^0.1.0` 被 pnpm 重写成 `^0.1.0`（npm 不认 workspace 协议，未重写的包装上去会装不上）。
+2. `packages/dsh-app-packager` 的 tarball 里 `package.json` 的 `app-packager` 依赖已从 `workspace:^0.2.0` 被 pnpm 重写成 `^0.2.0`（npm 不认 workspace 协议，未重写的包装上去会装不上）。
 3. 两个 `package.json` 的 `version` 已递增。
 
 两个包都发布在 npm 公共仓库上、**包名不带 scope**（`app-packager` 与 `dsh-app-packager`），发布前只需确认 `npm whoami` 是本人（`lw0129a`）：
@@ -46,20 +48,20 @@ npm i -g --prefix /tmp/ap-npm11 npm@11
 
 ## 二、发布到 npm
 
-先用 `pnpm pack` 打出真正的发布件（**插件必须用 pnpm 打包**：它依赖 `app-packager` 时写的是 `workspace:^0.1.0`，只有 pnpm 会在打包时改写成 `^0.1.0`，`npm pack` 会原样保留 workspace 协议，装到 profile 里直接报 `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`）：
+先用 `pnpm pack` 打出真正的发布件（**插件必须用 pnpm 打包**：它依赖 `app-packager` 时写的是 `workspace:^0.2.0`，只有 pnpm 会在打包时改写成 `^0.2.0`，`npm pack` 会原样保留 workspace 协议，装到 profile 里直接报 `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`）：
 
 ```bash
 pnpm -r pack --pack-destination /tmp/ap-pack2
-ls /tmp/ap-pack2                   # app-packager-0.1.0.tgz / dsh-app-packager-0.1.0.tgz（另有 private 的根包）
+ls /tmp/ap-pack2                   # app-packager-0.2.0.tgz / dsh-app-packager-0.2.0.tgz（另有 private 的根包）
 
-tar -xzOf /tmp/ap-pack2/dsh-app-packager-0.1.0.tgz package/package.json | grep -A2 '"dependencies"'
-# 期望看到 "app-packager": "^0.1.0"
+tar -xzOf /tmp/ap-pack2/dsh-app-packager-0.2.0.tgz package/package.json | grep -A2 '"dependencies"'
+# 期望看到 "app-packager": "^0.2.0"
 ```
 
 也可以先本地装一遍验证（可选）：
 
 ```bash
-npm install -g --prefix /tmp/ap-prefix /tmp/ap-pack2/app-packager-0.1.0.tgz
+npm install -g --prefix /tmp/ap-prefix /tmp/ap-pack2/app-packager-0.2.0.tgz
 /tmp/ap-prefix/bin/app-packager doctor
 ```
 
@@ -70,8 +72,8 @@ CI 的 `pack` 任务已自动校验「tarball 里不含 `workspace:`」与「引
 ```bash
 NPM=/tmp/ap-npm11/bin/npm          # 系统 npm 10.x 没有 stage 子命令
 
-$NPM stage publish /tmp/ap-pack2/app-packager-0.1.0.tgz
-$NPM stage publish /tmp/ap-pack2/dsh-app-packager-0.1.0.tgz
+$NPM stage publish /tmp/ap-pack2/app-packager-0.2.0.tgz
+$NPM stage publish /tmp/ap-pack2/dsh-app-packager-0.2.0.tgz
 
 $NPM stage list                    # 看 stage id 与状态：validating → staged
 ```
@@ -84,7 +86,7 @@ $NPM stage list                    # 看 stage id 与状态：validating → sta
 
 ```bash
 $NPM stage list                            # 批准成功的条目会消失
-npm view app-packager version     # 期望 0.1.0
+npm view app-packager version     # 期望 0.2.0
 ```
 
 > - 刚 stage 完是 `status: validating`（注册表异步校验 tarball），此时批准/查看可能报 `staged version "…" not found`，等它变成 `staged` 再批。
@@ -144,6 +146,7 @@ description:
 ### 本项目的上架记录
 
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
+- 2026-10-08：发布 **0.2.0**：插件新增 Web GUI 面板（宿主侧 `web.js` 六条同源路由 + 浏览器侧 `client.js`），仓库文档改为中英双份并补上协作规范。
 - 2026-10-07：两个包**先以带 scope 的名字**（`@lw0129a/app-packager`、`@lw0129a/dsh-app-packager`）用 staged publishing 发出、由维护者在 npmjs.com 批准上线（0.1.0，暂存区已清空）；随后按需求**去掉 scope 改名**为 `app-packager` / `dsh-app-packager`（命令里不再出现 `@lw0129a/`），以同样流程重新发布 0.1.0。`@lw0129a/*` 那两个旧名只留在 registry 上，不再更新，可选择性 `npm deprecate` 指向新名。
 - 2026-10-07：本机 `desktop` profile 已从「本地 tarball + `pnpm-workspace.yaml` override」改回从 registry 安装，并在一个全新临时 profile 里验证过 `dsh plugin --profile <name> add dsh-app-packager` 无需任何 override 即可装载（`--dump-config` 里能看到 `- id: app-packager` 那一层）。
 - 当天唯一的红项是仓库年龄（仓库建于 `2026-10-07T02:50:28Z`，24 小时门槛在 `2026-10-08T02:50Z`），按第 3 条的机制等它自己转绿。
