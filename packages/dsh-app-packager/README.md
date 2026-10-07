@@ -31,11 +31,15 @@ centre column:
   one platform or all of them, with hints for every failed item.
 - **Projects** — every `config/projects/*.env`, its source directory (flagging
   a missing one), the platforms it enables, and per-project *Env check* /
-  *Build* buttons. The **Choose folder…** button opens the host's own folder
+  *Build* buttons; each row folds on its own arrow, with *Remove* kept on the
+  header line. The **Choose folder…** button opens the host's own folder
   dialog and *Add project* registers the picked directory through the engine's
   `register` subcommand, so a project anywhere on disk gets the same
-  `config/projects/<id>.env` the wizard would write; pick a parent folder
-  instead and the engine scans one level below it.
+  `config/projects/<id>.env` the wizard would write. The field is the folder
+  that **holds** your projects (e.g. `/Users/lw/work/anjuyi`) — the engine scans
+  one level below it and registers every uni-app x project it finds, so picking
+  projects one by one is unnecessary (several picked folders are joined into
+  that one field).
 - **Build scope** — the batch entry point: any set of platforms (tick *All* for
   the three) and any subset of projects (none ticked = every project that
   platform enables), with one *Env check* / *Build* pair. The engine CLI takes a

@@ -1038,7 +1038,7 @@ test('client half：每个板块都能折叠，且互不影响', () => {
     options: { fullPermission: true }, presets: {}, overrideKeys: [], jobs: [],
     plugin: { root: '/tmp/plugin' }, shell: { available: true, shell: { kind: 'native', command: '/bin/bash' } },
     sdk: { sdkRoot: '/tmp/home/sdk', archives: [], incompleteDownloads: 0, hbuilderx: { found: true, version: '5.26.1', series: '5.26' }, platforms: [] },
-    projects: [], profiles: [], uploaders: [],
+    projects: [{ id: 'demo', appName: '演示项目', sourceDir: '/tmp/demo-src', sourceDirExists: true, enabledPlatforms: ['ios', 'android', 'harmony'] }], profiles: [], uploaders: [],
   };
 
   const hookValues = [];
@@ -1084,7 +1084,7 @@ test('client half：每个板块都能折叠，且互不影响', () => {
   // 注意别把箭头（`ap-fold-arrow`）也算成开关：按空格切分类名。
   const folds = () => elements(tree).filter((node) => String(node.props.className || '').split(' ').includes('ap-fold'));
   const opened = folds();
-  assert.ok(opened.length >= 6, `引擎/环境检查/SDK/项目/打包范围/任务都要能折叠，实际 ${opened.length}`);
+  assert.equal(opened.length, 7, `引擎/环境检查/SDK/项目/打包范围/任务 + 每个项目一行 都要能折叠，实际 ${opened.length}`);
   assert.ok(opened.every((node) => node.props['aria-expanded'] === 'true'), '默认是展开的');
   assert.ok(opened.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
   // 拿「引擎目录」这行当探针：顶栏也印着同一个 home 路径，用路径断言会误伤。
@@ -1100,6 +1100,17 @@ test('client half：每个板块都能折叠，且互不影响', () => {
   const collapsed = folds().find((node) => textOf(node).includes('引擎'));
   assert.equal(collapsed.props['aria-expanded'], 'false', '开关状态跟着翻');
   assert.ok(!String(collapsed.props.className).includes('ap-fold-open'), '箭头方向靠这个类名翻转');
+
+  // 项目列表里每一行也是开关：合上只藏自己那段（源码目录/平台），删除按钮留在标题行上。
+  const projectFold = opened.find((node) => textOf(node).includes('演示项目'));
+  assert.ok(projectFold, '每个已登记的项目本身也是一个开关');
+  const headOf = (name) => elements(tree).find((node) => String(node.props.className || '').split(' ').includes('ap-card-head') && textOf(node).includes(name));
+  assert.ok(textOf(headOf('演示项目')).includes(dict['projects.remove']), '删除按钮留在头行、不跟着内容收起');
+  assert.ok(textOf(tree).includes('/tmp/demo-src'), '展开时能读到这个项目的源码目录');
+  projectFold.props.onClick();
+  assert.ok(!textOf(tree).includes('/tmp/demo-src'), '合上后这个项目的内容不再渲染');
+  assert.ok(textOf(headOf('演示项目')).includes(dict['projects.remove']), '合上后删除按钮依然在头行上');
+  assert.ok(textOf(tree).includes('环境检查'), '项目折叠不影响别的板块');
 });
 
 test('升级前比版本：registry 不比本机新就不动手', () => {

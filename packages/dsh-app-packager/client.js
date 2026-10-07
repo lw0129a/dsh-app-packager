@@ -81,19 +81,19 @@ window.__ModuleLoader__.load({
       'doctor.ok': '结论：当前环境可以打包。',
       'doctor.bad': '结论：{failures} 项失败、{warnings} 项警告。',
       projects: '项目',
-      'projects.empty': '未发现项目配置 config/projects/*.env。用下面的「选择目录…」指定一个 uni-app x 项目目录，或把它放进引擎同级目录。',
-      'projects.dir': '项目目录',
-      'projects.dirHint': 'uni-app x 项目目录，或它的父目录',
+      'projects.empty': '未发现项目配置 config/projects/*.env。用下面的「选择目录…」指定项目总文件夹，里面的 uni-app x 项目会全部登记。',
+      'projects.dir': '项目总文件夹',
+      'projects.dirHint': '放项目的那一层目录（里面的 uni-app x 项目会全部登记）',
       'projects.pick': '选择目录…',
       'projects.add': '添加项目',
       'projects.pickManual': '当前系统没有可用的目录选择器，请手动输入路径。',
       'projects.sourceMissing': '（未配置源码目录）',
       'projects.sourceGone': '源码目录不存在',
-      'projects.dirMulti': '可以一次选多个目录，每行一个；添加后逐个登记。',
+      'projects.dirMulti': '填或选项目总文件夹，例如 /Users/lw/work/anjuyi',
       'projects.remove': '删除',
       'projects.remove.confirm': '确认删除',
       'projects.remove.cancel': '取消',
-      'projects.remove.hint': '只移除登记（引擎目录里的 config/projects/<id>.env），不动项目源码。',
+      'projects.remove.hint': '只移除登记（config/projects/<id>.env），不动项目源码。',
       'projects.multi': '一次可选择多个目录。',
       platforms: '平台',
       check: '环境检查',
@@ -209,15 +209,15 @@ window.__ModuleLoader__.load({
       'doctor.ok': 'This machine can build.',
       'doctor.bad': '{failures} failed, {warnings} warnings.',
       projects: 'Projects',
-      'projects.empty': 'No project configs (config/projects/*.env) found. Use “Choose folder…” below to pick a uni-app x project, or put one next to the engine.',
-      'projects.dir': 'Project directory',
-      'projects.dirHint': 'uni-app x project folder, or its parent folder',
+      'projects.empty': 'No project configs (config/projects/*.env) found. Use “Choose folder…” below to pick the folder that holds your projects; every uni-app x project inside it is registered.',
+      'projects.dir': 'Projects folder',
+      'projects.dirHint': 'The folder that holds your projects (every uni-app x project inside is registered)',
       'projects.pick': 'Choose folder…',
       'projects.add': 'Add project',
       'projects.pickManual': 'This system has no folder picker; type the path instead.',
       'projects.sourceMissing': '(no source directory)',
       'projects.sourceGone': 'source directory missing',
-      'projects.dirMulti': 'Pick several folders at once, or put one path per line.',
+      'projects.dirMulti': 'Type or pick the folder that holds your projects, e.g. /Users/lw/work/anjuyi',
       'projects.remove': 'Remove',
       'projects.remove.confirm': 'Confirm remove',
       'projects.remove.cancel': 'Cancel',
@@ -636,11 +636,13 @@ window.__ModuleLoader__.load({
       });
 
       // The host opens the OS folder dialog; a plain cancel is not an error, but a
-      // missing picker falls back to typing the path by hand.
+      // missing picker falls back to typing the path by hand. Several folders are
+      // joined into the one field (the engine splits on comma), so a folder holding
+      // every project is normally the only thing worth picking.
       const pickDirectory = () => guard('pick', async () => {
         const picked = await call('pick', { method: 'POST', body: {} });
         const paths = (picked && (picked.paths || (picked.path ? [picked.path] : []))) || [];
-        if (paths.length > 0) setProjectDir(paths.join('\n'));
+        if (paths.length > 0) setProjectDir(paths.join(', '));
         else if (picked && !picked.cancelled) setError(`${t('projects.pickManual')}\n${picked.error || ''}`.trim());
       });
 
@@ -918,10 +920,11 @@ window.__ModuleLoader__.load({
           'div',
           { style: styles.actions },
           h('span', { style: styles.muted }, t('projects.dir')),
-          h('textarea', {
+          h('input', {
             className: 'ap-input',
-            style: { flex: '1', minWidth: '180px', minHeight: '38px' },
+            style: { flex: '1', minWidth: '220px' },
             placeholder: t('projects.dirMulti'),
+            title: t('projects.dirHint'),
             value: projectDir,
             onChange: (event) => setProjectDir(event.target.value),
           }),
@@ -1060,23 +1063,27 @@ window.__ModuleLoader__.load({
           : projects.map((project) => {
               const enabled = project.enabledPlatforms && project.enabledPlatforms.length ? project.enabledPlatforms : ['ios', 'android', 'harmony'];
               return h(
-                'div',
-                { key: project.id, className: 'ap-project' },
-                h(
-                  'div',
-                  { className: 'ap-card-head' },
-                  h('span', { className: 'ap-project-name' }, project.appName || project.id),
-                  project.appName ? h('span', { className: 'ap-muted' }, project.id) : null,
-                  h('span', { style: { flex: 1 } }),
-                  pendingRemove === project.id
-                    ? h(
-                        'span',
-                        { style: styles.actions },
-                        button(t('projects.remove.confirm'), () => removeProject(project.id), { disabled: Boolean(busy) }),
-                        button(t('projects.remove.cancel'), () => setPendingRemove(''), { disabled: Boolean(busy) }),
-                      )
-                    : button(t('projects.remove'), () => setPendingRemove(project.id), { disabled: Boolean(busy) }),
-                ),
+                Section,
+                {
+                  key: project.id,
+                  t,
+                  className: 'ap-project',
+                  titleClass: 'ap-project-name',
+                  title: project.appName || project.id,
+                  actions: h(
+                    'div',
+                    { style: styles.actions },
+                    project.appName ? h('span', { className: 'ap-muted' }, project.id) : null,
+                    pendingRemove === project.id
+                      ? h(
+                          'span',
+                          { style: styles.actions },
+                          button(t('projects.remove.confirm'), () => removeProject(project.id), { disabled: Boolean(busy) }),
+                          button(t('projects.remove.cancel'), () => setPendingRemove(''), { disabled: Boolean(busy) }),
+                        )
+                      : button(t('projects.remove'), () => setPendingRemove(project.id), { disabled: Boolean(busy) }),
+                  ),
+                },
                 h('div', { className: 'ap-note' }, `${project.sourceDir || t('projects.sourceMissing')}${project.sourceDir && !project.sourceDirExists ? ` — ${t('projects.sourceGone')}` : ''}`),
                 h('div', { className: 'ap-note' }, `${t('platforms')}: ${enabled.map(platformLabel).join(' / ')}`),
                 project.error ? h('div', { className: 'ap-box-error' }, project.error) : null,
