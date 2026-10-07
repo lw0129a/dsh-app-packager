@@ -808,7 +808,7 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     engineVersion: '0.6.2', home: '/tmp/home', homeVersion: '0.6.2', materialized: true, engineDrift: false,
     canUpgrade: false, sdkError: '', profilesError: '', projectsError: '', uploadersError: '',
     options: { fullPermission: true }, presets: { p: {} }, overrideKeys: ['APP_NAME'], jobs: [],
-    plugin: { root: '/tmp/plugin' }, shell: { available: true, kind: 'bash', shell: { command: 'bash' } },
+    plugin: { root: '/tmp/plugin' }, shell: { available: true, shell: { kind: 'native', command: '/bin/bash' } },
     sdk: {
       sdkRoot: '/tmp/home/sdk', archives: [], incompleteDownloads: 0,
       hbuilderx: { found: true, version: '5.26.2026091802', series: '5.26' },
@@ -818,8 +818,8 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
       ],
     },
     projects: [{ id: 'p', appName: 'App', sourceDir: '/tmp/p', sourceDirExists: true, bundleId: 'a.b', enabledPlatforms: ['ios', 'android', 'harmony'], error: null }],
-    profiles: [{ file: '/tmp/a.mobileprovision', name: 'adhoc' }],
-    uploaders: [{ id: 'pgyer', label: '蒲公英', enabled: true, available: true, platforms: ['ios'] }],
+    profiles: [{ file: '/tmp/a.mobileprovision', name: 'adhoc', kind: 'adhoc', bundleId: 'a.b' }],
+    uploaders: [{ id: 'pgyer', name: '蒲公英', enabled: true, available: true, platforms: ['ios'] }],
   };
   const renderWithState = (value) => {
     let call = 0;
@@ -851,12 +851,97 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   const stateTexts = flatten(renderWithState(realState));
   assert.ok(stateTexts.some((text) => text.includes('5.26.2026091802')), '有 state 时 HBuilderX 版本行要渲染出来');
   assert.ok(stateTexts.some((text) => text.includes('UniAppX-iOS@5.26.zip')), '有 state 时 SDK 行要给出文件名/包名');
+  // 宿主半给的形状是 `{available, shell: {kind, command}}`；以前读外层 kind，
+  // 界面上就是「undefined · /bin/bash」。
+  assert.ok(stateTexts.some((text) => text.includes('native · /bin/bash')), 'Shell 桥接要读嵌套的 shell.kind');
+  assert.ok(!stateTexts.some((text) => text.includes('undefined')), '面板不应该渲染出 undefined');
   const emptyTexts = flatten(renderWithState({}));
   assert.ok(emptyTexts.length > 0, '字段缺失的 state 也不能崩，至少要渲染出壳');
+
+  // 面板落在宿主的 main 槽位里，父链只要有一层 auto 高度，`.ap-root{height:100%}` 就失效、
+  // 内容被宿主的 overflow:hidden 裁掉且无处可滚。所以滚动要有两条腿：CSS 让自己能滚 +
+  // 挂载后量一次、把最近的裁剪祖先临时改成可滚动。
+  assert.match(source, /\.ap-root \{[^}]*height: 100%/);
+  assert.match(source, /\.ap-root \{[^}]*overflow-y: auto/);
+  assert.match(source, /node\.style\.overflowY = 'auto'/);
+  assert.match(source, /node\.style\.minHeight = '0'/);
+  assert.match(source, /className: 'ap-root', ref: rootRef/);
+  // 布局都收进了类名；再引用已删除的内联样式键会静默变成「没样式」，所以钉住。
+  assert.ok(
+    !/style: styles\.(group|groupHead|groupTitle|row|rowLabel|rowValue|check|mark|hint|link|badge|log|scope|project|projectName|head|title)\b/.test(source),
+    '布局样式都走类名，不能残留已删除的内联样式键',
+  );
+  for (const rule of ['.ap-card {', '.ap-row {', '.ap-check-row {', '.ap-sdk {', '.ap-sdk-detail {', '.ap-kv {', '.ap-tag {']) {
+    assert.ok(source.includes(rule), `样式表缺少 ${rule}`);
+  }
 
   // 卸载要注销两个槽位，否则热重载会留下重复入口。
   effects.at(-1)();
   assert.deepEqual(disposed, ['sidebar.panellist', 'main']);
+});
+
+// 滚动那条兜底要对宿主链做判断，光靠正则钉不住，直接用假 DOM 跑真实 effect 本体。
+test('client half：父链没有确定高度时，把最近的裁剪祖先改成可滚动', () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8');
+  let definition;
+  new Function('window', source)({
+    __ModuleLoader__: { load: (value) => { definition = value; } },
+    getComputedStyle: (element) => element,
+  });
+
+  const node = (fields) => ({ parentElement: null, scrollHeight: 0, clientHeight: 0, style: {}, ...fields });
+
+  const mount = ({ rootOverflows, clipperOverflowY }) => {
+    // 宿主链：grandparent(定高 + 裁剪) > wrapper(auto 高度) > .ap-root
+    const grandparent = node({ overflowY: clipperOverflowY, scrollHeight: 4000, clientHeight: 800 });
+    const wrapper = node({ overflowY: 'visible', scrollHeight: 4000, clientHeight: 4000, parentElement: grandparent });
+    const root = node({ scrollHeight: rootOverflows ? 4000 : 800, clientHeight: 800, parentElement: wrapper });
+
+    // effect 先排队：rootRef 要等渲染完才指向假节点。
+    const effects = [];
+    const refs = [];
+    const react = {
+      createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+      useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+      useEffect: (fn) => { effects.push(fn); },
+      useCallback: (fn) => fn,
+      useRef: () => { const ref = { current: null }; refs.push(ref); return ref; },
+    };
+    const made = definition.factory((id) => {
+      if (id === 'react') return react;
+      throw new Error(`意外的 require：${id}`);
+    });
+    const panelSlots = [];
+    made.apply({
+      effect: (fn) => { fn(); },
+      locale: { register: () => () => {}, bind: () => (key) => key },
+      slots: { inject: (slot, register) => { register(); return () => {}; }, register: (options, component) => { panelSlots.push({ options, component }); return () => {}; } },
+    });
+    panelSlots[1].component({ t: (key) => key });
+    refs[1].current = root; // 顺序是 logRef、rootRef、scrollHost
+    // 面板里的 window 就是 bundle 外层的那个参数（上面 new Function 传进去的对象），
+    // 所以 getComputedStyle 只要挂在那上面就够了。
+    for (const effect of effects) effect();
+    return { grandparent, wrapper, effects };
+  };
+
+  const clipped = mount({ rootOverflows: false, clipperOverflowY: 'hidden' });
+  assert.equal(clipped.grandparent.style.overflowY, 'auto', '内容被裁掉时，最近的裁剪祖先要变成可滚动');
+  assert.equal(clipped.grandparent.style.minHeight, '0', 'flex 项还要能收缩，否则照样裁');
+  assert.equal(clipped.wrapper.style.overflowY, undefined, '中间的 auto 高度包装层不用动');
+
+  const selfScrolling = mount({ rootOverflows: true, clipperOverflowY: 'hidden' });
+  assert.equal(selfScrolling.grandparent.style.overflowY, undefined, '自己滚得动就别去改宿主的盒子');
+
+  const alreadyScrollable = mount({ rootOverflows: false, clipperOverflowY: 'auto' });
+  assert.equal(alreadyScrollable.grandparent.style.overflowY, undefined, '宿主本来就能滚：保持原样');
+
+  // 卸载时要还回去，否则热重载会把宿主的盒子永久改成 auto。
+  // （这一个 effect 的本体就是「返回清理函数」，所以要再调一次返回值。）
+  const unmount = clipped.effects.at(-1)();
+  unmount();
+  assert.equal(clipped.grandparent.style.overflowY, undefined, '卸载后还原宿主的 overflowY');
+  assert.equal(clipped.grandparent.style.minHeight, undefined, '卸载后还原宿主的 minHeight');
 });
 
 test('升级前比版本：registry 不比本机新就不动手', () => {

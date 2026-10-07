@@ -283,17 +283,54 @@ window.__ModuleLoader__.load({
 
     // Colours come from the host's theme tokens, each with the plain-grey fallback we
     // want when a token is missing (older shells, stripped-down profiles).
+    // The host owns the box our `main` slot lands in: its height and overflow are
+    // not ours to know, so scrolling has two legs — these rules make `.ap-root`
+    // scroll whenever the parent chain hands it a definite height, and the
+    // measured fallback in `Panel` (see `useEffect` near the root node) flips the
+    // nearest clipping ancestor when the chain is broken instead.
     const CSS = `
-      .ap-root { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; overflow-y: auto; height: 100%; box-sizing: border-box; color: var(--dsw-alias-label-primary, inherit); }
-      .ap-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-      .ap-title { font-size: 16px; font-weight: 600; }
-      .ap-muted { color: var(--dsw-alias-label-tertiary, inherit); opacity: .7; font-size: 12px; }
-      .ap-btn { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: transparent; color: inherit; cursor: pointer; }
-      .ap-btn:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.14)); }
+      .ap-root { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 28px; height: 100%; min-height: 0; max-height: 100%; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-primary, inherit); }
+      .ap-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: sticky; top: 0; z-index: 3; margin: 0 -16px; padding: 12px 16px 10px; background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, rgba(127,127,127,.06))); backdrop-filter: blur(10px); border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18)); }
+      .ap-title { font-size: 15px; font-weight: 600; white-space: nowrap; }
+      .ap-sub { font-size: 12px; color: var(--dsw-alias-label-tertiary, inherit); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ap-path { font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ap-card { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.26)); border-radius: 10px; background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.05)); }
+      .ap-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .ap-card-title { font-size: 13px; font-weight: 600; margin-right: auto; }
+      .ap-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 2px 10px; font-size: 12.5px; }
+      .ap-row-label { color: var(--dsw-alias-label-tertiary, inherit); }
+      .ap-row-value { min-width: 0; overflow-wrap: anywhere; }
+      .ap-row-value.ap-mono { font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; }
+      .ap-note { font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); }
+      .ap-muted { color: var(--dsw-alias-label-tertiary, inherit); opacity: .8; font-size: 11.5px; }
+      .ap-mark { text-align: center; }
+      .ap-btn { font: inherit; font-size: 12px; line-height: 1.4; padding: 4px 10px; border-radius: 6px; white-space: nowrap; border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: transparent; color: inherit; cursor: pointer; }
+      .ap-btn:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-3, rgba(128,128,128,.16)); }
       .ap-btn:disabled { opacity: .45; cursor: default; }
       .ap-btn-primary { border-color: var(--dsw-alias-brand-primary, #4a8cff); color: var(--dsw-alias-brand-primary, #4a8cff); }
+      .ap-btn-sm { font-size: 11.5px; padding: 2px 8px; }
       .ap-input { font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.08)); color: inherit; }
-      .ap-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--dsw-alias-label-secondary, inherit); }
+      .ap-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-secondary, inherit); }
+      .ap-check-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 0 8px; font-size: 12.5px; align-items: start; }
+      .ap-check-hint { grid-column: 2; font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); }
+      .ap-link { font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-link, #4c8dff); text-decoration: none; }
+      .ap-link:hover { text-decoration: underline; }
+      .ap-tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); }
+      .ap-tag.ok { color: #3fb950; border-color: rgba(63,185,80,.45); }
+      .ap-tag.warn { color: #d29922; border-color: rgba(210,153,34,.45); }
+      .ap-tag.fail { color: #ff6b6b; border-color: rgba(255,107,107,.45); }
+      .ap-sdk { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.16)); }
+      .ap-sdk-first { padding-top: 0; border-top: none; }
+      .ap-sdk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .ap-sdk-name { font-size: 12.5px; font-weight: 600; }
+      .ap-sdk-detail { display: flex; flex-direction: column; gap: 2px; padding-left: 22px; }
+      .ap-kv { font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); overflow-wrap: anywhere; }
+      .ap-project { display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.16)); }
+      .ap-project-name { font-size: 13px; font-weight: 600; }
+      .ap-scope { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.24)); background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.04)); }
+      .ap-log { margin: 0; padding: 8px 10px; max-height: 40vh; overflow: auto; font-size: 11.5px; line-height: 1.45; font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); white-space: pre-wrap; word-break: break-all; background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.09)); border-radius: 6px; }
+      .ap-box-error { border: 1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5)); color: var(--dsw-alias-state-error, #ff6b6b); border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
+      .ap-box-warn { border: 1px solid var(--dsw-alias-state-warning, rgba(210,153,34,.5)); color: var(--dsw-alias-state-warning, #d29922); border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
     `;
 
     function installStyles() {
@@ -305,30 +342,15 @@ window.__ModuleLoader__.load({
       document.head.appendChild(tag);
     }
 
+    // Layout lives in `CSS` (class names), not here: only the values that are
+    // dynamic-free but awkward as classes stay as objects.
     const styles = {
-      head: { display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' },
-      title: { fontSize: '16px', fontWeight: 600 },
-      muted: { color: 'var(--dsw-alias-label-tertiary, inherit)', opacity: 0.7, fontSize: '12px' },
-      group: { border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.28))', borderRadius: '8px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' },
-      groupHead: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' },
-      groupTitle: { fontSize: '13px', fontWeight: 600 },
-      row: { display: 'flex', gap: '8px', fontSize: '12px', alignItems: 'baseline' },
-      rowLabel: { color: 'var(--dsw-alias-label-tertiary, inherit)', opacity: 0.7, minWidth: '96px' },
-      rowValue: { wordBreak: 'break-all', flex: 1 },
+      muted: { color: 'var(--dsw-alias-label-tertiary, inherit)', opacity: 0.8, fontSize: '11.5px' },
       actions: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' },
-      project: { borderTop: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18))', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '5px' },
-      projectName: { fontSize: '13px', fontWeight: 600 },
-      check: { display: 'flex', gap: '8px', fontSize: '12px', alignItems: 'baseline' },
-      mark: { width: '12px', textAlign: 'center' },
-      hint: { fontSize: '11px', color: 'var(--dsw-alias-label-tertiary, inherit)', opacity: 0.7, marginLeft: '20px' },
-      link: { fontSize: '12px', color: 'var(--dsw-alias-label-link, #4c8dff)', textDecoration: 'none' },
-      badge: { fontSize: '11px', padding: '1px 7px', borderRadius: '999px', border: '1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42))' },
-      log: { margin: 0, padding: '8px 10px', maxHeight: '320px', overflow: 'auto', fontSize: '11.5px', lineHeight: 1.45, fontFamily: "var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)", whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.09))', borderRadius: '6px' },
       error: { border: '1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5))', color: 'var(--dsw-alias-state-error, #ff6b6b)', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', whiteSpace: 'pre-wrap' },
       warn: { border: '1px solid var(--dsw-alias-state-warning, rgba(210,153,34,.5))', color: 'var(--dsw-alias-state-warning, #d29922)', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', whiteSpace: 'pre-wrap' },
       problemTitle: { fontWeight: 600, marginBottom: '2px' },
       advanced: { fontSize: '12px' },
-      scope: { border: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.24))', borderRadius: '8px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.06))' },
     };
 
     /** Same-origin call into the host half; throws the host's error message. */
@@ -410,6 +432,8 @@ window.__ModuleLoader__.load({
       const [pendingRemove, setPendingRemove] = useState('');
       const [projectDir, setProjectDir] = useState('');
       const logRef = useRef(null);
+      const rootRef = useRef(null);
+      const scrollHost = useRef(null);
 
       const guard = useCallback(async (key, work) => {
         setBusy(key);
@@ -454,6 +478,38 @@ window.__ModuleLoader__.load({
         const element = logRef.current;
         if (element) element.scrollTop = element.scrollHeight;
       }, [output]);
+
+      // 宿主的 main 槽位把面板塞进哪个盒子里不归我们管：只要父链中间有一层 auto 高度，
+      // `.ap-root { height: 100% }` 就解析成 auto，面板按内容撑高，底部被宿主的
+      // overflow: hidden 裁掉、又没处可滚（用户看到的「上下不能滚动」）。
+      // 挂载后量一次：自己滚得动就什么都不做；否则往上找最近的裁剪祖先，临时代它滚动，
+      // 卸载时原样还原。每次渲染后重跑，等 state 到手、卡片长出来才真正判断得准。
+      // ponytail: 只处理最近一层裁剪祖先，壳子里嵌套两层裁剪再加。
+      useEffect(() => {
+        if (scrollHost.current) return;
+        const root = rootRef.current;
+        if (!root || typeof window === 'undefined') return;
+        if (root.scrollHeight > root.clientHeight + 1) return;
+        let node = root.parentElement;
+        for (let depth = 0; node && depth < 12; depth += 1, node = node.parentElement) {
+          const overflowY = window.getComputedStyle(node).overflowY;
+          if (overflowY === 'visible') continue;
+          if (overflowY !== 'hidden' && overflowY !== 'clip') return;
+          if (node.scrollHeight <= node.clientHeight + 1) continue;
+          scrollHost.current = { node, overflowY: node.style.overflowY, minHeight: node.style.minHeight };
+          node.style.overflowY = 'auto';
+          node.style.minHeight = '0';
+          return;
+        }
+      });
+
+      useEffect(() => () => {
+        const applied = scrollHost.current;
+        if (!applied) return;
+        scrollHost.current = null;
+        applied.node.style.overflowY = applied.overflowY;
+        applied.node.style.minHeight = applied.minHeight;
+      }, []);
 
       const init = () => guard('init', async () => {
         await call('init', { method: 'POST', body: {} });
@@ -549,11 +605,23 @@ window.__ModuleLoader__.load({
 
       const button = (label, onClick, options = {}) => h(
         'button',
-        { type: 'button', className: `ap-btn${options.primary ? ' ap-btn-primary' : ''}`, disabled: Boolean(options.disabled), onClick },
+        {
+          type: 'button',
+          className: `ap-btn${options.primary ? ' ap-btn-primary' : ''}${options.small ? ' ap-btn-sm' : ''}`,
+          disabled: Boolean(options.disabled),
+          onClick,
+        },
         label,
       );
 
-      const row = (label, value) => h('div', { style: styles.row }, h('span', { style: styles.rowLabel }, label), h('span', { style: styles.rowValue }, value));
+      // Label/value pairs are a two-column grid, so long paths wrap inside the
+      // value column instead of shoving the label around.
+      const row = (label, value, options = {}) => h(
+        'div',
+        { className: 'ap-row' },
+        h('span', { className: 'ap-row-label' }, label),
+        h('span', { className: `ap-row-value${options.mono ? ' ap-mono' : ''}`, title: options.title || undefined }, value),
+      );
 
       const checkbox = (label, checked, onChange, options = {}) => h(
         'label',
@@ -611,20 +679,19 @@ window.__ModuleLoader__.load({
 
       const header = h(
         'div',
-        { style: styles.head },
-        h('span', { style: styles.title }, t('title')),
-        h('span', { style: styles.muted }, t('subtitle')),
-        h('span', { style: { flex: 1 } }),
-        state ? h('span', { style: styles.muted }, `${state.engineVersion} · ${state.home}`) : null,
+        { className: 'ap-head' },
+        h('span', { className: 'ap-title' }, t('title')),
+        h('span', { className: 'ap-sub' }, t('subtitle')),
+        state ? h('span', { className: 'ap-path', title: state.home }, `${state.engineVersion} · ${state.home}`) : null,
         button(state ? t('refresh') : t('loading'), refresh, { disabled: !state || Boolean(busy) }),
         button(t('init'), init, { disabled: busy === 'init' }),
       );
 
       const engineCard = !state ? null : h(
         'div',
-        { style: styles.group },
-        h('div', { style: styles.groupHead }, h('span', { style: styles.groupTitle }, t('engine'))),
-        row(t('engine.home'), state.home),
+        { className: 'ap-card' },
+        h('div', { className: 'ap-card-head' }, h('span', { className: 'ap-card-title' }, t('engine'))),
+        row(t('engine.home'), state.home, { mono: true, title: state.home }),
         row(t('engine.version'), state.engineVersion),
         row(
           t('engine.location'),
@@ -642,20 +709,23 @@ window.__ModuleLoader__.load({
         ),
         row(
           t('engine.shell'),
-          state.shell && state.shell.available
-            ? `${state.shell.kind}${state.shell.shell && state.shell.shell.command ? ` · ${state.shell.shell.command}` : ''}`
+          // 宿主半给的形状是 `{available, shell: {kind, command}}`；以前这里读的是
+          // 外层的 `kind`，界面上就出现了「undefined · /bin/bash」。
+          state.shell && state.shell.available && state.shell.shell
+            ? `${state.shell.shell.kind}${state.shell.shell.command ? ` · ${state.shell.shell.command}` : ''}`
             : t('engine.shell.none'),
+          { mono: true },
         ),
-        state.shell && state.shell.available ? null : h('div', { style: styles.muted }, state.shell && state.shell.error),
+        state.shell && state.shell.available ? null : h('div', { className: 'ap-note' }, state.shell && state.shell.error),
       );
 
       const doctorCard = h(
         'div',
-        { style: styles.group },
+        { className: 'ap-card' },
         h(
           'div',
-          { style: styles.groupHead },
-          h('span', { style: styles.groupTitle }, t('doctor')),
+          { className: 'ap-card-head' },
+          h('span', { className: 'ap-card-title' }, t('doctor')),
           h(PlateformSelect, { value: platform, platforms: PLATFORMS, onChange: setPlatform, label: platformLabel }),
           button(t('doctor.run'), runDoctor, { disabled: Boolean(busy) }),
         ),
@@ -665,14 +735,14 @@ window.__ModuleLoader__.load({
               { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
               doctor.checks.map((check) => h(
                 'div',
-                { key: check.id, style: styles.check },
-                h('span', { style: { ...styles.mark, color: markColor(check.status) } }, mark(check.status)),
+                { key: check.id, className: 'ap-check-row' },
+                h('span', { className: 'ap-mark', style: { color: markColor(check.status) } }, mark(check.status)),
                 h('span', null, `${check.label}${check.detail ? ` — ${check.detail}` : ''}`),
-                check.hint ? h('div', { style: styles.hint }, `→ ${check.hint}`) : null,
+                check.hint ? h('div', { className: 'ap-check-hint' }, `→ ${check.hint}`) : null,
               )),
-              h('div', { style: styles.muted }, doctor.ok ? t('doctor.ok') : tf('doctor.bad', { failures: doctor.failures, warnings: doctor.warnings })),
+              h('div', { className: 'ap-muted' }, doctor.ok ? t('doctor.ok') : tf('doctor.bad', { failures: doctor.failures, warnings: doctor.warnings })),
             )
-          : h('div', { style: styles.muted }, t('loading')),
+          : h('div', { className: 'ap-muted' }, t('loading')),
       );
 
       // SDK setup: the engine recommends the download entry per platform from the
@@ -691,44 +761,52 @@ window.__ModuleLoader__.load({
           : t('sdk.missing'));
       const sdkCard = !state ? null : h(
         'div',
-        { style: styles.group },
+        { className: 'ap-card' },
         h(
           'div',
-          { style: styles.groupHead },
-          h('span', { style: styles.groupTitle }, t('sdk')),
-          h('span', { style: { flex: 1 } }),
+          { className: 'ap-card-head' },
+          h('span', { className: 'ap-card-title' }, t('sdk')),
           button(t('sdk.installAll'), () => startSdkJob({ platforms: ['ios', 'android', 'harmony'] }), { disabled: Boolean(busy) || jobRunning }),
           button(t('sdk.process'), () => startSdkJob({ processOnly: true }), { disabled: Boolean(busy) || jobRunning }),
           state.canUpgrade ? button(t('upgrade.run'), upgradePlugin, { disabled: Boolean(busy) || jobRunning }) : null,
         ),
-        state.sdkError ? h('div', { style: styles.error }, state.sdkError) : null,
-        h('div', { style: styles.muted }, t('sdk.hint')),
+        state.sdkError ? h('div', { className: 'ap-box-error' }, state.sdkError) : null,
+        h('div', { className: 'ap-note' }, t('sdk.hint')),
         hb && hb.found
-          ? h('div', { style: styles.muted }, `${t('sdk.hbuilderx')}: ${hb.version || '?'} · ${t('sdk.series')} ${hb.series || '?'}`)
-          : h('div', { style: styles.warn }, t('sdk.hbuilderx.none')),
-        sdkInfo ? h('div', { style: styles.muted }, `${t('sdk.root')}: ${sdkInfo.sdkRoot}`) : null,
-        sdkList.map((item) => h(
+          ? row(t('sdk.hbuilderx'), `${hb.version || '?'} · ${t('sdk.series')} ${hb.series || '?'}`, { mono: true })
+          : h('div', { className: 'ap-box-warn' }, t('sdk.hbuilderx.none')),
+        sdkInfo ? row(t('sdk.root'), sdkInfo.sdkRoot, { mono: true, title: sdkInfo.sdkRoot }) : null,
+        // 每个平台一块：头一行是状态 + 操作，长包名/目录折在下面，别把按钮挤成竖排。
+        sdkList.map((item, index) => h(
           'div',
-          { key: item.id, style: styles.check },
-          h('span', { style: { ...styles.mark, color: markColor(sdkMark(item)) } }, mark(sdkMark(item))),
-          h('span', null, `${item.label} · ${sdkStateText(item)}`),
-          h('span', { style: { flex: 1 } }),
-          button(t('sdk.install'), () => startSdkJob({ platforms: [item.id] }), { disabled: Boolean(busy) || jobRunning }),
-          h('a', { href: item.page, target: '_blank', rel: 'noreferrer', style: styles.link }, t('sdk.page')),
-          item.direct ? h('a', { href: item.direct, target: '_blank', rel: 'noreferrer', style: styles.link }, t('sdk.direct')) : null,
-          // 手动下载时要照着找哪个包：Android 的文件名带构建号，HarmonyOS 的「包名」是 ohpm 包
-          // （npm 上查不到，标签单独写），与 `sdk urls` 打印的是同一个 package 字段。
-          item.package ? h('div', { style: styles.hint }, `${t(item.id === 'harmony' ? 'sdk.package.ohpm' : 'sdk.package')}: ${item.package}`) : null,
-          h('div', { style: styles.hint }, `${t('sdk.dir')}: ${item.dir}`),
+          { key: item.id, className: `ap-sdk${index === 0 ? ' ap-sdk-first' : ''}` },
+          h(
+            'div',
+            { className: 'ap-sdk-head' },
+            h('span', { className: 'ap-mark', style: { color: markColor(sdkMark(item)) } }, mark(sdkMark(item))),
+            h('span', { className: 'ap-sdk-name' }, item.label),
+            h('span', { className: `ap-tag ${sdkMark(item)}` }, sdkStateText(item)),
+            button(t('sdk.install'), () => startSdkJob({ platforms: [item.id] }), { disabled: Boolean(busy) || jobRunning, small: true }),
+            h('a', { href: item.page, target: '_blank', rel: 'noreferrer', className: 'ap-link' }, t('sdk.page')),
+            item.direct ? h('a', { href: item.direct, target: '_blank', rel: 'noreferrer', className: 'ap-link' }, t('sdk.direct')) : null,
+          ),
+          h(
+            'div',
+            { className: 'ap-sdk-detail' },
+            // 手动下载时要照着找哪个包：Android 的文件名带构建号，HarmonyOS 的「包名」是 ohpm 包
+            // （npm 上查不到，标签单独写），与 `sdk urls` 打印的是同一个 package 字段。
+            item.package ? h('div', { className: 'ap-kv' }, `${t(item.id === 'harmony' ? 'sdk.package.ohpm' : 'sdk.package')}: ${item.package}`) : null,
+            h('div', { className: 'ap-kv' }, `${t('sdk.dir')}: ${item.dir}`),
+          ),
         )),
         sdkInfo && sdkInfo.archives && sdkInfo.archives.length
-          ? h('div', { style: styles.muted }, tf('sdk.archives', { n: sdkInfo.archives.length }))
+          ? h('div', { className: 'ap-note' }, tf('sdk.archives', { n: sdkInfo.archives.length }))
           : null,
         sdkInfo && sdkInfo.incompleteDownloads
-          ? h('div', { style: styles.warn }, tf('sdk.incomplete', { n: sdkInfo.incompleteDownloads }))
+          ? h('div', { className: 'ap-box-warn' }, tf('sdk.incomplete', { n: sdkInfo.incompleteDownloads }))
           : null,
-        h('div', { style: styles.muted }, t('sdk.manual')),
-        h('div', { style: styles.muted }, state.canUpgrade ? t('upgrade.hint') : t('upgrade.unavailable')),
+        h('div', { className: 'ap-note' }, t('sdk.manual')),
+        h('div', { className: 'ap-note' }, state.canUpgrade ? t('upgrade.hint') : t('upgrade.unavailable')),
       );
 
       const projects = (state && state.projects) || [];
@@ -765,11 +843,11 @@ window.__ModuleLoader__.load({
       };
       const projectsCard = h(
         'div',
-        { style: styles.group },
+        { className: 'ap-card' },
         h(
           'div',
-          { style: styles.groupHead },
-          h('span', { style: styles.groupTitle }, `${t('projects')}（${projects.length}）`),
+          { className: 'ap-card-head' },
+          h('span', { className: 'ap-card-title' }, `${t('projects')}（${projects.length}）`),
           button(t('refresh'), refresh, { disabled: !state || Boolean(busy) }),
         ),
         h(
@@ -875,11 +953,11 @@ window.__ModuleLoader__.load({
         ),
         h(
           'div',
-          { style: styles.scope },
+          { className: 'ap-scope' },
           h(
             'div',
             { style: styles.actions },
-            h('span', { style: styles.groupTitle }, t('scope')),
+            h('span', { className: 'ap-sdk-name' }, t('scope')),
             h('span', { style: styles.muted }, t('scope.hint')),
           ),
           h(
@@ -919,12 +997,12 @@ window.__ModuleLoader__.load({
               const enabled = project.enabledPlatforms && project.enabledPlatforms.length ? project.enabledPlatforms : ['ios', 'android', 'harmony'];
               return h(
                 'div',
-                { key: project.id, style: styles.project },
+                { key: project.id, className: 'ap-project' },
                 h(
                   'div',
-                  { style: styles.head },
-                  h('span', { style: styles.projectName }, project.appName || project.id),
-                  project.appName ? h('span', { style: styles.muted }, project.id) : null,
+                  { className: 'ap-card-head' },
+                  h('span', { className: 'ap-project-name' }, project.appName || project.id),
+                  project.appName ? h('span', { className: 'ap-muted' }, project.id) : null,
                   h('span', { style: { flex: 1 } }),
                   pendingRemove === project.id
                     ? h(
@@ -935,23 +1013,22 @@ window.__ModuleLoader__.load({
                       )
                     : button(t('projects.remove'), () => setPendingRemove(project.id), { disabled: Boolean(busy) }),
                 ),
-                h('div', { style: styles.muted }, `${project.sourceDir || t('projects.sourceMissing')}${project.sourceDir && !project.sourceDirExists ? ` — ${t('projects.sourceGone')}` : ''}`),
-                h('div', { style: styles.muted }, `${t('platforms')}: ${enabled.map(platformLabel).join(' / ')}`),
-                project.error ? h('div', { style: styles.error }, project.error) : null,
+                h('div', { className: 'ap-note' }, `${project.sourceDir || t('projects.sourceMissing')}${project.sourceDir && !project.sourceDirExists ? ` — ${t('projects.sourceGone')}` : ''}`),
+                h('div', { className: 'ap-note' }, `${t('platforms')}: ${enabled.map(platformLabel).join(' / ')}`),
+                project.error ? h('div', { className: 'ap-box-error' }, project.error) : null,
               );
             }),
       );
 
       const jobCard = h(
         'div',
-        { style: styles.group },
+        { className: 'ap-card' },
         h(
           'div',
-          { style: styles.groupHead },
-          h('span', { style: styles.groupTitle }, t('job')),
-          job ? h('span', { style: styles.muted }, `${t(`job.kind.${job.kind}`)} · ${platformLabel(job.platform)}${job.project ? ` · ${job.project}` : ''}`) : null,
-          job ? h('span', { style: styles.badge }, jobStatus(job)) : null,
-          h('span', { style: { flex: 1 } }),
+          { className: 'ap-card-head' },
+          h('span', { className: 'ap-card-title' }, t('job')),
+          job ? h('span', { className: 'ap-muted' }, `${t(`job.kind.${job.kind}`)} · ${platformLabel(job.platform)}${job.project ? ` · ${job.project}` : ''}`) : null,
+          job ? h('span', { className: `ap-tag ${job.running ? 'warn' : job.ok ? 'ok' : 'fail'}` }, jobStatus(job)) : null,
           jobRunning ? button(t('job.stop'), stopJob, { disabled: Boolean(busy) }) : null,
         ),
         job && job.blockedByCheck ? h('div', { style: styles.error }, t('job.blockedByCheck')) : null,
@@ -969,15 +1046,15 @@ window.__ModuleLoader__.load({
             )
           : null,
         jobNotice(job),
-        job && job.dropped ? h('div', { style: styles.muted }, tf('job.dropped', { n: job.dropped })) : null,
+        job && job.dropped ? h('div', { className: 'ap-note' }, tf('job.dropped', { n: job.dropped })) : null,
         job
-          ? h('pre', { ref: logRef, style: styles.log }, job.output || t('job.waiting'))
-          : h('div', { style: styles.muted }, t('job.none')),
+          ? h('pre', { ref: logRef, className: 'ap-log' }, job.output || t('job.waiting'))
+          : h('div', { className: 'ap-note' }, t('job.none')),
       );
 
       return h(
         'div',
-        { className: 'ap-root' },
+        { className: 'ap-root', ref: rootRef },
         header,
         error ? h('div', { style: styles.error }, `${t('error')}: ${error}`) : null,
         engineCard,
