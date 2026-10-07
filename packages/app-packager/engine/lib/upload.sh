@@ -192,12 +192,14 @@ run_post_build_uploads() {
   [ -n "${UPLOAD_SELECTED_PLATFORMS:-}" ] || return 0
   if [ -z "$info_file" ] || [ ! -f "$info_file" ]; then
     warn "上传跳过：未找到构建信息文件"
+    [ "$strict" = "true" ] && return 1
     return 0
   fi
 
   artifact_platform="$(build_info_field "$info_file" platform 2>/dev/null || true)"
   [ -n "$artifact_platform" ] || {
     warn "上传跳过：构建信息缺少 platform: $info_file"
+    [ "$strict" = "true" ] && return 1
     return 0
   }
 

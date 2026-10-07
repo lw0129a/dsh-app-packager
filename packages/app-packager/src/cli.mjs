@@ -50,9 +50,29 @@ const HELP = `AppPackager ${packageVersion()} — uni-app x 打包命令行
   app-packager build ios --all
 `;
 
+// 带值的开关（`--json`、`--all` 这种布尔开关不在里面）。
+const FLAGS_WITH_VALUE = new Set(['--dir', '--platform', '--search-roots', '--upload', '--version']);
+// 插件自己的参数：它们决定引擎目录、项目搜索根和输出格式，引擎不认识。
+const PLUGIN_ONLY_FLAGS = new Set(['--dir', '--search-roots', '--json']);
+
+// 把插件专属参数从要交给引擎的 argv 里摘掉：`app-packager --dir X upload ios p`
+// 以前会把 `--dir X` 一起传下去，引擎于是回「未知参数: --dir」。
+function engineArgv(args) {
+  const out = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (PLUGIN_ONLY_FLAGS.has(token)) {
+      if (FLAGS_WITH_VALUE.has(token)) index += 1; // 连带它的值一起跳过
+      continue;
+    }
+    out.push(token);
+  }
+  return out;
+}
+
 function parseArgs(argv) {
   const flags = { _: [] };
-  const takesValue = new Set(['--dir', '--platform', '--search-roots', '--upload', '--version']);
+  const takesValue = FLAGS_WITH_VALUE;
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (takesValue.has(token)) {
@@ -118,7 +138,7 @@ async function withEngine(home, args, flags, { stdio = 'inherit', timeoutMs, scr
     console.error(`无法运行 bash 引擎：${shell.error}`);
     return 1;
   }
-  const result = await runEngine(home, args, { stdio, stdin, script, searchRoots: searchRootsFrom(flags), timeoutMs });
+  const result = await runEngine(home, engineArgv(args), { stdio, stdin, script, searchRoots: searchRootsFrom(flags), timeoutMs });
   return result.code;
 }
 

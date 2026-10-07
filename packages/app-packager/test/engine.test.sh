@@ -346,6 +346,16 @@ check_contains "独立上传时 provider 失败要如实返回" "|rc=1" "$OUT"
 engine 'PROJECT_ID=demo; UPLOAD_SELECTED_PLATFORMS=pgyer; run_post_build_uploads "$PIPELINE_ROOT/packages/iOS/demo-latest.json"; printf "|rc=%s" "$?"'
 check_contains "打包流程里上传失败不影响打包结果" "|rc=0" "$OUT"
 
+# 老归档（0.6.2 之前打的 iOS 包）没有 platform 字段：独立上传不能假装传过了。
+cat >"$TMP/packages/iOS/stale-latest.json" <<'JSON'
+{"project_id":"stale","display_name":"旧归档","version":"1.0.0","ipa_path":"/tmp/stale.ipa"}
+JSON
+engine 'PROJECT_ID=stale; UPLOAD_SELECTED_PLATFORMS=pgyer; upload_latest_artifact ios || printf "|rc=%s" "$?"'
+check_contains "归档缺 platform 时独立上传如实报失败" "|rc=1" "$OUT"
+check_contains "并说清是构建信息缺 platform" "构建信息缺少 platform" "$OUT"
+engine 'PROJECT_ID=stale; UPLOAD_SELECTED_PLATFORMS=pgyer; run_post_build_uploads "$PIPELINE_ROOT/packages/iOS/stale-latest.json"; printf "|rc=%s" "$?"'
+check_contains "同样的跳过在打包流程里仍不影响打包" "|rc=0" "$OUT"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nengine.test.sh 全部通过\n'
 else

@@ -59,7 +59,7 @@ centre column:
   archived* tag when the JSON outlived the file) and build time, each with an
   *Upload* button that starts a `kind: 'upload'` job for that one artifact —
   the engine's `upload <platform> <project> --to <平台>` action, which never
-  rebuilds. The card also holds the distribution targets (the usable uploaders
+  rebuilds and fails the job when the engine skipped rather than uploaded. The card also holds the distribution targets (the usable uploaders
   from `config/upload.env`, ticked ones sent as one comma separated `--to`) and
   the credential rows: an uploader that declares `UPLOAD_PLATFORM_<id>_API_KEY_VAR`
   (pgyer declares `PGYER_API_KEY`) or `_USER_KEY_VAR` (`PGYER_USER_KEY`, pgyer's
