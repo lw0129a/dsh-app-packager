@@ -74,59 +74,56 @@ pnpm --filter @lw0129a/dsh-app-packager publish --access public
 
 ## 三、让插件出现在插件市场
 
-Harness 的插件市场（dshmarket）**不接收插件条目 PR**，它读取的是精选清单 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)：
+Harness 的插件市场（dshmarket）**不接收插件条目 PR**，也**不搜索你本地装了什么**：它的搜索和列表只有一份数据源 —— 精选清单 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)。插件只装进自己 profile、没进这份清单时，在市场里怎么搜都搜不到，这不是坏了。
 
-- 市场打开时实时拉取 `https://awesome-dsh-plugin.com/plugins.json`（可用环境变量 `DSHM_REGISTRY_URL` 指向同结构的镜像）。
-- 清单里的 `stars` / `downloads` / `capabilities` 由对方的 CI 每日自动刷新，提交时只需要人工字段。
+- 市场打开时实时拉取 `https://awesome-dsh-plugin.com/plugins.json`（`dshmarket/lib/regions.js` 里的 `CATALOG_OFFICIAL`；中国区改从 npm 包 `dsh-plugin-catalog` 里的同名文件读，见 `dshmarket/lib/catalog-npm.js`）。可用环境变量 `DSHM_REGISTRY_URL` 指向同结构镜像。
+- 清单里的 `page` / `install` / `stars` / `downloads` / `capabilities` / `added` 由对方 CI 自动生成，提交时只写人工字段。
 
-所以上架顺序是：**先发 npm，再向 awesome-dsh-plugin 提一个 PR 增加一条 entry**，站点与市场通常在一天内自动收录。
+**发布 npm 不是上架的前提**：`contributing.md` 的「npm package（optional）」一节写明 listing 与发不发 npm 无关。发 npm 只是换来市场里的下载量数字与预构建安装。条目里**不能**手写 `npm:` 键（会被校验拒绝），映射是对方从 registry 自动采集的 —— 条件是**已发布包的 `repository` 字段指回被收录的那个仓库**（本项目两个包的 `repository` 都已指向 `lw0129a/dsh-app-packager`）。
 
-提交前先确保 npm 包已可安装（对方 CI 会去 registry 校验 `npm` 字段与版本）：
-
-```bash
-npm view @lw0129a/dsh-app-packager version
-```
-
-条目不是加进 README 或 `plugins.json`，而是在对方仓库新建一个 YAML 文件：
+条目是对方仓库里的一个新 YAML 文件，一个包一个文件：
 
 ```text
-data/plugins/<owner>__<repo>.yml      # 例如 data/plugins/lw0129a__dsh-app-packager.yml
+data/plugins/<owner>__<repo>.yml                            # 根包
+data/plugins/<owner>__<repo>--<子包路径，/ 换成 ->.yml        # monorepo 子包
 ```
 
-内容（字段名与顺序照抄同目录已有条目，如 `00080000__dsh-project-memory.yml`）：
+本项目是 monorepo（根包是纯 CLI，插件在 `packages/dsh-app-packager`），所以走子包形式：`url` 指向子目录，`name` 用 `#` 带上子包名。
 
 ```yaml
-url: https://github.com/lw0129a/dsh-app-packager
-name: lw0129a/dsh-app-packager
-category: tools
-npm: '@lw0129a/dsh-app-packager'
+# data/plugins/lw0129a__dsh-app-packager--packages-dsh-app-packager.yml
+url: https://github.com/lw0129a/dsh-app-packager/tree/main/packages/dsh-app-packager
+name: lw0129a/dsh-app-packager#dsh-app-packager
+category: dev
 description:
-  zh: "在 DeepSeek Harness 里打包 uni-app x 项目（iOS/Android/HarmonyOS）：列出已配置项目、检查工具链、调用打包引擎出包。"
-  en: "Build iOS/Android/HarmonyOS packages for uni-app x projects from DeepSeek Harness: list configured projects, check toolchains, run the packaging engine."
+  en: 'Packaging pipeline for uni-app x projects: drives the HBuilderX CLI to build, sign and upload iOS, Android and HarmonyOS apps from per-project config files, and exposes the engine to the agent as list / doctor / check / build tools.'
+  zh: 'uni-app x 项目打包流水线：按项目配置调用 HBuilderX CLI 打出并签名 iOS / Android / HarmonyOS 安装包，并以 list / doctor / check / build 四个工具暴露给 agent。'
 ```
-
-字段说明：
 
 | 字段 | 说明 |
 | --- | --- |
-| `url` | 仓库地址，用于抓 stars；**必须是公开仓库**（本项目的 `https://github.com/lw0129a/dsh-app-packager`） |
-| `name` | `<owner>/<repo>`，也是文件名的来源 |
-| `category` | 取 `categories` 里的键；本插件用 `tools`（工具与能力），偏构建流程也可用 `dev` |
-| `npm` | npm 包名（带 scope 要写全）；也可用 `tarball:` 指向 GitHub Release 里的 tgz |
-| `description.zh` / `.en` | 中英双语，市场按语言显示，两句意思必须一致 |
+| `url` | 仓库（或子目录）地址，用于抓 stars；**必须是公开仓库** |
+| `name` | `<owner>/<repo>`；monorepo 子包写 `<owner>/<repo>#<子包名>`，同时决定文件名 |
+| `category` | 取对方 `contributing.md` 列出的取值；本插件是构建/打包流程，用 `dev` |
+| `description.zh` / `.en` | 中英双语，两句意思必须一致；只有 `en` 是必填。**内容里出现 `: `（冒号加空格）必须加引号**，否则 YAML 把它当嵌套键 |
+| `tarball` | 可选，GitHub Release 里的预构建 tgz（不发 npm 时用） |
 
-`page` / `install` / `stars` / `downloads` / `capabilities` / `added` 等字段由对方 CI 生成，不必手写。
-
-### 对方 CI 会检查什么
+### 对方 CI 会检查什么（`scripts/check-submission.mjs`）
 
 1. 一个 PR 最多 3 条 entry。
-2. **仓库里能读到 `dsh.bundle`**：从仓库根 `package.json`，或 `packages/` · `plugins/` · `apps/` 子包里读。本项目的插件在 `packages/dsh-app-packager/package.json`，声明的正是 `dsh.bundle.patch`，符合这条。
-3. **仓库年龄 ≥ 1 天**（新建的仓库当天提 PR 会被拒）。
-4. `awesome-lint` 与站点构建：双语一致、分隔符、日期等。
+2. **`dsh.bundle`**：从条目指向的那份 `package.json` 读（根包，或 `packages/` · `plugins/` · `apps/` 子包）。本项目的插件在 `packages/dsh-app-packager/package.json`，声明的正是 `dsh.bundle.patch`，符合这条。
+3. **`MIN_AGE_DAYS = 1`：仓库创建满 1 天。这条红是自己会消失的** —— 校验器原话是不要重提、不要空推、不要关掉重开，`regate.yml`（cron `19 */6 * * *`）每 6 小时重跑一遍 gate，时间一到自动转绿。
+4. 仓库要打 `dsh-plugin` topic。
+5. 官方 `@deepseek-ai/*` 包必须是 `peerDependencies` 而不是 `dependencies`。
+6. 首次贡献者的 fork PR 需要维护者点一次 approve，workflow 才会真正跑（GitHub 的 `action_required`）—— 这不是提交本身有问题。
 
-截图可选：在自己的仓库里放 `screenshots.json`（与插件的 `package.json` 同级），列 1–8 个图片路径，市场详情页会显示。
+截图可选：在自己的仓库里放 `screenshots.json`（与插件的 `package.json` 同级），列 1–8 个图片路径，市场详情页会显示；不写就从 README 里抽。
 
-贡献规范全文见 awesome-dsh-plugin 仓库根目录的 `contributing.md`；提 PR 前先读一遍。
+### 本项目的上架记录
+
+- 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。
+- 当天唯一的红项是仓库年龄（仓库建于 `2026-10-07T02:50:28Z`，24 小时门槛在 `2026-10-08T02:50Z`），按第 3 条的机制等它自己转绿。
+- 收录后市场是打开时实时拉的，重新打开插件市场即可搜到；npm 发布完成后下载量与一键安装命令会自动补上。
 
 
 ## 四、用户侧安装方式
