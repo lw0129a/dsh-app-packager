@@ -16,6 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Fixed
 
+- **The documented `sdk status` JSON fields now match what the engine really emits.** `packages/app-packager/engine/项目介绍.md` listed `platforms[]` with a `hint` field (the engine calls it `package`) and promised a top-level `settingsFile` that has never existed, so a script written against the documented contract read `undefined`. The docs now name the real keys (`id`/`label`/`series`/`state`/`ready`/`dir`/`page`/`direct`/`package`, `sdkRoot`, `archives`, `incompleteDownloads`), and `engine.test.sh` pins both key sets so documentation and output cannot drift apart again.
 - **The human-readable `sdk urls` / `sdk text` output no longer reports the HBuilderX version as unknown** (engine script version `2026.10.10.4`). The text path never resolved the local HBuilderX app, so it printed `版本: 未知` even though the JSON path (`sdk status`, which the panel uses) read the real version from the same installation. Both paths now resolve it; a machine without HBuilderX still prints `未知`.
 
 ## [0.6.1] - 2026-10-10

@@ -178,6 +178,11 @@ check "sdk_status_json 退出码" "0" "$STATUS"
 PARSED="$(printf '%s' "$OUT" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{const v=JSON.parse(s);
 console.log([v.platforms.map((p)=>p.id).join(","),v.platforms.length,typeof v.hbuilderx.found,v.incompleteDownloads,typeof v.sdkRoot].join("|"))})' 2>&1)"
 check "sdk_status_json 是合法 JSON 且含三平台" "ios,android,harmony|3|boolean|0|string" "$PARSED"
+# 字段名就是对外契约（项目介绍.md §6 逐字列了它们），写错文档就等于承诺了不存在的字段，钉住：
+KEYS="$(printf '%s' "$OUT" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{const v=JSON.parse(s);
+console.log([Object.keys(v).sort().join(","),Object.keys(v.platforms[0]).sort().join(",")].join("|"))})' 2>&1)"
+check "sdk_status_json 字段名与文档一致（platforms[] 是 package，没有 settingsFile/hint）" \
+  "archives,hbuilderx,incompleteDownloads,platforms,sdkRoot|dir,direct,id,label,package,page,ready,series,state" "$KEYS"
 
 if [ "$fails" -eq 0 ]; then
   printf '\nengine.test.sh 全部通过\n'
