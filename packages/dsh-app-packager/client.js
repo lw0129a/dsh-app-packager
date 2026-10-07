@@ -469,7 +469,8 @@ window.__ModuleLoader__.load({
      */
     function Section(props) {
       const t = props.t || ((key) => key);
-      const [open, setOpen] = useState(props.open !== false);
+      // 所有板块默认收起（只有显式 `open: true` 才展开），面板一进来是一排干净的标题。
+      const [open, setOpen] = useState(props.open === true);
       return h(
         'div',
         { className: props.className || 'ap-card' },
@@ -504,6 +505,7 @@ window.__ModuleLoader__.load({
 
       const [state, setState] = useState(null);
       const [doctor, setDoctor] = useState(null);
+      const [doctorError, setDoctorError] = useState('');
       const [job, setJob] = useState(null);
       const [error, setError] = useState('');
       const [busy, setBusy] = useState('');
@@ -616,7 +618,28 @@ window.__ModuleLoader__.load({
         await refresh();
       });
 
-      const runDoctor = () => guard('doctor', async () => setDoctor(await call('doctor', { method: 'POST', body: { platform } })));
+      // 进面板就把环境检查跑起来，用户不该盯着一句「加载中…」等一个没人发起的检查。
+      // 手动点「开始检查」走 guard（占 busy、出错进横幅）；自动这一次不抢 busy，
+      // 出错就写在卡片里，按钮还在原处可以重试。换平台会按新平台再检查一次。
+      const runDoctor = (options = {}) => {
+        const work = async () => {
+          setDoctorError('');
+          try {
+            setDoctor(await call('doctor', { method: 'POST', body: { platform } }));
+          } catch (failure) {
+            setDoctor(null);
+            setDoctorError(String((failure && failure.message) || failure));
+          }
+        };
+        return options.silent ? work() : guard('doctor', work);
+      };
+
+      // 面板一准备好（state 到手）就自动查一次，别让用户对着一句「加载中…」干等；
+      // 依赖用 Boolean(state) 这种基本值，免得每次 state 刷新都重跑一遍检查。
+      useEffect(() => {
+        if (!state) return;
+        runDoctor({ silent: true });
+      }, [platform, Boolean(state)]);
 
       // Upload targets are whatever the engine declares in config/upload.env; the
       // ticked ones go to the engine as one comma separated `--upload <a,b>` when
@@ -940,7 +963,7 @@ window.__ModuleLoader__.load({
               )),
               h('div', { className: 'ap-muted' }, doctor.ok ? t('doctor.ok') : tf('doctor.bad', { failures: doctor.failures, warnings: doctor.warnings })),
             )
-          : h('div', { className: 'ap-muted' }, t('loading')),
+          : h('div', { className: 'ap-muted' }, doctorError || t('loading')),
       );
 
       // SDK setup: the engine recommends the download entry per platform from the

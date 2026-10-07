@@ -889,9 +889,20 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   new Function('window', source)({ __ModuleLoader__: { load: (value) => { definition = value; } } });
   assert.equal(definition.id, 'dsh-app-packager');
 
+  // useState 要真的记账（能改值并重渲染）：板块默认收起，断言里面的内容前得先点开。
+  let slotCount = 0;
+  const hookValues = [];
+  let redraw = () => {};
   const react = {
     createElement,
-    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useState: (initial) => {
+      const slot = slotCount++;
+      if (!(slot in hookValues)) hookValues[slot] = typeof initial === 'function' ? initial() : initial;
+      return [hookValues[slot], (next) => {
+        hookValues[slot] = typeof next === 'function' ? next(hookValues[slot]) : next;
+        redraw();
+      }];
+    },
     useEffect: () => {},
     useCallback: (fn) => fn,
     useRef: () => ({ current: null }),
@@ -958,6 +969,13 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.match(source, /body\.upload = spec\.targets \|\| targets;/);
   assert.match(source, /artifacts\.map\(\(item\) => h\(/);
   assert.match(source, /button\(t\('upload\.action'\), \(\) => startUpload\(item\)/);
+  // 环境检查进面板就自己跑一次（state 到手后），不再让用户对着一句「加载中…」干等；
+  // 依赖写成 Boolean(state) 这种基本值，免得每次 state 刷新都重跑一遍检查。
+  assert.match(source, /if \(!state\) return;\s*\n\s*runDoctor\(\{ silent: true \}\)/);
+  assert.match(source, /\[platform, Boolean\(state\)\]/);
+  assert.match(source, /doctorError \|\| t\('loading'\)/);
+  // 所有板块默认收起（用户要求），只有显式 open:true 才展开。
+  assert.match(source, /const \[open, setOpen\] = useState\(props\.open === true\)/);
   assert.match(source, /uploaders\.map\(\(item\) => checkbox\(/);
   assert.match(source, /uploaderPicker\('upload\.target'\)/);
   assert.match(source, /uploaders\.filter\(\(item\) => item\.apiKeyVar\)\.map\(\(item\) => credentialRow\(item, 'apiKey'\)\)/);
@@ -1020,7 +1038,16 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
 
   // Render with the real dictionaries: a typo in the panel path throws here.
   const zh = dictionaries[0].dict.zh;
-  const tree = slots[1].component({ t: (key) => (key in zh ? zh[key] : key) });
+  const draw = () => {
+    slotCount = 0;
+    return slots[1].component({ t: (key) => (key in zh ? zh[key] : key) });
+  };
+  let tree = draw();
+  redraw = () => { tree = draw(); };
+  // 板块默认全收起：先逐个点开（state 还没到时也照样能开），再断言里面的内容。
+  for (const node of elements(tree)) {
+    if (String(node.props.className || '').split(' ').includes('ap-fold') && node.props['aria-expanded'] === 'false') node.props.onClick();
+  }
   assert.equal(tree.type, 'div');
   assert.equal(tree.props.className, 'ap-root');
   const flatten = (node, out = []) => {
@@ -1064,32 +1091,51 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     artifacts: [{ platform: 'ios', projectId: 'p', displayName: '演示应用', version: '1.0.0', builtAt: '2026-01-02T03:04:05Z', artifactPath: '/tmp/home/packages/iOS/p-latest.ipa', artifactExists: true, artifactSize: 2048, infoFile: '/tmp/home/packages/iOS/p-latest.json' }],
     pgyerCli: { package: '@pgyer/cli', version: '', dir: '/tmp/home/tools/pgyer-cli', bin: '/tmp/home/tools/pgyer-cli/node_modules/.bin/pgyer', installed: false },
   };
+  // 和下面那套 harness 一样，这里的 useState 也要真的记账（能改值并重渲染）：
+  // 所有板块默认收起，要断言板块内容就得先把它们点开。
   const renderWithState = (value) => {
-    let call = 0;
-    const stateful = {
-      createElement,
-      useState: (initial) => {
-        const first = typeof initial === 'function' ? initial() : initial;
-        return [call++ === 0 ? value : first, () => {}];
-      },
-      useEffect: () => {},
-      useCallback: (fn) => fn,
-      useRef: () => ({ current: null }),
+    const hookValues = [value];
+    let slotCount = 0;
+    let tree = null;
+    const render = () => {
+      slotCount = 0;
+      const react = {
+        createElement,
+        useState: (initial) => {
+          const slot = slotCount++;
+          if (!(slot in hookValues)) hookValues[slot] = typeof initial === 'function' ? initial() : initial;
+          const set = (next) => {
+            hookValues[slot] = typeof next === 'function' ? next(hookValues[slot]) : next;
+            tree = render();
+          };
+          return [hookValues[slot], set];
+        },
+        useEffect: () => {},
+        useCallback: (fn) => fn,
+        useRef: () => ({ current: null }),
+      };
+      const made = definition.factory((id) => {
+        if (id === 'react') return react;
+        throw new Error(`意外的 require：${id}`);
+      });
+      const panelSlots = [];
+      const panelDicts = [];
+      made.apply({
+        // 词典是在 effect 里注册的，必须真的跑一遍（和上面那套 harness 一样）。
+        effect: (fn) => { fn(); },
+        locale: { register: (namespace, dict) => { panelDicts.push(dict); return () => {}; }, bind: () => (key) => key },
+        slots: { inject: (slot, register) => { register(); return () => {}; }, register: (options, component) => { panelSlots.push({ options, component }); return () => {}; } },
+      });
+      const dict = panelDicts[0].zh;
+      return panelSlots[1].component({ t: (key) => (key in dict ? dict[key] : key) });
     };
-    const made = definition.factory((id) => {
-      if (id === 'react') return stateful;
-      throw new Error(`意外的 require：${id}`);
-    });
-    const panelSlots = [];
-    const panelDicts = [];
-    made.apply({
-      // 词典是在 effect 里注册的，必须真的跑一遍（和上面那套 harness 一样）。
-      effect: (fn) => { fn(); },
-      locale: { register: (namespace, dict) => { panelDicts.push(dict); return () => {}; }, bind: () => (key) => key },
-      slots: { inject: (slot, register) => { register(); return () => {}; }, register: (options, component) => { panelSlots.push({ options, component }); return () => {}; } },
-    });
-    const dict = panelDicts[0].zh;
-    return panelSlots[1].component({ t: (key) => (key in dict ? dict[key] : key) });
+    tree = render();
+    // 板块默认全收起（用户要求），所以先逐个点开，再把树交给内容断言。
+    for (const node of elements(tree)) {
+      const className = String(node.props.className || '').split(' ');
+      if (className.includes('ap-fold') && node.props['aria-expanded'] === 'false') node.props.onClick();
+    }
+    return tree;
   };
   const stateTexts = flatten(renderWithState(realState));
   assert.ok(stateTexts.some((text) => text.includes('5.26.2026091802')), '有 state 时 HBuilderX 版本行要渲染出来');
@@ -1197,8 +1243,8 @@ test('client half：父链没有确定高度时，把最近的裁剪祖先改成
   assert.equal(alreadyScrollable.grandparent.style.overflowY, undefined, '宿主本来就能滚：保持原样');
 
   // 卸载时要还回去，否则热重载会把宿主的盒子永久改成 auto。
-  // （这一个 effect 的本体就是「返回清理函数」，所以要再调一次返回值。）
-  const unmount = clipped.effects.at(-1)();
+  // （面板里不止一个 effect，清理函数是「返回函数」的那一个给的，别拿错。）
+  const unmount = clipped.effects.map((effect) => effect()).filter((value) => typeof value === 'function').at(-1);
   unmount();
   assert.equal(clipped.grandparent.style.overflowY, undefined, '卸载后还原宿主的 overflowY');
   assert.equal(clipped.grandparent.style.minHeight, undefined, '卸载后还原宿主的 minHeight');
@@ -1262,14 +1308,25 @@ test('client half：每个板块都能折叠，且互不影响', () => {
 
   // 注意别把箭头（`ap-fold-arrow`）也算成开关：按空格切分类名。
   const folds = () => elements(tree).filter((node) => String(node.props.className || '').split(' ').includes('ap-fold'));
+  const openAll = () => {
+    for (const node of folds()) {
+      if (node.props['aria-expanded'] === 'false') node.props.onClick();
+    }
+  };
+  const collapsed = folds();
+  assert.equal(collapsed.length, 8, `引擎/环境检查/SDK/项目列表/打包选项/打包范围/上传/任务 都要能折叠，实际 ${collapsed.length}`);
+  assert.ok(collapsed.every((node) => node.props['aria-expanded'] === 'false'), '默认全部收起');
+  assert.ok(collapsed.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
+  assert.ok(collapsed.some((node) => textOf(node).includes(dict['projects'])), '项目列表整体一个开关');
+  assert.ok(collapsed.some((node) => textOf(node).includes(dict['options'])), '打包选项自己一个开关（不再塞在项目列表里）');
+  assert.ok(collapsed.some((node) => textOf(node).includes(dict['scope'])), '打包范围自己一个开关');
+  assert.ok(collapsed.some((node) => textOf(node).includes(dict['upload'])), '上传自己一个开关（打包与上传分开）');
+  // 收起时板块内容一点都不渲染（只有标题那一行）。
+  assert.ok(!folds().some((node) => textOf(node).includes(dict['scope.hint'])), '收起时连打包范围的说明都看不到');
+
+  openAll();
   const opened = folds();
-  assert.equal(opened.length, 8, `引擎/环境检查/SDK/项目列表/打包选项/打包范围/上传/任务 都要能折叠，实际 ${opened.length}`);
-  assert.ok(opened.every((node) => node.props['aria-expanded'] === 'true'), '默认是展开的');
-  assert.ok(opened.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
-  assert.ok(opened.some((node) => textOf(node).includes(dict['projects'])), '项目列表整体一个开关');
-  assert.ok(opened.some((node) => textOf(node).includes(dict['options'])), '打包选项自己一个开关（不再塞在项目列表里）');
-  assert.ok(opened.some((node) => textOf(node).includes(dict['scope'])), '打包范围自己一个开关');
-  assert.ok(opened.some((node) => textOf(node).includes(dict['upload'])), '上传自己一个开关（打包与上传分开）');
+  assert.ok(opened.every((node) => node.props['aria-expanded'] === 'true'), '点开后都展开');
   // 拿「引擎目录」这行当探针：顶栏也印着同一个 home 路径，用路径断言会误伤。
   const probe = dict['engine.home'];
   assert.ok(probe && textOf(tree).includes(probe), '展开时能看到引擎目录那一行');
@@ -1280,12 +1337,12 @@ test('client half：每个板块都能折叠，且互不影响', () => {
 
   assert.ok(!textOf(tree).includes(probe), '合上后引擎那块的内容不再渲染');
   assert.ok(textOf(tree).includes('环境检查'), '别的板块不受影响');
-  const collapsed = folds().find((node) => textOf(node).includes('引擎'));
-  assert.equal(collapsed.props['aria-expanded'], 'false', '开关状态跟着翻');
-  assert.ok(!String(collapsed.props.className).includes('ap-fold-open'), '箭头方向靠这个类名翻转');
+  const engineFolded = folds().find((node) => textOf(node).includes('引擎'));
+  assert.equal(engineFolded.props['aria-expanded'], 'false', '开关状态跟着翻');
+  assert.ok(!String(engineFolded.props.className).includes('ap-fold-open'), '箭头方向靠这个类名翻转');
 
   // 项目列表是**整体**折叠：里面的每个项目不再各自带箭头。
-  const projectFold = opened.find((node) => textOf(node).includes(dict['projects']));
+  const projectFold = folds().find((node) => textOf(node).includes(dict['projects']));
   const projectRow = () => elements(tree).find((node) => String(node.props.className || '').split(' ').includes('ap-project'));
   assert.ok(projectRow(), '项目行还是照常渲染');
   assert.ok(!String(projectRow().props.className).includes('ap-fold'), '项目行本身不是开关');

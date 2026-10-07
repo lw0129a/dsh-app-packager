@@ -28,7 +28,14 @@ centre column:
   and which bash bridge was found (macOS/Linux `bash`, Windows Git Bash or WSL).
   *Init engine* materializes a missing engine in one click.
 - **Environment check (Node)** — the same report as `app_packager_doctor`, for
-  one platform or all of them, with hints for every failed item.
+  one platform or all of them, with hints for every failed item. It runs by
+  itself as soon as the panel has the engine state (you never sit on *Loading…*),
+  re-runs when you switch the platform in that card, and a failure is written
+  into the card so *Run check* can retry.
+- **Folding** — every section (Engine / Environment check / SDK / Projects /
+  Build options / Build scope / Upload / Job) starts collapsed; click its title
+  to open. The fold state lives with the component, so refreshing state or
+  polling a job never loses where the user left it.
 - **Projects** — every `config/projects/*.env`, its source directory (flagging
   a missing one), the platforms it enables, and per-project *Env check* /
   *Build* buttons; the whole list folds under the **Project list** header, and each
