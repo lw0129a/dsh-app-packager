@@ -225,32 +225,37 @@ sdk_install() {
   for current in "${kinds[@]}"; do
     printf '\n-- %s SDK --\n' "$(sdk_label "$current")"
     if [ -n "$file" ]; then
-      import_sdk_archive "$current" "$file" "$series" || status=1
-      continue
+      import_sdk_archive "$current" "$file" "$series" || true
+    else
+      case "$current" in
+        ios | android)
+          url=""
+          url="$(resolve_direct_sdk_url "$current" "$series" 2>/dev/null || true)"
+          if [ -z "$url" ]; then
+            fail "没有从官方页面解析到 $current SDK 直链"
+            print_sdk_download_address "$current" || true
+            printf '  手动下载后运行: %s sdk install %s --file <下载的压缩包>\n' \
+              "$(basename "$PIPELINE_ROOT/打包工具.command")" "$current"
+            status=1
+            continue
+          fi
+          ok "下载入口: $url"
+          import_sdk_archive "$current" "$url" "$series" || true
+          ;;
+        harmony)
+          if [ "$assume_yes" = 1 ]; then
+            SDK_AUTO_INSTALL=yes install_harmony_runtime || true
+          else
+            SDK_AUTO_INSTALL=ask install_harmony_runtime || true
+          fi
+          ;;
+      esac
     fi
-    case "$current" in
-      ios | android)
-        url=""
-        url="$(resolve_direct_sdk_url "$current" "$series" 2>/dev/null || true)"
-        if [ -z "$url" ]; then
-          fail "没有从官方页面解析到 $current SDK 直链"
-          print_sdk_download_address "$current" || true
-          printf '  手动下载后运行: %s sdk install %s --file <下载的压缩包>\n' \
-            "$(basename "$PIPELINE_ROOT/打包工具.command")" "$current"
-          status=1
-          continue
-        fi
-        ok "下载入口: $url"
-        import_sdk_archive "$current" "$url" "$series" || status=1
-        ;;
-      harmony)
-        if [ "$assume_yes" = 1 ]; then
-          SDK_AUTO_INSTALL=yes install_harmony_runtime || status=1
-        else
-          SDK_AUTO_INSTALL=ask install_harmony_runtime || status=1
-        fi
-        ;;
-    esac
+    # 结果以「真的就绪」为准：拒绝安装、ohpm 缺失、下载或解压失败都不能报成功。
+    if [ "$(sdk_state_for "$current")" != ready ]; then
+      warn "$(sdk_label "$current") SDK 未就绪：$(sdk_dir_for "$current")"
+      status=1
+    fi
   done
 
   write_local_settings

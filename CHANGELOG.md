@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sdk install` no longer reports success when nothing was installed** (engine script version `2026.10.10.2`). The result is now decided by whether the platform is actually `ready` afterwards, so declining the HarmonyOS prompt, a missing DevEco `ohpm`, or a failed download/unpack exits non-zero with a `<platform> SDK 未就绪` line instead of printing `SDK 配置完成` and exiting 0.
+
 ## [0.6.0] - 2026-10-10
 
 ### Added

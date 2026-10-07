@@ -124,6 +124,12 @@ engine_sdk 'sdk_install windows --yes'
 check "sdk_install 非法平台按用法错误退出" "2" "$STATUS"
 check_contains "sdk_install 非法平台提示" "未知平台: windows" "$OUT"
 
+# 没装成就不能报成功：非交互（stdin 关闭）下 harmony 会走「拒绝安装」分支。
+engine_sdk 'sdk_install harmony </dev/null >/dev/null 2>&1'
+check "sdk_install harmony 非交互拒绝安装后不算成功" "1" "$STATUS"
+engine_sdk 'sdk_install harmony </dev/null 2>&1 | grep -c "SDK 配置完成"'
+check "sdk_install harmony 未装成时不打印「配置完成」" "0" "$OUT"
+
 engine_sdk 'mkdir -p "$(harmony_sdk_dir)"; : > "$(harmony_sdk_dir)/oh-package.json5"; \
   if harmony_sdk_ready; then printf 0; else printf 1; fi'
 check "harmony_sdk_ready 不认自己刚建的 oh-package.json5（旧版假阳性）" "1" "$OUT"
