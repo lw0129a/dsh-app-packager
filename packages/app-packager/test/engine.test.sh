@@ -215,13 +215,22 @@ check_contains "等名额时状态带上已等秒数" "等待 HBuilderX 名额�
 engine '
   APP_PACKAGER_CACHE_ROOT=/tmp/ap-cache
   WORK_ROOT="/x/node_modules/dsh-app-packager/home/workspaces"
-  relocate_work_root_out_of_node_modules >/dev/null
+  relocate_work_root_out_of_node_modules 2>/dev/null
   printf "%s" "$WORK_ROOT"'
 check "工作区在 node_modules 里就挪到缓存目录" "/tmp/ap-cache/workspaces" "$OUT"
 
+# 面板把 `sdk status`/`profiles` 的 stdout 当 JSON 解析（web.js:640/609）：外迁说明只能走
+# stderr，否则 SDK 卡片报「无法解析 sdk status 输出：Unexpected token 'I', "[INFO] 工作区改"...」。
+engine '
+  APP_PACKAGER_CACHE_ROOT=/tmp/ap-cache
+  WORK_ROOT="/x/node_modules/dsh-app-packager/home/workspaces"
+  printed="$(relocate_work_root_out_of_node_modules 2>/dev/null)"
+  printf "[%s]" "$printed"'
+check "外迁说明走 stderr，不污染 stdout" "[]" "$OUT"
+
 engine '
   WORK_ROOT="$HOME/AppPackager/workspaces"
-  relocate_work_root_out_of_node_modules >/dev/null
+  relocate_work_root_out_of_node_modules 2>/dev/null
   printf "%s" "$WORK_ROOT"'
 check "工作区不在 node_modules 里就原样保留" "$HOME/AppPackager/workspaces" "$OUT"
 

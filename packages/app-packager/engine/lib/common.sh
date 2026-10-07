@@ -30,7 +30,9 @@ relocate_work_root_out_of_node_modules() {
   fi
   WORK_ROOT="$cache_root/workspaces"
   export WORK_ROOT
-  printf '  [INFO] 工作区改到 node_modules 外面（HBuilderX 的 Android 编译器不支持 node_modules 路径）: %s\n' "$WORK_ROOT"
+  # stderr：面板把 `sdk status` / `profiles` 的 stdout 当 JSON 解析（web.js:640），
+  # 这行说明留在 stdout 会让 SDK 卡片直接报「无法解析 sdk status 输出」。
+  printf '  [INFO] 工作区改到 node_modules 外面（HBuilderX 的 Android 编译器不支持 node_modules 路径）: %s\n' "$WORK_ROOT" >&2
 }
 
 # 自定义 UTS / 原生插件跨平台联编与归档校验
