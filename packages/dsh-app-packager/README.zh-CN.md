@@ -36,8 +36,8 @@ dsh plugin --profile desktop add dsh-app-packager
 列出引擎目录里配置的项目（`config/projects/*.env`）：项目 ID、应用名、源码目录是否存在、启用的平台。
 
 ```
-AppPackager 引擎目录：/Users/me/AppPackager
-引擎版本：0.2.0
+AppPackager 引擎目录：<插件目录>/home
+引擎版本：0.6.0
 项目（1）:
 - shop（商城）
   平台: iOS (IPA), Android (APK)
@@ -80,7 +80,7 @@ AppPackager 引擎目录：/Users/me/AppPackager
     - id: app-packager
       name: 'dsh-app-packager'
       config:
-        home: ''                 # 引擎目录；留空用 ~/AppPackager 或 APP_PACKAGER_HOME
+        home: ''                 # 引擎目录；留空用 <插件目录>/home 或 APP_PACKAGER_HOME
         searchRoots: []          # 额外项目扫描目录（在引擎目录的父目录之外）
         checkTimeoutMs: 600000   # check 超时（毫秒）
         buildTimeoutMs: 5400000  # build 超时（毫秒）
@@ -94,6 +94,8 @@ AppPackager 引擎目录：/Users/me/AppPackager
 引擎目录就在插件目录里（`<插件目录>/home`），跟着插件走；可用配置项或环境变量 `APP_PACKAGER_HOME` 指到别处。老版本留在 `~/AppPackager` 的引擎目录会在第一次解析时被改名搬进来 —— 是改名而不是复制，所以几 GB 的 SDK 与已登记项目瞬间就位。
 
 第一次调用工具（或点面板的「初始化引擎」）时，插件会把包内的打包引擎释放到那里；之后升级插件会更新引擎文件，但不会覆盖你本地的配置、证书、SDK 与产物。面板里的「升级插件」更进一步，会重装 npm 包，并在整个安装期间把引擎目录暂存到一边。
+
+> **别绕开面板去重装这个包。** `<插件目录>/home` 就在包的目录里，任何真正重装它的 pnpm 命令（`pnpm install --force`、换版本、改 `file:` 指向）都会连引擎目录一起删掉——SDK、证书、已登记项目都在里面。要换版本就用面板的「升级插件」，或 `node <插件目录>/upgrade.mjs`：它们会先把引擎目录暂存到一边，而且 registry 上不比本机新时会直接拒绝、不把你换回旧版。
 
 想走交互式初始化向导（登记同级目录下的 uni-app x 项目、选择平台、配置签名），用 CLI 跑：
 

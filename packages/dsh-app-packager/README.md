@@ -81,8 +81,8 @@ Lists the projects configured in the engine directory (`config/projects/*.env`):
 project id, app name, whether the source directory exists, enabled platforms.
 
 ```
-AppPackager 引擎目录：/Users/me/AppPackager
-引擎版本：0.2.0
+AppPackager 引擎目录：<plugin>/home
+引擎版本：0.6.0
 项目（1）:
 - shop（商城）
   平台: iOS (IPA), Android (APK)
@@ -132,7 +132,7 @@ The bundle patch provides the config; override it in your own profile
     - id: app-packager
       name: 'dsh-app-packager'
       config:
-        home: ''                 # engine dir; empty = ~/AppPackager or APP_PACKAGER_HOME
+        home: ''                 # engine dir; empty = <plugin>/home or APP_PACKAGER_HOME
         searchRoots: []          # extra project scan roots (outside the engine's parent)
         checkTimeoutMs: 600000   # check timeout (ms)
         buildTimeoutMs: 5400000  # build timeout (ms)
@@ -155,6 +155,14 @@ there; later upgrades refresh the engine files but never overwrite your own
 config, certificates, SDKs or artifacts. *Upgrade plugin* in the panel goes one
 step further and reinstalls the npm package, keeping the engine directory
 stashed until the install finishes.
+
+> **Do not reinstall this package around the panel.** `<plugin>/home` sits inside
+> the package directory, so any pnpm command that really reinstalls it —
+> `pnpm install --force`, adding another version, changing the `file:` spec —
+> deletes the engine directory along with it, SDKs, certificates and registered
+> projects included. Use *Upgrade plugin* in the panel, or
+> `node <plugin>/upgrade.mjs`, which stashes the engine directory first; both
+> also refuse to move you onto an older release than the one installed.
 
 For the interactive wizard (register uni-app x projects found next to the
 engine, pick platforms, configure signing), use the CLI:
