@@ -69,12 +69,12 @@ The same plugin ships a browser half (`./client.js`), so a profile with the web 
 
 - **Engine** — engine directory, version, materialised state and the detected bash bridge, with a one-click initialise.
 - **Environment** — the same report as `app_packager_doctor`, for one platform or all, each failure carrying its fix hint.
-- **Projects** — every `config/projects/*.env` with its source directory, enabled platforms and per-project *check* / *build* buttons.
-- **Build scope** — batch platforms × projects (no project ticked = all of them), run back to back in one job and marked `▶ i/n` in the log.
+- **Projects** — register and remove projects: *Choose folder…* takes several folders at once (one path per line works too), each registered project shows its source directory and enabled platforms, and every row has a two-step *Remove* that only deletes the engine's own `config/projects/<id>.env` — never the project sources.
+- **Build scope** — the only build entry point: batch platforms × projects (no project ticked = all of them), run back to back in one job and marked `▶ i/n` in the log. **A build first runs the environment check over the same projects and platforms**, and stops with the list of `[FAIL]` items when the environment is not ready, so packaging only starts once the check passes.
 - **Build options** — version override; a **full permissions** switch (defaults to `FULL_PERMISSION_PROFILE` in `config/settings.env`, overridable for one run); the **iOS release kind** (Ad Hoc test / App Store release / development / enterprise — the profile is picked by the project's bundle id, and a kind with no local profile is greyed out with the reason); a **profile** dropdown (every `.mobileprovision` in the signing directories, with kind, bundle id and expiry; leave it on *Auto* to follow the kind or the project wiring); **custom build parameters** (one `KEY=VALUE` per line, e.g. `MARKETING_VERSION=1.2.3`, loadable from the project's own `scripts/ios-package/env/*.env` presets; path-like keys are refused); upload targets read from the engine's `config/upload.env`, greyed out with a reason when unusable and sent as one comma separated `--upload`; *HarmonyOS debug HAP* and *Keep work dir* in an *Advanced* fold.
 - **Jobs** — live engine output of the running check/build, its verdict (`[FAIL]` or a non-zero exit code means failure) and a stop button.
 
-The panel talks to eight same-origin routes the host half registers (`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`); builds still run in the host process, never in the browser. A headless profile simply shows no panel — the four tools work everywhere.
+The panel talks to nine same-origin routes the host half registers (`/api/app-packager/state|init|doctor|pick|project|project/remove|job|job/log|job/kill`); builds still run in the host process, never in the browser. A headless profile simply shows no panel — the four tools work everywhere.
 
 ## Platform support
 

@@ -10,7 +10,7 @@
    bin/app-packager.mjs        packages/dsh-app-packager/index.js      client.js（面板）
           │  （参数解析）              │  （4 个工具）     │                    │ fetch
           └──────────────┬───────────┴───────────────────┘                    │
-                         ▼                        web.js（8 条 exact 路由）◄───┘
+                         ▼                        web.js（9 条 exact 路由）◄───┘
             packages/app-packager/src/*.mjs          ← 纯 Node，无运行时依赖
             home · projects · engine · doctor · cli
                          │  spawn bash（丢弃 stdin）
@@ -31,7 +31,7 @@
 | `packages/app-packager/src/doctor.mjs` | Node 侧体检（Node、引擎、shell 桥接、Xcode 工具、HBuilderX、JDK、Android SDK、DevEco Studio、签名目录、项目配置）。 |
 | `packages/app-packager/engine/` | 原工具链，逐字节保留；行为权威说明是 `engine/项目介绍.md`。 |
 | `packages/dsh-app-packager/index.js` | 宿主插件：注册四个工具（手写 JSON Schema），把引擎输出渲染成文本；不导入任何 `@deepseek-ai/*` 运行时包。 |
-| `packages/dsh-app-packager/web.js` | 面板的宿主侧：`engineArgsFor`（工具参数 → 引擎 argv 的唯一出处）、内存里的小任务执行器（check/build、输出上限、SIGTERM 停止）、`mountWebPanel`（在 `webServer` 上注册 8 条 exact 路由并返回清理函数，多出的两条是宿主侧目录对话框与项目登记；没有 Web 服务时返回 `null`）。 |
+| `packages/dsh-app-packager/web.js` | 面板的宿主侧：`engineArgsFor`（工具参数 → 引擎 argv 的唯一出处）、内存里的小任务执行器（check/build、输出上限、SIGTERM 停止）、`mountWebPanel`（在 `webServer` 上注册 9 条 exact 路由并返回清理函数，多出的三条是宿主侧目录对话框、项目登记与项目删除；没有 Web 服务时返回 `null`）。 |
 | `packages/dsh-app-packager/client.js` | 面板的浏览器侧：手写的 `__ModuleLoader__` bundle（零构建、零 npm 依赖 —— `require('react')` 来自宿主 seed 表），往 `sidebar.panellist` 加一行、往 keyed 的 `main` 槽加一页。 |
 
 ## Web 面板

@@ -56,6 +56,12 @@ window.__ModuleLoader__.load({
       'projects.pickManual': '当前系统没有可用的目录选择器，请手动输入路径。',
       'projects.sourceMissing': '（未配置源码目录）',
       'projects.sourceGone': '源码目录不存在',
+      'projects.dirMulti': '可以一次选多个目录，每行一个；添加后逐个登记。',
+      'projects.remove': '删除',
+      'projects.remove.confirm': '确认删除',
+      'projects.remove.cancel': '取消',
+      'projects.remove.hint': '只移除登记（引擎目录里的 config/projects/<id>.env），不动项目源码。',
+      'projects.multi': '一次可选择多个目录。',
       platforms: '平台',
       check: '环境检查',
       build: '打包',
@@ -111,6 +117,7 @@ window.__ModuleLoader__.load({
       'job.problems': '发现 {errors} 项错误、{warnings} 项警告：',
       'job.warnOnly': '发现 {warnings} 项警告：',
       'job.more': '…另有 {n} 行，完整内容见下方日志',
+      'job.blockedByCheck': '打包前环境检查未通过，已停止打包。请先按上面的 [FAIL] 提示处理，再点「打包」。',
       error: '出错了',
       loading: '加载中…',
       'platform.all': '全部',
@@ -141,6 +148,12 @@ window.__ModuleLoader__.load({
       'projects.pickManual': 'This system has no folder picker; type the path instead.',
       'projects.sourceMissing': '(no source directory)',
       'projects.sourceGone': 'source directory missing',
+      'projects.dirMulti': 'Pick several folders at once, or put one path per line.',
+      'projects.remove': 'Remove',
+      'projects.remove.confirm': 'Confirm remove',
+      'projects.remove.cancel': 'Cancel',
+      'projects.remove.hint': 'Only the registration goes away (config/projects/<id>.env); the project sources are never touched.',
+      'projects.multi': 'Several folders can be selected at once.',
       platforms: 'Platforms',
       check: 'Env check',
       build: 'Build',
@@ -191,6 +204,7 @@ window.__ModuleLoader__.load({
       'job.exit': 'exit code {code}',
       'job.kind.check': 'Environment check',
       'job.kind.build': 'Build',
+      'job.blockedByCheck': 'The pre-build environment check failed, so the build did not start. Fix the [FAIL] items above, then press “Build” again.',
       'job.dropped': '(log truncated, {n} leading characters dropped)',
       'job.waiting': 'Waiting for output…',
       'job.problems': '{errors} error(s), {warnings} warning(s):',
@@ -326,7 +340,7 @@ window.__ModuleLoader__.load({
       const [packageKind, setPackageKind] = useState('');
       const [profileFile, setProfileFile] = useState('');
       const [overrides, setOverrides] = useState('');
-      const [rowPlatform, setRowPlatform] = useState({});
+      const [pendingRemove, setPendingRemove] = useState('');
       const [projectDir, setProjectDir] = useState('');
       const logRef = useRef(null);
 
@@ -433,7 +447,8 @@ window.__ModuleLoader__.load({
       // missing picker falls back to typing the path by hand.
       const pickDirectory = () => guard('pick', async () => {
         const picked = await call('pick', { method: 'POST', body: {} });
-        if (picked && picked.path) setProjectDir(picked.path);
+        const paths = (picked && (picked.paths || (picked.path ? [picked.path] : []))) || [];
+        if (paths.length > 0) setProjectDir(paths.join('\n'));
         else if (picked && !picked.cancelled) setError(`${t('projects.pickManual')}\n${picked.error || ''}`.trim());
       });
 
@@ -444,6 +459,14 @@ window.__ModuleLoader__.load({
           return;
         }
         setProjectDir('');
+        await refresh();
+      });
+
+      // Deleting is two clicks: the row asks for confirmation first, and only
+      // then removes the engine's own config/projects/<id>.env.
+      const removeProject = (id) => guard('project', async () => {
+        await call('project/remove', { method: 'POST', body: { id } });
+        setPendingRemove('');
         await refresh();
       });
 
@@ -610,10 +633,10 @@ window.__ModuleLoader__.load({
           'div',
           { style: styles.actions },
           h('span', { style: styles.muted }, t('projects.dir')),
-          h('input', {
+          h('textarea', {
             className: 'ap-input',
-            style: { flex: '1', minWidth: '180px' },
-            placeholder: t('projects.dirHint'),
+            style: { flex: '1', minWidth: '180px', minHeight: '38px' },
+            placeholder: t('projects.dirMulti'),
             value: projectDir,
             onChange: (event) => setProjectDir(event.target.value),
           }),
@@ -746,31 +769,32 @@ window.__ModuleLoader__.load({
           ),
         ),
         state && state.projectsError ? h('div', { style: styles.error }, state.projectsError) : null,
+        projects.length === 0 ? null : h('div', { style: styles.muted }, t('projects.remove.hint')),
         projects.length === 0
           ? h('div', { style: styles.muted }, t('projects.empty'))
           : projects.map((project) => {
               const enabled = project.enabledPlatforms && project.enabledPlatforms.length ? project.enabledPlatforms : ['ios', 'android', 'harmony'];
-              const choices = enabled.length > 1 ? ['all'].concat(enabled) : enabled;
-              const selected = rowPlatform[project.id] || choices[0];
               return h(
                 'div',
                 { key: project.id, style: styles.project },
-                h('div', { style: styles.head }, h('span', { style: styles.projectName }, project.appName || project.id), project.appName ? h('span', { style: styles.muted }, project.id) : null),
-                h('div', { style: styles.muted }, `${project.sourceDir || t('projects.sourceMissing')}${project.sourceDir && !project.sourceDirExists ? ` — ${t('projects.sourceGone')}` : ''}`),
-                project.error ? h('div', { style: styles.error }, project.error) : null,
                 h(
                   'div',
-                  { style: styles.actions },
-                  h('span', { style: styles.muted }, t('platforms')),
-                  h(PlateformSelect, {
-                    value: selected,
-                    platforms: choices,
-                    onChange: (value) => setRowPlatform({ ...rowPlatform, [project.id]: value }),
-                    label: platformLabel,
-                  }),
-                  button(t('check'), () => startJob('check', { platform: selected, project: project.id }), { disabled: Boolean(busy) || jobRunning }),
-                  button(t('build'), () => startJob('build', { platform: selected, project: project.id }), { primary: true, disabled: Boolean(busy) || jobRunning }),
+                  { style: styles.head },
+                  h('span', { style: styles.projectName }, project.appName || project.id),
+                  project.appName ? h('span', { style: styles.muted }, project.id) : null,
+                  h('span', { style: { flex: 1 } }),
+                  pendingRemove === project.id
+                    ? h(
+                        'span',
+                        { style: styles.actions },
+                        button(t('projects.remove.confirm'), () => removeProject(project.id), { disabled: Boolean(busy) }),
+                        button(t('projects.remove.cancel'), () => setPendingRemove(''), { disabled: Boolean(busy) }),
+                      )
+                    : button(t('projects.remove'), () => setPendingRemove(project.id), { disabled: Boolean(busy) }),
                 ),
+                h('div', { style: styles.muted }, `${project.sourceDir || t('projects.sourceMissing')}${project.sourceDir && !project.sourceDirExists ? ` — ${t('projects.sourceGone')}` : ''}`),
+                h('div', { style: styles.muted }, `${t('platforms')}: ${enabled.map(platformLabel).join(' / ')}`),
+                project.error ? h('div', { style: styles.error }, project.error) : null,
               );
             }),
       );
@@ -787,6 +811,7 @@ window.__ModuleLoader__.load({
           h('span', { style: { flex: 1 } }),
           jobRunning ? button(t('job.stop'), stopJob, { disabled: Boolean(busy) }) : null,
         ),
+        job && job.blockedByCheck ? h('div', { style: styles.error }, t('job.blockedByCheck')) : null,
         job && job.error && job.error !== '已被取消' ? h('div', { style: styles.error }, job.error) : null,
         jobNotice(job),
         job && job.dropped ? h('div', { style: styles.muted }, tf('job.dropped', { n: job.dropped })) : null,

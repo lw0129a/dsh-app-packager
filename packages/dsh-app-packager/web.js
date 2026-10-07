@@ -204,32 +204,40 @@ export function engineCommandsFor(args = {}, { check = false } = {}) {
 const FOLDER_PROMPT = '选择 uni-app x 项目目录';
 
 /**
- * Ask the host OS for a folder. The browser half cannot read the filesystem, so
- * the dialog has to run here; each platform's own picker is used instead of a
- * dependency, and a missing picker only means "type the path yourself".
+ * Ask the host OS for one or more folders. The browser half cannot read the
+ * filesystem, so the dialog has to run here; each platform's own picker is used
+ * instead of a dependency, and a missing picker only means "type the path
+ * yourself". macOS and Linux pick several folders at once; the Windows dialog
+ * can only return one, so the panel falls back to repeated picks there.
  *
  * @param {{prompt?: string}} [options]
- * @returns {Promise<{path: string, cancelled?: boolean, error?: string}>}
+ * @returns {Promise<{path: string, paths: string[], cancelled?: boolean, error?: string}>}
  */
 export async function pickFolder({ prompt = FOLDER_PROMPT } = {}) {
-  const run = async (file, args) => (await execFileAsync(file, args, { windowsHide: true })).stdout.trim();
+  const run = async (file, args) => (await execFileAsync(file, args, { windowsHide: true })).stdout;
+  const split = (text) => String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
   let script;
   try {
     if (process.platform === 'darwin') {
-      script = `POSIX path of (choose folder with prompt ${JSON.stringify(prompt)})`;
-      return { path: await run('osascript', ['-e', script]) };
+      // `choose folder` wants {alias, ...} back with `as alias list` when
+      // multiple selections are allowed, hence the explicit coercion.
+      script = `set chosen to (choose folder with prompt ${JSON.stringify(prompt)} with multiple selections allowed)\nset out to ""\nrepeat with f in chosen\nset out to out & (POSIX path of f) & linefeed\nend repeat\nreturn out`;
+      const paths = split(await run('osascript', ['-e', script]));
+      return { path: paths[0] || '', paths };
     }
     if (process.platform === 'win32') {
       script = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = ${JSON.stringify(prompt)}; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`;
-      return { path: await run('powershell', ['-NoProfile', '-STA', '-Command', script]) };
+      const paths = split(await run('powershell', ['-NoProfile', '-STA', '-Command', script]));
+      return { path: paths[0] || '', paths };
     }
-    return { path: await run('zenity', ['--file-selection', '--directory', `--title=${prompt}`]) };
+    const paths = split(await run('zenity', ['--file-selection', '--directory', '--multiple', '--separator=\n', `--title=${prompt}`]));
+    return { path: paths[0] || '', paths };
   } catch (error) {
     const detail = String(error?.stderr || error?.message || error).trim();
     // Cancelling exits non-zero everywhere ("User canceled" / -128 / 1); only a
     // picker that does not exist at all is worth showing as an error.
     const cancelled = error?.code === 1 || /-128|user cancel|用户取消/i.test(detail);
-    return { path: '', cancelled, error: cancelled ? '' : detail };
+    return { path: '', paths: [], cancelled, error: cancelled ? '' : detail };
   }
 }
 
@@ -241,6 +249,20 @@ function append(job, chunk) {
     const overflow = job.output.length - job.outputLimit;
     job.dropped += overflow;
     job.output = job.output.slice(overflow);
+  }
+}
+
+/**
+ * Append what the job log is still missing after an engine run: `runEngine`
+ * already streams every complete line through `onLine` (that is what keeps a
+ * long build readable while it runs), so re-appending its captured stdout would
+ * print the whole run twice. Only an unterminated tail line is new.
+ */
+function appendResult(job, result) {
+  for (const text of [result.stdout, result.stderr]) {
+    if (!text) continue;
+    const tail = String(text).slice(String(text).lastIndexOf('\n') + 1);
+    if (tail) append(job, `${tail}\n`);
   }
 }
 
@@ -289,6 +311,7 @@ function jobView(job) {
     signal: job.signal,
     ok: job.ok,
     error: job.error,
+    blockedByCheck: Boolean(job.blockedByCheck),
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
     dropped: job.dropped,
@@ -375,15 +398,41 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
       };
 
       (async () => {
-        for (const [index, argv] of commands.entries()) {
-          if (job.cancelled) break;
-          if (commands.length > 1) append(job, `▶ ${index + 1}/${commands.length}  ${argv.join(' ')}\n`);
-          const result = await spawn(spec.home, argv, options);
-          if (result.stdout) append(job, result.stdout.endsWith('\n') ? result.stdout : `${result.stdout}\n`);
-          if (result.stderr) append(job, result.stderr.endsWith('\n') ? result.stderr : `${result.stderr}\n`);
-          if (result.code !== 0 && job.code === null) {
-            job.code = result.code;
-            job.signal = result.signal;
+        // A build only starts once the same scope passes `check`: a missing
+        // profile, a wrong permission switch or an unfinished SDK are the
+        // callers' to fix, and running the build first would bury that under
+        // minutes of engine output.
+        if (spec.precheck && Array.isArray(spec.precheck.commands) && spec.precheck.commands.length > 0) {
+          append(job, `▶ 打包前环境检查（${spec.precheck.commands.length} 项）\n`);
+          let blocked = false;
+          for (const [index, argv] of spec.precheck.commands.entries()) {
+            if (job.cancelled) break;
+            if (spec.precheck.commands.length > 1) append(job, `· 检查 ${index + 1}/${spec.precheck.commands.length}  ${argv.join(' ')}\n`);
+            const result = await spawn(spec.home, argv, { ...options, timeoutMs: spec.precheck.timeoutMs });
+            appendResult(job, result);
+            if (result.code !== 0 || /\[FAIL\]/.test(`${result.stdout || ''}${result.stderr || ''}`)) blocked = true;
+          }
+          if (job.cancelled) {
+            // fall through to the shared exit below
+          } else if (blocked) {
+            job.blockedByCheck = true;
+            job.code = 1;
+            append(job, `\n✗ 环境检查未通过，已停止打包。请先按上面的 [FAIL] 提示处理，再重新打包。\n`);
+          } else {
+            append(job, `✓ 环境检查通过，开始打包\n\n`);
+          }
+        }
+
+        if (!job.blockedByCheck) {
+          for (const [index, argv] of commands.entries()) {
+            if (job.cancelled) break;
+            if (commands.length > 1) append(job, `▶ ${index + 1}/${commands.length}  ${argv.join(' ')}\n`);
+            const result = await spawn(spec.home, argv, options);
+            appendResult(job, result);
+            if (result.code !== 0 && job.code === null) {
+              job.code = result.code;
+              job.signal = result.signal;
+            }
           }
         }
         if (job.code === null) job.code = 0;
@@ -581,12 +630,20 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
       if (!shell.available) {
         throw new Error(`当前系统上无法运行 bash 引擎：${shell.error}\nWindows 请安装 Git for Windows（推荐）或启用 WSL。`);
       }
+      // Builds are gated on the same scope passing `check` first (the panel's
+      // "fix the environment, then package" flow). `skipCheck` is the explicit
+      // escape hatch for a caller that just checked.
+      const precheck =
+        kind === 'build' && spec.skipCheck !== true
+          ? { commands: engineCommandsFor(spec, { check: true }), timeoutMs: config.checkTimeoutMs || 600_000 }
+          : null;
       return runner.start({
         kind,
         platform: platforms.join(','),
         project: scopeProjects(spec).join(','),
         home,
         commands,
+        precheck,
         timeoutMs: kind === 'check' ? config.checkTimeoutMs || 600_000 : config.buildTimeoutMs || 5_400_000,
         searchRoots: config.searchRoots,
         shell: shell.shell,
@@ -605,32 +662,53 @@ export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder,
     },
 
     /**
-     * Register one project directory by calling the engine's own `register`
+     * Register project directories by calling the engine's own `register`
      * subcommand, so the written config/projects/<id>.env is byte-identical to
      * what the interactive wizard produces. With a parent directory the engine
-     * scans one level below it.
+     * scans one level below it. `dir` may hold several paths (newline or comma
+     * separated) — the engine takes them all in one call.
      */
     async addProject({ dir } = {}) {
-      const target = String(dir || '').trim();
-      if (!target) throw new Error('请先选择或输入项目目录');
+      const dirs = String(dir || '')
+        .split(/[\n,]/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (dirs.length === 0) throw new Error('请先选择或输入项目目录');
       const home = homeOf();
       if (!isMaterialized(home)) materialize(home);
       const shell = shellAvailable();
       if (!shell.available) throw new Error(`当前系统上无法运行 bash 引擎：${shell.error}`);
-      const result = await spawn(home, ['register', target], {
+      const result = await spawn(home, ['register', ...dirs], {
         stdio: 'pipe',
         searchRoots: config.searchRoots,
         timeoutMs: 120_000,
       });
       const projects = projectsOf(home);
       return {
-        dir: target,
+        dirs,
         code: result.code,
         stdout: result.stdout || '',
         stderr: result.stderr || '',
         projects: Array.isArray(projects) ? projects : [],
         projectsError: Array.isArray(projects) ? '' : projects.error,
       };
+    },
+
+    /**
+     * Forget a registered project: it is one file the engine itself wrote
+     * (`config/projects/<id>.env`), and the user's project on disk is never
+     * touched. The id must be one the engine just listed, so a stray value
+     * cannot escape the config directory.
+     */
+    removeProject({ id } = {}) {
+      const target = String(id || '').trim();
+      const home = homeOf();
+      const projects = projectsOf(home);
+      if (!Array.isArray(projects)) throw new Error(projects.error);
+      if (!projects.some((project) => project.id === target)) throw new Error(`未登记的项目：${target}`);
+      fs.rmSync(path.join(home, 'config', 'projects', `${target}.env`));
+      const after = projectsOf(home);
+      return { id: target, projects: Array.isArray(after) ? after : [], projectsError: Array.isArray(after) ? '' : after.error };
     },
 
     killJob(id) {
@@ -693,6 +771,7 @@ export function mountWebPanel(ctx, config = {}) {
     { path: `${ROUTE_BASE}/doctor`, run: (_body) => panel.doctor(_body) },
     { path: `${ROUTE_BASE}/pick`, run: () => panel.pickFolder() },
     { path: `${ROUTE_BASE}/project`, run: (body) => panel.addProject(body) },
+    { path: `${ROUTE_BASE}/project/remove`, run: (body) => panel.removeProject(body) },
     { path: `${ROUTE_BASE}/job`, run: (_body) => panel.startJob(_body) },
     { path: `${ROUTE_BASE}/job/log`, run: (_body, query) => panel.jobLog(query.id) },
     { path: `${ROUTE_BASE}/job/kill`, run: (_body, query) => panel.killJob(query.id) },

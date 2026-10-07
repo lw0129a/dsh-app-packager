@@ -24,7 +24,7 @@ import {
   runEngine,
   shellAvailable,
 } from 'app-packager';
-import { PACKAGE_KINDS, PLATFORM_VALUES, engineArgsFor, mountWebPanel } from './web.js';
+import { PACKAGE_KINDS, PLATFORM_VALUES, engineArgsFor, mountWebPanel, summarizeOutput } from './web.js';
 
 export const name = 'app-packager';
 
@@ -149,6 +149,7 @@ function renderEngineRun(value) {
     `退出码：${value.code}${value.signal ? `（信号 ${value.signal}）` : ''}`,
     `引擎目录：${value.home}`,
   ];
+  if (value.blockedByCheck) lines.push('', '打包前环境检查未通过：先按上面的 [FAIL] 提示处理，再重新打包。');
   if (value.stderr) lines.push('', 'stderr:', value.stderr);
   if (value.output) lines.push('', '输出:', value.output);
   return lines.join('\n');
@@ -271,7 +272,7 @@ export function apply(ctx, rawConfig = {}) {
 
   ctx.tools.register({
     name: 'app_packager_build',
-    description: 'Build an AppPackager package (IPA / APK / HAP) for one platform or all platforms, optionally uploading to pgyer and overriding the version. Can also pick the iOS release kind (test Ad Hoc vs App Store), an explicit signing profile, whether the full permission set is merged in, and KEY=VALUE build parameter overrides. Takes minutes; call app_packager_check first when unsure.',
+    description: 'Build an AppPackager package (IPA / APK / HAP) for one platform or all platforms, optionally uploading to pgyer and overriding the version. Can also pick the iOS release kind (test Ad Hoc vs App Store), an explicit signing profile, whether the full permission set is merged in, and KEY=VALUE build parameter overrides. Takes minutes; it first runs the environment check over the same projects and platforms and refuses to package when that check reports [FAIL], so fix those items and build again (skipCheck: true skips the check for a caller that just ran it).',
     parameters: {
       type: 'object',
       properties: {
@@ -283,6 +284,7 @@ export function apply(ctx, rawConfig = {}) {
         harmonyDebug: { type: 'boolean', description: 'HarmonyOS 生成 debug 侧载包' },
         keepWork: { type: 'boolean', description: '保留中间构建目录' },
         ...optionParams,
+        skipCheck: { type: 'boolean', description: '跳过打包前的环境检查（默认会先按同一组项目与平台跑一次 check，不通过就不打包）' },
         home: homeParam,
       },
       additionalProperties: false,
@@ -291,6 +293,21 @@ export function apply(ctx, rawConfig = {}) {
     output: output((value) => renderEngineRun(value)),
     async execute(args) {
       const platform = String(args.platform || '');
+      // Same gate as the panel: the build only starts once the identical scope
+      // passes `check`, so an unready environment is reported as such instead of
+      // being buried under minutes of build output. `skipCheck` is for a caller
+      // that has just checked.
+      if (args.skipCheck !== true) {
+        const pre = await driveEngine(config, { ...args, platform }, config.checkTimeoutMs, { check: true });
+        if (!verdictOf(pre.result)) {
+          const summary = summarizeOutput(pre.result.stdout || '');
+          return {
+            ...engineRunValue(config, pre.home, pre.result),
+            summary: `${platform} 打包前环境检查未通过（已跳过打包，${summary.failures.length} 项 FAIL）`,
+            blockedByCheck: true,
+          };
+        }
+      }
       const { home, result } = await driveEngine(config, args, config.buildTimeoutMs);
       return { ...engineRunValue(config, home, result), summary: `${platform} 打包` };
     },

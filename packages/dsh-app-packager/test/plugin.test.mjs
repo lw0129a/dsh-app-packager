@@ -92,7 +92,10 @@ function fakeSpawn(record, { code = 0, hang = false, stdout = 'done\n' } = {}) {
     new Promise((resolve) => {
       record.push({ home, args });
       options.onSpawn?.({ kill: (signal) => record.push({ killed: signal }) });
+      // Faithful to runEngine: complete lines stream through onLine *and* the
+      // captured stdout is returned, so the runner must not print them twice.
       options.onLine?.('engine line', 'stdout');
+      for (const line of String(stdout).split('\n')) if (line) options.onLine?.(line, 'stdout');
       if (hang) return;
       setImmediate(() => resolve({ code, signal: null, stdout, stderr: '' }));
     });
@@ -256,6 +259,7 @@ test('apply 在存在 webServer 时挂上面板路由，缺席时不影响工具
       '/api/app-packager/job/log',
       '/api/app-packager/pick',
       '/api/app-packager/project',
+      '/api/app-packager/project/remove',
       '/api/app-packager/state',
     ],
   );
@@ -286,7 +290,7 @@ test('webServer 晚到：apply 用 ctx.inject 等它，服务出现后补挂路�
     },
   };
   waits[0].callback(withServices({}, { webServer: service }));
-  assert.equal(routes.size, 8);
+  assert.equal(routes.size, 9);
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -365,8 +369,29 @@ test('面板登记项目：pick 走注入的选择器，project 调引擎 regist
   const result = await panel.addProject({ dir: '/tmp/anjuyi/uni-platform-app' });
   assert.deepEqual(record[0].args, ['register', '/tmp/anjuyi/uni-platform-app'], '登记复用引擎的 register 子命令');
   assert.equal(result.code, 0);
-  assert.equal(result.dir, '/tmp/anjuyi/uni-platform-app');
+  assert.deepEqual(result.dirs, ['/tmp/anjuyi/uni-platform-app']);
   assert.ok(Array.isArray(result.projects));
+
+  // 多选目录：换行或逗号分隔都合成一次 register 调用。
+  const multi = await panel.addProject({ dir: '/tmp/a\n/tmp/b, /tmp/c\n\n' });
+  assert.deepEqual(record[1].args, ['register', '/tmp/a', '/tmp/b', '/tmp/c']);
+  assert.deepEqual(multi.dirs, ['/tmp/a', '/tmp/b', '/tmp/c']);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板删除项目：只删引擎自己写的 .env，未登记的项目一律拒绝', async () => {
+  const home = fixtureHome();
+  mkdirSync(join(home, 'config', 'projects'), { recursive: true });
+  writeFileSync(join(home, 'config', 'projects', 'demo.env'), 'SOURCE_DIR="/tmp/demo"\n');
+  writeFileSync(join(home, 'config', 'projects', 'keep.env'), 'SOURCE_DIR="/tmp/keep"\n');
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
+
+  assert.throws(() => panel.removeProject({ id: '../../README' }), /未登记的项目/);
+  const removed = panel.removeProject({ id: 'demo' });
+  assert.equal(removed.id, 'demo');
+  assert.deepEqual(removed.projects.map((project) => project.id), ['keep']);
+  assert.throws(() => panel.removeProject({ id: 'demo' }), /未登记的项目/, '删过就不再是登记项目');
+  assert.ok(readFileSync(join(home, 'config', 'projects', 'keep.env'), 'utf8').includes('/tmp/keep'), '其它项目不受影响');
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -389,10 +414,52 @@ test('面板任务：check 传 check 子命令、日志可轮询、运行中可�
 
   const killed = [];
   const canceller = createPanel({ config: { home }, spawn: fakeSpawn(killed, { hang: true }) });
-  const running = canceller.startJob({ kind: 'build', platform: 'ios' });
+  const running = canceller.startJob({ kind: 'build', platform: 'ios', skipCheck: true });
   assert.deepEqual(killed[0].args, ['ios', '--all'], 'build 不加 check；不给项目要补 --all，否则引擎 die');
   await canceller.killJob(running.id);
   assert.deepEqual(killed[1], { killed: 'SIGTERM' });
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('打包前先按同一组项目与平台检查：不通过就不打包', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const spawn = (dir, args, options) =>
+    fakeSpawn(record, args[0] === 'check'
+      ? { code: 1, stdout: '[FAIL] Profile 不存在: /tmp/demo.mobileprovision\n结果: errors=1 warnings=0\n' }
+      : { code: 0 })(dir, args, options);
+  const panel = createPanel({ config: { home }, spawn });
+  const started = panel.startJob({ kind: 'build', platform: 'ios', project: 'demo' });
+  for (let index = 0; index < 4; index += 1) await settle();
+
+  const job = panel.jobLog(started.id);
+  assert.deepEqual(record.map((entry) => entry.args), [['check', 'ios', 'demo']], '检查没过，引擎的打包命令一次都没跑');
+  assert.equal(job.blockedByCheck, true);
+  assert.equal(job.code, 1);
+  assert.equal(job.ok, false);
+  assert.match(job.output, /打包前环境检查（1 项）/);
+  assert.match(job.output, /已停止打包/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('打包前检查通过才继续；skipCheck 直接打包', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn(record, { code: 0, stdout: '[OK]   源码目录: /tmp/demo\n' }) });
+  const started = panel.startJob({ kind: 'build', platform: 'ios', project: 'demo' });
+  for (let index = 0; index < 6; index += 1) await settle();
+
+  const job = panel.jobLog(started.id);
+  assert.deepEqual(record.map((entry) => entry.args), [['check', 'ios', 'demo'], ['ios', 'demo']], '先检查、再打包，范围一致');
+  assert.equal(job.blockedByCheck, false);
+  assert.equal(job.ok, true);
+  assert.match(job.output, /环境检查通过，开始打包/);
+
+  record.length = 0;
+  const direct = createPanel({ config: { home }, spawn: fakeSpawn(record) });
+  direct.startJob({ kind: 'build', platform: 'android', project: 'demo', skipCheck: true });
+  for (let index = 0; index < 4; index += 1) await settle();
+  assert.deepEqual(record.map((entry) => entry.args), [['android', 'demo']], 'skipCheck 跳过预检');
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -460,7 +527,7 @@ test('面板任务：多平台 × 全项目拆成多条引擎命令，串行执�
   const home = fixtureHome();
   const record = [];
   const panel = createPanel({ config: { home }, spawn: fakeSpawn(record) });
-  const started = panel.startJob({ kind: 'build', platforms: ['ios', 'android'], projects: [], noUpload: true });
+  const started = panel.startJob({ kind: 'build', platforms: ['ios', 'android'], projects: [], noUpload: true, skipCheck: true });
   assert.equal(started.running, true);
   assert.equal(started.platform, 'ios,android');
   assert.equal(started.project, '');
@@ -486,7 +553,7 @@ test('面板任务：批处理里某一条失败时保留首个失败退出码�
   const spawn = (fakeHome, args, options) =>
     fakeSpawn(record, { code: args[0] === 'ios' ? 1 : 0 })(fakeHome, args, options);
   const panel = createPanel({ config: { home }, spawn });
-  const started = panel.startJob({ kind: 'build', platforms: ['ios', 'android'], projects: ['demo'] });
+  const started = panel.startJob({ kind: 'build', platforms: ['ios', 'android'], projects: ['demo'], skipCheck: true });
   for (let index = 0; index < 8; index += 1) await settle();
 
   const job = panel.jobLog(started.id);

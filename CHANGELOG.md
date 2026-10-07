@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-09
+
+### Added
+
+- **A build only starts once the environment check passes.** *Build scope* is now the single build entry point: every build first runs the engine's `check` over exactly the same platforms and projects (`engineCommandsFor(spec, { check: true })`), prints the result in the job log, and stops without packaging when anything reports `[FAIL]` — the panel shows *环境检查未通过，已停止打包* plus the failure list, and the job record carries `blockedByCheck`. The same gate runs in `app_packager_build` (with `skipCheck: true` for a caller that has just checked), so an unfinished SDK, a missing profile or a wrong permission switch is reported as the caller's job to fix instead of being buried under minutes of build output.
+- **Projects can be registered several at a time and removed from the panel.** *Choose folder…* now returns every folder the OS dialog allowed (macOS uses `with multiple selections allowed`, Linux `zenity --multiple`; the Windows dialog is single-folder by nature), the path box accepts one directory per line, and all of them go into one engine `register` call. Each registered project row has a two-step *Remove* that deletes only the engine's own `config/projects/<id>.env` — the id must be one the engine currently lists, so a stray value cannot escape the config directory, and the project sources are never touched.
+
+### Changed
+
+- **The per-project *check* / *build* buttons are gone.** One build entry point (*Build scope*) avoids two paths that could disagree; the environment check is part of the build now, and the scope block's *Env check* button remains for a check without packaging.
+
 ## [0.4.0] - 2026-10-07
 
 ### Added
@@ -85,7 +96,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.4.0...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.5.0...main
+[0.5.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.5.0
 [0.4.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.4.0
 [0.3.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.3.0
 [0.2.3]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.3
