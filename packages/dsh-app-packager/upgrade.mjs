@@ -13,7 +13,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { PACKAGE_NAME, homeInPlugin, pluginRoot, withHomePreserved } from './index.mjs';
+import { PACKAGE_NAME, homeInPlugin, isNewerVersion, pluginRoot, withHomePreserved } from './index.mjs';
 
 const root = pluginRoot();
 if (!root) {
@@ -35,8 +35,19 @@ function run(command, args, cwd) {
   });
 }
 
+async function registryLatest() {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${PACKAGE_NAME}/latest`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const info = await res.json();
+    return typeof info.version === 'string' ? info.version : null;
+  } catch {
+    return null;
+  }
+}
+
 async function upgrade() {
-  const extra = process.argv.slice(2);
+  const extra = process.argv.slice(2).filter((arg) => arg !== '--force');
   const dsh = '/usr/local/bin/dsh';
   if (fs.existsSync(dsh)) {
     return run(dsh, ['plugin', '--profile', profileName, 'add', `${PACKAGE_NAME}@latest`, ...extra], profileDir);
@@ -47,6 +58,19 @@ async function upgrade() {
 console.log(`插件目录: ${root}`);
 console.log(`引擎主目录: ${homeInPlugin(root)}`);
 console.log(`DSH profile: ${profileName} (${profileDir})`);
+
+// 本地 tarball 装的版本可能比 registry 还新（例如 0.6.0 还没发出去）：那种
+// 「升级」只会把装好的功能换回旧版，所以先比一次版本，--force 才强制重装。
+const installed = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+const latest = await registryLatest();
+if (!process.argv.includes('--force')) {
+  if (!latest) {
+    console.log('查不到 registry 上的最新版本，按原样继续。');
+  } else if (!isNewerVersion(latest, installed)) {
+    console.log(`registry 上是 ${latest}，本机已经是 ${installed}，没有可升级的新版本（要强制重装：加 --force）。`);
+    process.exit(0);
+  }
+}
 
 const result = await withHomePreserved(root, upgrade);
 

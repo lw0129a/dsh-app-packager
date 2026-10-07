@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { apply, inject, name } from '../index.js';
 import { createJobRunner, createPanel, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../web.js';
-import { LEGACY_HOME_NAME, homeInPlugin, legacyHome, pluginRoot, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../index.mjs';
+import { LEGACY_HOME_NAME, homeInPlugin, isNewerVersion, legacyHome, pluginRoot, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../index.mjs';
 
 /**
  * Mirror cordis service access: reading `ctx.<service>` without declaring it in
@@ -758,6 +758,14 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   // 卸载要注销两个槽位，否则热重载会留下重复入口。
   effects.at(-1)();
   assert.deepEqual(disposed, ['sidebar.panellist', 'main']);
+});
+
+test('升级前比版本：registry 不比本机新就不动手', () => {
+  assert.equal(isNewerVersion('0.7.0', '0.6.0'), true);
+  assert.equal(isNewerVersion('0.6.1', '0.6.0'), true);
+  assert.equal(isNewerVersion('0.6.0', '0.6.0'), false, '同版本不算升级');
+  assert.equal(isNewerVersion('0.2.1', '0.6.0'), false, 'registry 更旧时不能把本机换回去');
+  assert.equal(isNewerVersion('1.0.0-beta.1', '0.6.0'), true, '预发布也按数字段比');
 });
 
 test('SDK 平台参数：单个、多个、all 展开与非法值', () => {

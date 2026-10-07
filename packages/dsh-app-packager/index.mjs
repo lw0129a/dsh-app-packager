@@ -109,6 +109,23 @@ export function resolvePluginHome(explicit, options = {}) {
   }
 }
 
+/**
+ * Loose `x.y.z` comparison: is `candidate` a newer release than `current`?
+ *
+ * Used before upgrading from a locally packed tarball: the registry's `latest`
+ * can be older than what is installed (a version that has not been published
+ * yet), and "upgrading" to it would silently take features away.
+ */
+export function isNewerVersion(candidate, current) {
+  const parse = (value) => String(value).split('-')[0].split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const next = parse(candidate);
+  const have = parse(current);
+  for (let i = 0; i < 3; i += 1) {
+    if (next[i] !== have[i]) return next[i] > have[i];
+  }
+  return false;
+}
+
 /** True only for a directory that is (or was) an engine home, never a lookalike. */
 export function looksLikeEngineHome(dir) {
   return fs.existsSync(path.join(dir, '.engine-version')) || fs.existsSync(path.join(dir, ENGINE_ENTRY_NAME));

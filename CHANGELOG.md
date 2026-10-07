@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - **Publishing now runs in CI through npm trusted publishing (OIDC).** `.github/workflows/publish.yml` publishes both tarballs on a `v*` tag (or on demand from the Actions tab / `gh workflow run publish.yml`) with `id-token: write` and no npm token anywhere, so a 2FA account needs neither an OTP nor a manual approval of a staged package. Configure the trusted publisher once per package on npmjs.com (repository `lw0129a/dsh-app-packager`, workflow `publish.yml`).
 
+### Fixed
+
+- **The *Upgrade plugin* button no longer walks the plugin backwards.** When the plugin is installed from a local tarball, the registry's `latest` can be older than what is on the machine (today: `0.2.0` against a local `0.6.0`), and `add dsh-app-packager@latest` would quietly replace it — dropping the SDK card and the new engine. The upgrade now reads the installed version, compares it with the registry and stops with a message when there is nothing newer; `node <plugin>/upgrade.mjs --force` still reinstalls on demand. Verified against the real profile install (`0.2.0` on the registry, `0.6.0` installed, engine home untouched).
+
 ## [0.6.0] - 2026-10-10
 
 ### Added
