@@ -23,6 +23,20 @@ npm 账号需已登录（`npm whoami`），且 `@lw0129a` 这个 scope 归你所
 npm login
 ```
 
+账号开了两步验证（2FA）时，发布必须带验证码，否则报 `403 … Two-factor authentication or granular access token with bypass 2fa enabled is required to publish packages.` 两种解法：
+
+```bash
+pnpm --filter @lw0129a/app-packager publish --access public --otp 123456   # 认证器里的 6 位码，30 秒内有效
+```
+
+或者去 npmjs.com → Access Tokens 建一个 **Granular Access Token**（Packages 选 `@lw0129a`、权限 Read and write、勾上 **Bypass 2FA**），把它写进 `~/.npmrc`：
+
+```text
+//registry.npmjs.org/:_authToken=npm_xxxxxxxx
+```
+
+之后发布就不需要验证码了。注意 token 是凭据，别提交进仓库。
+
 ## 二、发布到 npm
 
 先在本地用 tarball 验证一遍再打真包：
