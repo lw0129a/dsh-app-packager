@@ -163,6 +163,15 @@ stashed until the install finishes.
 > projects included. Use *Upgrade plugin* in the panel, or
 > `node <plugin>/upgrade.mjs`, which stashes the engine directory first; both
 > also refuse to move you onto an older release than the one installed.
+>
+> **When the sidebar entry disappears.** The host composes the plugin list once at
+> startup and silently skips a plugin whose package directory is missing. Check in
+> order: (1) `ls <plugin>` (i.e. `<profile>/node_modules/dsh-app-packager`); (2) if it
+> is gone, read `<profile>/.plugin-manager/logs/*/pnpm.log` — a failed install leaves
+> `Command failed with exit code 1`, and pnpm removes the old package directory
+> first, taking the SDKs, certificates and projects in `home` with it; (3) install it
+> back (plugin market, or `dsh plugin --profile <profile> add dsh-app-packager`) and
+> **restart DSH** — the list is composed at startup only.
 
 For the interactive wizard (register uni-app x projects found next to the
 engine, pick platforms, configure signing), use the CLI:

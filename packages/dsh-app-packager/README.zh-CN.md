@@ -97,6 +97,8 @@ AppPackager 引擎目录：<插件目录>/home
 
 > **别绕开面板去重装这个包。** `<插件目录>/home` 就在包的目录里，任何真正重装它的 pnpm 命令（`pnpm install --force`、换版本、改 `file:` 指向）都会连引擎目录一起删掉——SDK、证书、已登记项目都在里面。要换版本就用面板的「升级插件」，或 `node <插件目录>/upgrade.mjs`：它们会先把引擎目录暂存到一边，而且 registry 上不比本机新时会直接拒绝、不把你换回旧版。
 
+> **侧栏入口消失时怎么查。** 宿主只在启动时组装一次插件清单，插件包目录缺失时它会跳过这个插件、不报错。按顺序看：① `ls <插件目录>`（即 `<profile>/node_modules/dsh-app-packager`）还在不在；② 不在就看 `<profile>/.plugin-manager/logs/*/pnpm.log`——安装失败会留下 `Command failed with exit code 1`，而 pnpm 装之前会先删旧包目录，`home` 里面的 SDK、证书与项目一起没了；③ 用插件市场或 `dsh plugin --profile <profile> add dsh-app-packager` 装回来，然后**重启 DSH**——清单只在启动时组装。
+
 想走交互式初始化向导（登记同级目录下的 uni-app x 项目、选择平台、配置签名），用 CLI 跑：
 
 ```bash
