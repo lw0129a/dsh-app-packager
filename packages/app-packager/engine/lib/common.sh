@@ -731,7 +731,10 @@ _ensure_hbuilderx_impl() {
 }
 
 ensure_hbuilderx() {
-  with_semaphore "hbuilderx" "${PARALLEL_MAX_HBULDERX_JOBS_RESOLVED:-1}" _ensure_hbuilderx_impl
+  # HBuilderX 编译位只有 1 个：别的平台正编着的时候这里会干等，所以状态要跟着走，
+  # 不然面板上一直挂着上一句「复制隔离工作区」，看着像卡死。
+  SEMAPHORE_PROGRESS=35 SEMAPHORE_WAIT_MESSAGE="等待 HBuilderX 名额" SEMAPHORE_RUN_MESSAGE="HBuilderX 连接检查" \
+    with_semaphore "hbuilderx" "${PARALLEL_MAX_HBULDERX_JOBS_RESOLVED:-1}" _ensure_hbuilderx_impl
 }
 
 DEVECO_STUDIO_APP="${DEVECO_STUDIO_APP:-/Applications/DevEco-Studio.app}"

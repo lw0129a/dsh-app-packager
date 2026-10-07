@@ -179,9 +179,10 @@ with_semaphore() {
   shift 2
   parallel_init
   limit="$(_parallel_numeric_or "$limit" 1)"
-  local root slot slot_dir owner child rc=0
+  local root slot slot_dir owner child rc=0 waited=0 last_beat=0 heartbeat
   root="$PIPELINE_ROOT/.tmp/semaphores/$name"
   mkdir -p "$root"
+  heartbeat="$(_parallel_numeric_or "${SEMAPHORE_HEARTBEAT_SECONDS:-15}" 15)"
 
   if [ -n "${SEMAPHORE_WAIT_MESSAGE:-}" ] && declare -F task_status_write >/dev/null 2>&1; then
     task_status_write "waiting" "${SEMAPHORE_PROGRESS:-0}" "$SEMAPHORE_WAIT_MESSAGE"
@@ -223,6 +224,13 @@ with_semaphore() {
       fi
       slot=$((slot + 1))
     done
+    waited=$((waited + ${PARALLEL_QUEUE_POLL_SECONDS_RESOLVED:-1}))
+    # 等位子的时候也要让状态动起来：消息带上已等秒数，面板/日志才看得出在排队。
+    if [ -n "${SEMAPHORE_WAIT_MESSAGE:-}" ] && [ $((waited - last_beat)) -ge "$heartbeat" ] \
+      && declare -F task_status_write >/dev/null 2>&1; then
+      last_beat="$waited"
+      task_status_write "waiting" "${SEMAPHORE_PROGRESS:-0}" "${SEMAPHORE_WAIT_MESSAGE}（已等 ${waited}s）"
+    fi
     sleep "${PARALLEL_QUEUE_POLL_SECONDS_RESOLVED:-1}"
   done
 }
@@ -326,11 +334,55 @@ _parallel_any_failed_status() {
   return 1
 }
 
+# 面板（以及任何管道/CI）里 stdout 不是 TTY：上面那套 ANSI 重绘直接被丢掉，
+# 于是「构建队列」之后整段日志一动不动，看着就像卡死。这里改成一行快照：
+# 只在内容变了、或每 PARALLEL_QUEUE_HEARTBEAT_SECONDS（默认 30）秒说一句时打印，
+# 既能看到进度往前走，也不会把日志刷满。
+_parallel_render_queue_plain() {
+  local status_dir="$1" line now last_at
+  line="$(python3 - "$status_dir" <<'PY_PLAIN'
+from pathlib import Path
+import json
+import sys
+
+rows = []
+for path in sorted(Path(sys.argv[1]).glob('*.json')):
+    try:
+        rows.append(json.loads(path.read_text(encoding='utf-8')))
+    except Exception:
+        continue
+rows.sort(key=lambda row: int(row.get('sequence', 0) or 0))
+parts = []
+for row in rows:
+    try:
+        progress = int(row.get('progress', 0) or 0)
+    except Exception:
+        progress = 0
+    parts.append('%s %s%% %s' % (
+        str(row.get('platform', '?')), max(0, min(100, progress)), str(row.get('message', ''))))
+print(' | '.join(parts))
+PY_PLAIN
+)"
+  [ -n "$line" ] || return 0
+  now="$(date '+%s')"
+  last_at="${PARALLEL_PLAIN_QUEUE_LAST_AT:-0}"
+  if [ "$line" = "${PARALLEL_PLAIN_QUEUE_LAST_LINE:-}" ] &&
+    [ $((now - last_at)) -lt "${PARALLEL_QUEUE_HEARTBEAT_SECONDS:-30}" ]; then
+    return 0
+  fi
+  printf '  [%s] %s\n' "$(date '+%H:%M:%S')" "$line"
+  PARALLEL_PLAIN_QUEUE_LAST_LINE="$line"
+  PARALLEL_PLAIN_QUEUE_LAST_AT="$now"
+}
+
 render_parallel_queue() {
   local status_dir="$1"
   [ "${PARALLEL_LIVE_QUEUE_DISPLAY:-true}" = "true" ] || return 0
-  [ -t 1 ] || return 0
   [ -d "$status_dir" ] || return 0
+  if [ ! -t 1 ]; then
+    _parallel_render_queue_plain "$status_dir"
+    return 0
+  fi
 
   printf '\033[2J\033[H'
   python3 - "$status_dir" <<'PY_QUEUE'

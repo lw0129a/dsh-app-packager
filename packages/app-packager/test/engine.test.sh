@@ -184,6 +184,47 @@ console.log([Object.keys(v).sort().join(","),Object.keys(v.platforms[0]).sort().
 check "sdk_status_json 字段名与文档一致（platforms[] 是 package，没有 settingsFile/hint）" \
   "archives,hbuilderx,incompleteDownloads,platforms,sdkRoot|dir,direct,id,label,package,page,ready,series,state" "$KEYS"
 
+# 面板/CI 里 stdout 不是 TTY：上下重绘的队列表整块被丢掉，日志从「构建队列」之后
+# 一动不动，看着像卡死。非 TTY 改打一行快照，并且不重复刷屏。
+engine '
+  status_dir="$PIPELINE_ROOT/status"; mkdir -p "$status_dir"
+  printf "%s\n" "{\"status\":\"waiting\",\"progress\":35,\"message\":\"等待 HBuilderX 名额\",\"platform\":\"android\",\"project\":\"demo\",\"sequence\":1,\"updated_at\":\"18:09:00\"}" > "$status_dir/1.json"
+  out="$(PARALLEL_QUEUE_HEARTBEAT_SECONDS=30 render_parallel_queue "$status_dir"; PARALLEL_QUEUE_HEARTBEAT_SECONDS=30 render_parallel_queue "$status_dir")"
+  printf "%s|%s" "$out" "$(printf "%s\n" "$out" | grep -c "android 35%")"'
+check_contains "非 TTY 下队列打一行进度快照" "android 35% 等待 HBuilderX 名额" "$OUT"
+check "队列没变化、也没到心跳点就不重复刷" "1" "${OUT##*|}"
+
+# 等名额时必须把「已等多少秒」写进状态：否则面板上一直挂着上一句消息，
+# HBuilderX 只有 1 个编译位，另外两个平台真的会干等好几分钟。
+# （不走 run_with_timeout：/bin/bash 3.2 上被 TERM 的后台作业会把调用方一起带走。）
+engine '
+  mkdir -p "$PIPELINE_ROOT/.tmp/semaphores/hbuilderx/1" "$PIPELINE_ROOT/status"
+  printf "%s\n" "$$" > "$PIPELINE_ROOT/.tmp/semaphores/hbuilderx/1/pid"
+  export TASK_STATUS_FILE="$PIPELINE_ROOT/status/9.json" TASK_PLATFORM=android TASK_PROJECT=demo TASK_SEQUENCE=9
+  export SEMAPHORE_PROGRESS=15 SEMAPHORE_WAIT_MESSAGE="等待 HBuilderX 名额" SEMAPHORE_HEARTBEAT_SECONDS=1
+  with_semaphore hbuilderx 1 true &
+  waiting=$!
+  sleep 2
+  cat "$TASK_STATUS_FILE"
+  kill "$waiting" 2>/dev/null || true'
+check_contains "等名额时状态带上已等秒数" "等待 HBuilderX 名额（已等" "$OUT"
+
+# HBuilderX 5.26 的 Android 编译器不认「项目在 node_modules 里」的路径：编译器自己生成的
+# ./uni_modules/<插件>/instans/types 相对导入会报 "index not found"，于是 npm 分发
+# （home 在 <profile>/node_modules/dsh-app-packager/home 下）时 Android 必然失败。
+engine 'source "$PIPELINE_ROOT/lib/init.sh" >/dev/null 2>&1
+  APP_PACKAGER_CACHE_ROOT=/tmp/ap-cache
+  WORK_ROOT="/x/node_modules/dsh-app-packager/home/workspaces"
+  relocate_work_root_out_of_node_modules >/dev/null
+  printf "%s" "$WORK_ROOT"'
+check "工作区在 node_modules 里就挪到缓存目录" "/tmp/ap-cache/workspaces" "$OUT"
+
+engine 'source "$PIPELINE_ROOT/lib/init.sh" >/dev/null 2>&1
+  WORK_ROOT="$HOME/AppPackager/workspaces"
+  relocate_work_root_out_of_node_modules >/dev/null
+  printf "%s" "$WORK_ROOT"'
+check "工作区不在 node_modules 里就原样保留" "$HOME/AppPackager/workspaces" "$OUT"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nengine.test.sh 全部通过\n'
 else
