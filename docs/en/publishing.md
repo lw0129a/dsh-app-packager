@@ -161,6 +161,7 @@ Screenshots are optional: put a `screenshots.json` next to the plugin's `package
 ### Listing history for this project
 
 - 2026-10-07: forked `lw0129a/awesome-dsh-plugin`, branch `add-dsh-app-packager`, opened PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) with just that one entry file. **Do not delete the fork before it merges** — deleting it closes the PR.
+- 2026-10-07 (later): PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) is still **OPEN** (not merged); the entry carries **no version number**, so later releases need no entry change. Its description was refreshed to the 0.6.0 abilities (HBuilderX version-aware SDK one-click setup with official download links); the new fork commit `94f01a2` is in the PR.
 - 2026-10-08: **0.2.0** adds the web GUI panel
 so the registry still serves 0.2.0.
  (host half `web.js` with six same-origin routes, browser half `client.js`) and ships the bilingual documentation and repository conventions.

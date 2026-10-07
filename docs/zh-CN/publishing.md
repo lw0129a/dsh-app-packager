@@ -161,6 +161,7 @@ description:
 ### 本项目的上架记录
 
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
+- 2026-10-07（晚）：PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) 仍是 **OPEN**（未合并）；条目里**没有版本号**，所以以后发新版本不需要再改它。顺手把条目描述更新成 0.6.0 的能力（HBuilderX 版本感知的 SDK 一键配置 + 官方下载入口），fork 分支 `add-dsh-app-packager` 的新提交 `94f01a2` 已进 PR。
 - 2026-10-08：发布 **0.2.0**：
 registry 上仍是 0.2.0。
 插件新增 Web GUI 面板（宿主侧 `web.js` 六条同源路由 + 浏览器侧 `client.js`），仓库文档改为中英双份并补上协作规范。
