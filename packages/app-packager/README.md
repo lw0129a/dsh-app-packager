@@ -65,6 +65,10 @@ app-packager sdk process          # import archives you already put in sdk/
 | `--force` | `init`: overwrite engine files (local config, certificates, SDK and artefacts are always preserved) |
 | `--no-wizard` | `init`: skip the interactive wizard |
 
+### Pgyer uploads
+
+`--upload pgyer` needs a pgyer API key: it reads `PGYER_API_KEY` from the environment first (the panel stores the key you type into the engine directory's `config/upload.local.env`), then the macOS Keychain (service `app-packager-pgyer`), and only prompts on an interactive terminal as a last resort. iOS and Android artifacts go through pgyer's official CLI, `@pgyer/cli`: it is **never installed globally or up front** — the first real upload runs `npm install` into `tools/pgyer-cli` inside the engine directory (needs Node.js 18+ and npm; `PGYER_CLI_DIR` moves it, `PGYER_CLI_VERSION` pins `0.1.5`). HarmonyOS HAP keeps using the API upload, because pgyer requires the P12 certificate to accompany a HAP and the CLI has no such step.
+
 ## Engine directory
 
 The first run copies the package's `engine/` into the engine directory and records the version in `.engine-version`. Afterwards:

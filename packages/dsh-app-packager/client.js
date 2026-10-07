@@ -105,6 +105,14 @@ window.__ModuleLoader__.load({
       'options.uploader.disabled': '未启用',
       'options.uploader.unimplemented': '引擎里还没有实现',
       'options.uploader.platforms': '支持 {platforms}',
+      'options.cred.label': '{name} API Key',
+      'options.cred.placeholder.saved': '已配置，填新值可覆盖',
+      'options.cred.placeholder.empty': '粘贴 API Key',
+      'options.cred.save': '保存',
+      'options.cred.saved': '已配置',
+      'options.cred.missing': '未配置 API Key，上传会被跳过',
+      'options.cred.cli.installed': '官方 CLI {package}{version} 已装在插件目录里',
+      'options.cred.cli.missing': '首次上传时自动把官方 CLI 装进插件目录（需要 Node 18+）',
       'options.harmonyDebug': 'HarmonyOS debug 包',
       'options.keepWork': '保留构建目录',
       'options.harmonyDebug.hint': '生成可侧载的 debug HAP（签名用调试证书），发布包不要勾。',
@@ -233,6 +241,14 @@ window.__ModuleLoader__.load({
       'options.uploader.disabled': 'disabled',
       'options.uploader.unimplemented': 'not implemented in the engine yet',
       'options.uploader.platforms': 'for {platforms}',
+      'options.cred.label': '{name} API key',
+      'options.cred.placeholder.saved': 'Configured — type a new value to replace it',
+      'options.cred.placeholder.empty': 'Paste the API key',
+      'options.cred.save': 'Save',
+      'options.cred.saved': 'Configured',
+      'options.cred.missing': 'No API key configured — the upload is skipped',
+      'options.cred.cli.installed': 'Official CLI {package}{version} is installed in the plugin folder',
+      'options.cred.cli.missing': 'The official CLI is installed into the plugin folder on the first upload (needs Node 18+)',
       'options.harmonyDebug': 'HarmonyOS debug HAP',
       'options.keepWork': 'Keep work dir',
       'options.harmonyDebug.hint': 'Builds a debug-signed HAP you can sideload; do not tick it for a release.',
@@ -464,6 +480,7 @@ window.__ModuleLoader__.load({
       const [platform, setPlatform] = useState('all');
       const [version, setVersion] = useState('');
       const [uploads, setUploads] = useState({});
+      const [uploadSecret, setUploadSecret] = useState({});
       const [batchPlatforms, setBatchPlatforms] = useState(['all']);
       const [batchProjects, setBatchProjects] = useState({});
       const [harmonyDebug, setHarmonyDebug] = useState(false);
@@ -582,6 +599,31 @@ window.__ModuleLoader__.load({
           ? tf('options.uploader.platforms', { platforms: item.platforms.map(onePlatform).join('/') })
           : '';
       };
+      // Uploaders that need a secret (pgyer's API key) get one row each: the
+      // engine reads it from config/upload.local.env, and the panel only ever
+      // learns whether one is set — the value never travels back to the browser.
+      const credentialNote = (item) => {
+        const notes = [];
+        const cli = state && state.pgyerCli;
+        if (item.id === 'pgyer' && cli) {
+          notes.push(
+            cli.installed
+              ? tf('options.cred.cli.installed', { package: cli.package, version: cli.version ? ` v${cli.version}` : '' })
+              : t('options.cred.cli.missing'),
+          );
+        }
+        if (!item.credentialConfigured) notes.push(t('options.cred.missing'));
+        return notes.join(' · ');
+      };
+      const saveCredential = (item) =>
+        guard(`cred:${item.id}`, async () => {
+          const payload = await call('upload/credential', {
+            method: 'POST',
+            body: { provider: item.id, apiKey: uploadSecret[item.id] || '' },
+          });
+          setUploadSecret({ ...uploadSecret, [item.id]: '' });
+          setState((current) => (current ? { ...current, uploaders: payload.uploaders } : current));
+        });
       // Batch scope: platforms × projects become one engine run each, and no
       // project at all means every project that platform has enabled (`--all`).
       const effectivePlatforms = batchPlatforms.includes('all') ? ['all'] : batchPlatforms;
@@ -1051,6 +1093,37 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
+        uploaders
+          .filter((item) => item.apiKeyVar)
+          .map((item) =>
+            h(
+              'div',
+              { className: 'ap-row', key: `cred-${item.id}` },
+              h('span', { className: 'ap-row-label' }, tf('options.cred.label', { name: item.name })),
+              h(
+                'div',
+                { className: 'ap-row-value' },
+                h(
+                  'div',
+                  { style: styles.actions },
+                  h('input', {
+                    className: 'ap-input',
+                    type: 'password',
+                    style: { flex: '1', minWidth: '220px' },
+                    placeholder: item.credentialConfigured ? t('options.cred.placeholder.saved') : t('options.cred.placeholder.empty'),
+                    value: uploadSecret[item.id] || '',
+                    onChange: (event) => setUploadSecret({ ...uploadSecret, [item.id]: event.target.value }),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter') saveCredential(item);
+                    },
+                  }),
+                  button(t('options.cred.save'), () => saveCredential(item), { disabled: Boolean(busy), small: true }),
+                  item.credentialConfigured ? h('span', { className: 'ap-tag ok' }, t('options.cred.saved')) : null,
+                ),
+                h('div', { className: 'ap-note' }, credentialNote(item)),
+              ),
+            ),
+          ),
       );
 
       const scopeCard = h(

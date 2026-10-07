@@ -92,6 +92,7 @@ signing/current/
 sdk/*
 !sdk/README.md
 !sdk/处理SDK.command
+tools/*
 packages/
 logs/*
 !logs/.gitkeep

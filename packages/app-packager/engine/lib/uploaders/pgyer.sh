@@ -148,80 +148,146 @@ fs.writeFileSync(resultFile, JSON.stringify(payload, null, 2) + "\n");
 NODE
 }
 
-pgyer_upload_legacy_artifact() {
+# ============================================================
+# 蒲公英官方 CLI（@pgyer/cli，命令名 pgyer）
+# ============================================================
+# 不上全局安装、也不预装：第一次真的要上传蒲公英时才把它装进引擎目录的
+# tools/pgyer-cli（跟着插件数据目录走），API Key 由用户在面板「打包选项 → 蒲公英」
+# 里填，写进 config/upload.local.env；也可用 PGYER_API_KEY 或 macOS Keychain。
+# 官方 CLI 走新版快速上传（api.pgyer.com + getCOSToken），iOS/Android 用它上传。
+# HarmonyOS HAP 蒲公英还要求额外上传 P12 证书（API 的 uploadHarmonyCert，官方 CLI
+# 没有这一步），所以 HAP 仍走下面的接口实现。
+
+pgyer_cli_dir() {
+  printf '%s\n' "${PGYER_CLI_DIR:-$PIPELINE_ROOT/tools/pgyer-cli}"
+}
+
+pgyer_cli_path() {
+  printf '%s\n' "$(pgyer_cli_dir)/node_modules/.bin/pgyer"
+}
+
+pgyer_cli_installed() {
+  [ -x "$(pgyer_cli_path)" ]
+}
+
+pgyer_cli_ensure() {
+  local package="${PGYER_CLI_PACKAGE:-@pgyer/cli}" version="${PGYER_CLI_VERSION:-0.1.5}" dir
+  pgyer_cli_installed && return 0
+  if ! command -v npm >/dev/null 2>&1; then
+    warn "蒲公英上传需要官方 CLI ${package}，但找不到 npm。请先安装 Node.js 18+ 再上传。"
+    return 1
+  fi
+  dir="$(pgyer_cli_dir)"
+  mkdir -p "$dir"
+  log "首次使用蒲公英上传：安装官方 CLI ${package}@${version} 到 $dir"
+  if ! npm install --prefix "$dir" --no-audit --no-fund --loglevel=error "${package}@${version}" >&2; then
+    warn "蒲公英官方 CLI 安装失败。可手动执行: npm install --prefix \"$dir\" ${package}@${version}"
+    return 1
+  fi
+  if ! pgyer_cli_installed; then
+    warn "蒲公英官方 CLI 安装后仍缺少可执行文件: $(pgyer_cli_path)"
+    return 1
+  fi
+  log "蒲公英官方 CLI 已就绪: $(pgyer_cli_path)"
+  return 0
+}
+
+pgyer_cli_run() { # 用法: pgyer_cli_run <api_key> <cli 参数...>
+  local api_key="$1"
+  shift
+  PGYER_API_KEY="$api_key" "$(pgyer_cli_path)" "$@"
+}
+
+# 从 CLI 的 stderr 里取一句能给用户看的话（--json 失败时是 {"error":{...}}）
+pgyer_cli_error_message() {
+  node - "$1" <<'NODE' 2>/dev/null || true
+const fs = require("fs");
+let text = "";
+try {
+  text = fs.readFileSync(process.argv[2], "utf8");
+} catch {
+  text = "";
+}
+const fromJson = (raw) => {
+  try {
+    const parsed = JSON.parse(raw);
+    const error = parsed.error || parsed;
+    return typeof error.message === "string" ? error.message : "";
+  } catch {
+    return "";
+  }
+};
+let message = fromJson(text.trim());
+if (!message) {
+  for (const line of text.split("\n").reverse()) {
+    message = fromJson(line.trim());
+    if (message) break;
+  }
+}
+if (!message) message = text.trim().split("\n").filter(Boolean).slice(-1)[0] || "";
+process.stdout.write(message);
+NODE
+}
+
+pgyer_upload_cli_artifact() {
   local info_file="$1" platform="$2" project_id="$3" version="$4" file_path="$5"
-  local api_key http_code response_file result_file error_file stamp description curl_error=""
+  local api_key stamp upload_dir result_file cli_out cli_log description cli_error=""
   api_key="$(pgyer_api_key || true)"
   if [ -z "$api_key" ]; then
     api_key="$(pgyer_prompt_api_key || true)"
   fi
   if [ -z "$api_key" ]; then
-    warn "蒲公英上传跳过：未配置 API Key。可设置 PGYER_API_KEY，或保存到 Keychain service ${PGYER_API_KEY_SERVICE:-app-packager-pgyer}"
+    warn "蒲公英上传跳过：未配置 API Key。可在面板「打包选项 → 蒲公英」里填写，或设置 PGYER_API_KEY，或保存到 Keychain service ${PGYER_API_KEY_SERVICE:-app-packager-pgyer}"
     return 1
   fi
+  pgyer_cli_ensure || return 1
 
   stamp="$(date '+%Y%m%d-%H%M%S')"
-  local upload_dir
   upload_dir="$(upload_root_dir)/pgyer"
   mkdir -p "$upload_dir"
-  response_file="$upload_dir/${stamp}-${project_id}-${platform}.response.json"
   result_file="$upload_dir/${stamp}-${project_id}-${platform}.json"
-  error_file="$upload_dir/${stamp}-${project_id}-${platform}.curl.log"
+  cli_out="$upload_dir/${stamp}-${project_id}-${platform}.cli.json"
+  cli_log="$upload_dir/${stamp}-${project_id}-${platform}.cli.log"
   description="$(pgyer_description "${project_id} ${version} ${platform} ${BUILD_STARTED_AT:-}")"
 
-  log "上传到蒲公英: $(basename "$file_path")"
-  local -a curl_args=(
-    -sS
-    --connect-timeout 20
-    --max-time "${PGYER_UPLOAD_TIMEOUT_SECONDS:-600}"
-    -o "$response_file"
-    -w '%{http_code}'
-    -F "file=@${file_path}"
-    --form-string "_api_key=${api_key}"
-    --form-string "buildType=${platform}"
+  local -a cli_args=(
+    upload "$file_path"
+    --json
+    --timeout "${PGYER_UPLOAD_TIMEOUT_SECONDS:-600}"
+    --poll-interval "${PGYER_POLL_INTERVAL_SECONDS:-4}"
   )
-  [ -n "$description" ] && curl_args+=(--form-string "buildUpdateDescription=${description}")
-  [ -n "${PGYER_BUILD_INSTALL_TYPE:-}" ] && curl_args+=(--form-string "buildInstallType=${PGYER_BUILD_INSTALL_TYPE}")
-  [ -n "${PGYER_BUILD_PASSWORD:-}" ] && curl_args+=(--form-string "buildPassword=${PGYER_BUILD_PASSWORD}")
+  [ -n "$description" ] && cli_args+=(--build-update-description "$description")
+  if [ -n "${PGYER_BUILD_PASSWORD:-}" ]; then
+    export PGYER_INSTALL_PASSWORD="$PGYER_BUILD_PASSWORD"
+    cli_args+=(--password-env)
+  fi
 
-  http_code="$(curl "${curl_args[@]}" "${PGYER_LEGACY_UPLOAD_URL:-${PGYER_API_BASE_URL:-https://upload.pgyer.com/apiv2/app/upload}}" 2>"$error_file" || true)"
-  if [ -z "$http_code" ] || [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-    curl_error="HTTP ${http_code:-unknown}"
-    [ -s "$error_file" ] && curl_error="$curl_error: $(tr '\n' ' ' <"$error_file" | cut -c1-500)"
-    pgyer_write_failure_result "$info_file" "$result_file" "$curl_error"
-    pgyer_write_result "$info_file" "failed" "$result_file" "$curl_error"
-    warn "蒲公英上传失败: $curl_error"
+  log "上传到蒲公英（官方 CLI）: $(basename "$file_path")"
+  if ! pgyer_cli_run "$api_key" "${cli_args[@]}" >"$cli_out" 2>"$cli_log"; then
+    cli_error="$(pgyer_cli_error_message "$cli_log")"
+    [ -n "$cli_error" ] || cli_error="官方 CLI 退出失败，详见: $cli_log"
+    pgyer_write_failure_result "$info_file" "$result_file" "$cli_error"
+    pgyer_write_result "$info_file" "failed" "$result_file" "$cli_error"
+    warn "蒲公英上传失败: $cli_error"
     return 1
   fi
 
-  if ! node - "$response_file" "$result_file" "$info_file" "$stamp" <<'NODE'
+  if ! node - "$cli_out" "$result_file" "$info_file" "$stamp" "$(pgyer_cli_path)" <<'NODE'
 const fs = require("fs");
-const [responseFile, resultFile, infoFile, stamp] = process.argv.slice(2);
+const [cliOut, resultFile, infoFile, stamp, cliPath] = process.argv.slice(2);
 const info = JSON.parse(fs.readFileSync(infoFile, "utf8"));
-let response = {};
+let cli = {};
 try {
-  response = JSON.parse(fs.readFileSync(responseFile, "utf8"));
+  cli = JSON.parse(fs.readFileSync(cliOut, "utf8"));
 } catch (error) {
-  response = { code: -1, message: `响应不是有效 JSON: ${error.message}` };
+  cli = { success: false, error: `CLI 输出不是有效 JSON: ${error.message}` };
 }
-const code = Number(response.code);
-if (code !== 0) {
-  const message = response.message || `蒲公英返回 code=${response.code}`;
-  const failed = {
-    status: "failed",
-    provider: "pgyer",
-    project_id: info.project_id || "",
-    platform: info.platform || "",
-    version: info.version || "",
-    file_path: info.ipa_path || info.apk_path || "",
-    error: message,
-    response,
-    uploaded_at: stamp
-  };
-  fs.writeFileSync(resultFile, JSON.stringify(failed, null, 2) + "\n");
+if (cli.success !== true) {
+  cli = { ...cli, status: "failed", platform: info.platform || "" };
+  fs.writeFileSync(resultFile, JSON.stringify(cli, null, 2) + "\n");
   process.exit(1);
 }
-const data = response.data || {};
+const shortcut = cli.shortcut || "";
 const result = {
   status: "success",
   provider: "pgyer",
@@ -229,19 +295,20 @@ const result = {
   platform: info.platform || "",
   version: info.version || "",
   file_path: info.ipa_path || info.apk_path || "",
-  build_key: data.buildKey || "",
-  shortcut_url: data.buildShortcutUrl || "",
-  qr_code_url: data.buildQRCodeURL || "",
-  install_password: data.buildPassword || "",
-  response,
+  build_key: cli.buildKey || "",
+  shortcut_url: shortcut,
+  qr_code_url: shortcut ? `https://www.pgyer.com/app/qrcode/${shortcut}` : "",
+  install_password: "",
+  cli: { package: "@pgyer/cli", command: "upload", path: cliPath },
+  response: cli,
   uploaded_at: stamp
 };
 fs.writeFileSync(resultFile, JSON.stringify(result, null, 2) + "\n");
 NODE
   then
-    curl_error="蒲公英接口返回失败，详见: $result_file"
-    pgyer_write_result "$info_file" "failed" "$result_file" "$curl_error"
-    warn "$curl_error"
+    cli_error="蒲公英官方 CLI 返回失败，详见: $result_file"
+    pgyer_write_result "$info_file" "failed" "$result_file" "$cli_error"
+    warn "$cli_error"
     return 1
   fi
 
@@ -475,8 +542,11 @@ upload_pgyer_artifact() {
   }
 
   case "$platform" in
-    ios|android) pgyer_upload_legacy_artifact "$info_file" "$platform" "$project_id" "$version" "$file_path" ;;
-    harmony) pgyer_upload_harmony_artifact "$info_file" "$project_id" "$version" "$file_path" ;;
+    ios|android) pgyer_upload_cli_artifact "$info_file" "$platform" "$project_id" "$version" "$file_path" ;;
+    harmony)
+      log "蒲公英 HAP 走接口上传：官方 CLI 没有证书上传步骤（uploadHarmonyCert），蒲公英要求随包上传 P12"
+      pgyer_upload_harmony_artifact "$info_file" "$project_id" "$version" "$file_path"
+      ;;
     *) warn "蒲公英上传失败：不支持的产物平台: $platform"; return 1 ;;
   esac
 }

@@ -84,6 +84,11 @@ export function listUploaders(home) {
         if (!reason && !declaresFunction(text, func)) reason = 'function';
       }
 
+      // Uploaders that need a secret declare the variable to write it to; the
+      // panel renders a credential row for those and only ever learns whether
+      // one is configured — never the value itself.
+      const apiKeyVar = config[`UPLOAD_PLATFORM_${id}_API_KEY_VAR`] || '';
+
       return {
         id,
         name,
@@ -92,6 +97,8 @@ export function listUploaders(home) {
         platforms: platforms.length > 0 ? platforms : [...ARTIFACT_PLATFORMS],
         script,
         reason,
+        apiKeyVar,
+        credentialConfigured: Boolean(apiKeyVar && String(config[apiKeyVar] || '').trim()),
       };
     });
 }
@@ -102,4 +109,96 @@ export function selectableUploaders(home, platforms = ARTIFACT_PLATFORMS) {
   return listUploaders(home).filter(
     (uploader) => uploader.available && uploader.platforms.some((platform) => wanted.has(platform)),
   );
+}
+
+/**
+ * Where the official pgyer CLI is installed: inside the engine home, so it
+ * travels with the plugin instead of polluting the user's global npm prefix.
+ * Mirrors `pgyer_cli_dir()` in engine/lib/uploaders/pgyer.sh.
+ */
+export function pgyerCliDir(home) {
+  return process.env.PGYER_CLI_DIR || path.join(home, 'tools', 'pgyer-cli');
+}
+
+/**
+ * Is the pgyer CLI already installed, and which version? Read from the install
+ * rather than from upload.env, and report the version the lockfile actually
+ * resolved — the engine installs it lazily on the first pgyer upload.
+ *
+ * @param {string} home engine home (PIPELINE_ROOT)
+ * @returns {{package: string, version: string, dir: string, bin: string, installed: boolean}}
+ */
+export function pgyerCliStatus(home) {
+  const dir = pgyerCliDir(home);
+  const bin = path.join(dir, 'node_modules', '.bin', process.platform === 'win32' ? 'pgyer.cmd' : 'pgyer');
+  let packageName = '';
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    packageName = Object.keys(manifest.dependencies || {})[0] || '';
+  } catch {
+    /* not installed yet */
+  }
+  let version = '';
+  if (packageName) {
+    try {
+      version = JSON.parse(fs.readFileSync(path.join(dir, 'node_modules', packageName, 'package.json'), 'utf8')).version || '';
+    } catch {
+      version = '';
+    }
+  }
+  return { package: packageName || '@pgyer/cli', version, dir, bin, installed: fs.existsSync(bin) };
+}
+
+/**
+ * Write one uploader credential into `<home>/config/upload.local.env`, the file
+ * the engine sources after `upload.env`. Everything else in the file is kept;
+ * an empty value removes the entry. The file is user-owned (it is in the home
+ * .gitignore) and gets mode 600: it holds an API key.
+ *
+ * @param {string} home engine home (PIPELINE_ROOT)
+ * @param {string} name variable name, e.g. PGYER_API_KEY
+ * @param {string} value secret value; '' clears it
+ * @returns {{file: string, name: string, configured: boolean}}
+ */
+export function writeUploaderCredential(home, name, value) {
+  const key = String(name || '').trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`非法配置项: ${name}`);
+  const dir = path.join(home, 'config');
+  const file = path.join(dir, 'upload.local.env');
+  fs.mkdirSync(dir, { recursive: true });
+  let lines = [];
+  try {
+    lines = fs.readFileSync(file, 'utf8').split('\n');
+  } catch {
+    lines = [];
+  }
+
+  const trimmed = String(value ?? '').trim();
+  const entry = trimmed === '' ? '' : `${key}='${trimmed.replace(/'/g, `'\\''`)}'`;
+  const pattern = new RegExp(`^\\s*(export\\s+)?${key}\\s*=`);
+  const out = [];
+  let replaced = false;
+  for (const line of lines) {
+    if (pattern.test(line)) {
+      if (!replaced) {
+        replaced = true;
+        if (entry) out.push(entry);
+      }
+      continue;
+    }
+    out.push(line);
+  }
+  if (!replaced && entry) out.push(entry);
+
+  let text = out.join('\n').replace(/\n+$/, '');
+  if (!text.startsWith('# 由面板写入')) {
+    text = `# 由面板写入的本机上传配置（config/*.local.env 不进 Git）\n${text}`;
+  }
+  fs.writeFileSync(file, `${text.replace(/\n+$/, '')}\n`, { mode: 0o600 });
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch {
+    /* best effort (Windows, foreign filesystems) */
+  }
+  return { file, name: key, configured: trimmed !== '' };
 }

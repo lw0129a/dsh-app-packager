@@ -65,6 +65,10 @@ app-packager sdk process          # 处理你自己放进 sdk/ 的压缩包
 | `--force` | `init`：覆盖引擎文件（本地配置、证书、SDK、产物始终保留） |
 | `--no-wizard` | `init`：跳过交互向导 |
 
+### 蒲公英上传
+
+`--upload pgyer` 需要本机的蒲公英 API Key：优先读环境变量 `PGYER_API_KEY`（面板里保存的 Key 会写进引擎目录的 `config/upload.local.env`），其次读 macOS Keychain（service `app-packager-pgyer`），最后才在交互终端里问。iOS/Android 产物走蒲公英官方 CLI `@pgyer/cli` 的快速上传，CLI **不预装、不装全局**，第一次真的上传时才用 `npm install` 装进引擎目录内部的 `tools/pgyer-cli`（需要 Node.js 18+ 与 npm；`PGYER_CLI_DIR` 可改位置，`PGYER_CLI_VERSION` 默认 `0.1.5`）。HarmonyOS HAP 仍走接口上传，因为蒲公英要求 HAP 随包上传 P12 证书，而官方 CLI 没有这一步。
+
 ## 引擎目录
 
 首次运行会把包内 `engine/` 复制到引擎目录，并写入 `.engine-version` 记录版本。之后：

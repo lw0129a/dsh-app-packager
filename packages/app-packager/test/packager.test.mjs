@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { listProjects, parseEnvText } from '../src/projects.mjs';
-import { listUploaders, selectableUploaders } from '../src/uploaders.mjs';
+import { listUploaders, pgyerCliStatus, selectableUploaders, writeUploaderCredential } from '../src/uploaders.mjs';
 import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
 import { runDoctor } from '../src/doctor.mjs';
 
@@ -171,6 +171,7 @@ test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () =>
       'UPLOAD_PLATFORM_pgyer_PLATFORMS="ios android harmony"',
       'UPLOAD_PLATFORM_pgyer_SCRIPT=lib/uploaders/pgyer.sh',
       'UPLOAD_PLATFORM_pgyer_FUNCTION=upload_pgyer_artifact',
+      'UPLOAD_PLATFORM_pgyer_API_KEY_VAR=PGYER_API_KEY',
       'UPLOAD_PLATFORM_huawei_NAME="华为应用市场"',
       'UPLOAD_PLATFORM_huawei_ENABLED=false',
       'UPLOAD_PLATFORM_declared_missing_NAME="没实现"',
@@ -191,6 +192,8 @@ test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () =>
     platforms: ['ios', 'android', 'harmony'],
     script: join(home, 'lib', 'uploaders', 'pgyer.sh'),
     reason: '',
+    apiKeyVar: 'PGYER_API_KEY',
+    credentialConfigured: false,
   });
   assert.equal(uploaders[1].available, false);
   assert.equal(uploaders[1].reason, 'disabled', 'ENABLED=false 直接不可用');
@@ -205,9 +208,68 @@ test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () =>
   assert.deepEqual(overridden.platforms, ['android', 'harmony']);
   assert.deepEqual(selectableUploaders(home, ['ios']).map((item) => item.id), ['pgyer'], '按产物平台过滤');
 
+  // 密钥只回报「配没配」，明文永远不出现在这个结构里。
+  writeFileSync(join(home, 'config', 'upload.local.env'), "PGYER_API_KEY='from-local'\n");
+  const withKey = listUploaders(home)[0];
+  assert.equal(withKey.credentialConfigured, true, 'config/upload.local.env 里配了密钥就算已配置');
+  assert.equal(JSON.stringify(withKey).includes('from-local'), false, '密钥明文不能出现在 listUploaders 结果里');
+
   writeFileSync(join(home, 'config', 'upload.local.env'), 'UPLOAD_PLATFORM_IDS="nope"\n');
   rmSync(join(home, 'lib', 'uploaders', 'pgyer.sh'), { force: true });
   // UPLOAD_PLATFORM_IDS 只认 upload.env（本地文件不覆盖它），脚本删掉后 pgyer 不可用。
   assert.equal(listUploaders(home)[0].reason, 'script');
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('writeUploaderCredential 写 config/upload.local.env（保留其它行、可清空、mode 600）', () => {
+  const home = tempDir('app-packager-cred-');
+  mkdirSync(join(home, 'config'), { recursive: true });
+  const file = join(home, 'config', 'upload.local.env');
+  writeFileSync(file, '# 手写的备注\nUPLOAD_PLATFORM_huawei_ENABLED=true\n', { mode: 0o644 });
+
+  const first = writeUploaderCredential(home, 'PGYER_API_KEY', 'abc123');
+  assert.equal(first.configured, true);
+  assert.equal(first.name, 'PGYER_API_KEY');
+  let text = readFileSync(file, 'utf8');
+  assert.match(text, /^# 由面板写入的本机上传配置/m);
+  assert.ok(text.includes('UPLOAD_PLATFORM_huawei_ENABLED=true'), '其它行要保留');
+  assert.ok(text.includes("PGYER_API_KEY='abc123'"));
+  assert.equal(statSync(file).mode & 0o777, 0o600, '放密钥的文件要是 600');
+
+  // 覆盖：同名行只留一条，引号里的单引号要转义。
+  writeUploaderCredential(home, 'PGYER_API_KEY', "it's-2");
+  text = readFileSync(file, 'utf8');
+  assert.equal(text.split('PGYER_API_KEY=').length - 1, 1, '同名行只留一条');
+  assert.ok(text.includes(`PGYER_API_KEY='it'\\''s-2'`), "单引号按 POSIX 拼成 '\\''");
+  // 普通值必须能原样读回（Node 侧的 env 解析器不做 POSIX 拼接，所以只钉简单值）。
+  writeUploaderCredential(home, 'PGYER_API_KEY', 'plain-2');
+  assert.equal(parseEnvText(readFileSync(file, 'utf8')).PGYER_API_KEY, 'plain-2');
+
+  // 空值 = 清除。
+  const cleared = writeUploaderCredential(home, 'PGYER_API_KEY', '');
+  assert.equal(cleared.configured, false);
+  assert.equal(readFileSync(file, 'utf8').includes('PGYER_API_KEY'), false);
+
+  assert.throws(() => writeUploaderCredential(home, 'BAD-NAME', 'x'), /非法配置项/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('pgyerCliStatus 报告插件目录里的官方 CLI 安装状态', () => {
+  const home = tempDir('app-packager-pgyer-cli-');
+  const missing = pgyerCliStatus(home);
+  assert.equal(missing.installed, false);
+  assert.equal(missing.dir, join(home, 'tools', 'pgyer-cli'));
+  assert.equal(missing.package, '@pgyer/cli');
+
+  mkdirSync(join(missing.dir, 'node_modules', '@pgyer', 'cli'), { recursive: true });
+  mkdirSync(join(missing.dir, 'node_modules', '.bin'), { recursive: true });
+  writeFileSync(join(missing.dir, 'package.json'), JSON.stringify({ dependencies: { '@pgyer/cli': '^0.1.5' } }));
+  writeFileSync(join(missing.dir, 'node_modules', '@pgyer', 'cli', 'package.json'), JSON.stringify({ version: '0.1.9' }));
+  writeFileSync(missing.bin, '#!/bin/sh\n', { mode: 0o755 });
+
+  const installed = pgyerCliStatus(home);
+  assert.equal(installed.installed, true);
+  assert.equal(installed.package, '@pgyer/cli');
+  assert.equal(installed.version, '0.1.9', '版本取实际装到的那份，而不是 upload.env 里声明的');
   rmSync(home, { recursive: true, force: true });
 });

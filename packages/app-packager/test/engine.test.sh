@@ -241,6 +241,52 @@ check "runner.sh（面板构建入口）也调用工作区外迁" "1" \
 check "init.sh 也调用工作区外迁" "1" \
   "$(grep -c '^relocate_work_root_out_of_node_modules$' "$REPO_ENGINE/lib/init.sh")"
 
+# 蒲公英：iOS/Android 走官方 CLI（@pgyer/cli），CLI 惰性装在引擎目录内部。
+PGYER_STUB="$(mktemp -d)"
+cat >"$PGYER_STUB/npm" <<'SH'
+#!/usr/bin/env bash
+touch "$NPM_CALLED"
+exit 7
+SH
+chmod +x "$PGYER_STUB/npm"
+export NPM_CALLED="$PGYER_STUB/npm-called"
+
+pgyer_probe() { # pgyer_probe <额外环境>=<值>...：源码引擎与 pgyer.sh 后执行一段探测
+  OUT="$(PIPELINE_ROOT="$TMP" PATH="$PGYER_STUB:$PATH" NPM_CALLED="$NPM_CALLED" "$@" bash -c '
+    source "'"$REPO_ENGINE"'/lib/common.sh"
+    source "'"$REPO_ENGINE"'/lib/uploaders/pgyer.sh"
+    printf "%s|" "$(pgyer_cli_dir)"
+    pgyer_cli_installed && printf "installed|" || printf "missing|"
+    pgyer_cli_ensure >/dev/null 2>&1 && printf "ensure-ok|" || printf "ensure-fail|"
+    if [ -f "$NPM_CALLED" ]; then printf "npm-called"; else printf "npm-skipped"; fi
+  ' 2>&1)"
+  STATUS=$?
+}
+
+pgyer_probe env
+check "pgyer CLI 默认装在引擎目录的 tools/pgyer-cli 里" "$TMP/tools/pgyer-cli|missing|ensure-fail|npm-called" "$OUT"
+
+rm -f "$NPM_CALLED"
+mkdir -p "$TMP/tools/pgyer-cli/node_modules/.bin"
+printf '#!/bin/sh\n' >"$TMP/tools/pgyer-cli/node_modules/.bin/pgyer"
+chmod +x "$TMP/tools/pgyer-cli/node_modules/.bin/pgyer"
+pgyer_probe env
+check "pgyer CLI 已装好时不再调 npm" "$TMP/tools/pgyer-cli|installed|ensure-ok|npm-skipped" "$OUT"
+
+rm -f "$NPM_CALLED"
+mkdir -p "$TMP/elsewhere/node_modules/.bin"
+printf '#!/bin/sh\n' >"$TMP/elsewhere/node_modules/.bin/pgyer"
+chmod +x "$TMP/elsewhere/node_modules/.bin/pgyer"
+pgyer_probe env "PGYER_CLI_DIR=$TMP/elsewhere"
+check "PGYER_CLI_DIR 可以改 CLI 的位置" "$TMP/elsewhere|installed|ensure-ok|npm-skipped" "$OUT"
+rm -rf "$PGYER_STUB"
+
+# 结构钉子：iOS/Android 必须走 CLI 那条路（curl 版旧上传函数已经删掉）。
+check "iOS/Android 的蒲公英上传走官方 CLI" "1" \
+  "$(grep -c 'ios|android) pgyer_upload_cli_artifact' "$REPO_ENGINE/lib/uploaders/pgyer.sh")"
+check "手写 curl 的旧上传函数已经删掉" "0" \
+  "$(grep -c 'pgyer_upload_legacy_artifact' "$REPO_ENGINE/lib/uploaders/pgyer.sh")"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nengine.test.sh 全部通过\n'
 else

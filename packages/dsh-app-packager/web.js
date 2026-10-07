@@ -25,9 +25,11 @@ import {
   materializedVersion,
   packageVersion,
   parseEnvFile,
+  pgyerCliStatus,
   runDoctor,
   runEngine,
   shellAvailable,
+  writeUploaderCredential,
 } from 'app-packager';
 import { pluginRoot, resolvePluginHome } from './index.mjs';
 
@@ -579,14 +581,20 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
   /** Uploaders the engine declares in config/upload.env, with their enabled state. */
   function uploadersOf(home) {
     try {
-      return listUploaders(home).map(({ id, name, enabled, available, platforms, reason }) => ({
-        id,
-        name,
-        enabled,
-        available,
-        platforms,
-        reason,
-      }));
+      return listUploaders(home).map(
+        ({ id, name, enabled, available, platforms, reason, apiKeyVar, credentialConfigured }) => ({
+          id,
+          name,
+          enabled,
+          available,
+          platforms,
+          reason,
+          // Uploaders with a key variable get a credential row in the panel;
+          // only the fact that one is configured crosses to the browser.
+          apiKeyVar,
+          credentialConfigured,
+        }),
+      );
     } catch (error) {
       return { error: String(error?.message || error) };
     }
@@ -718,6 +726,10 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
         overrideKeys: await overrideKeysOf(home),
         sdk: sdk && !sdk.error ? sdk : null,
         sdkError: sdk && sdk.error ? sdk.error : '',
+        // The pgyer CLI is installed lazily inside the engine home; report
+        // whether it is already there so the panel can say so instead of
+        // promising an install on every upload.
+        pgyerCli: pgyerCliStatus(home),
         canUpgrade: Boolean(root),
         // The project's own packaging env files, offered as `--set` presets.
         presets: Object.fromEntries(list.map((project) => [project.id, presetsOf(project.sourceDir)])),
@@ -888,6 +900,28 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
     clearJobs() {
       return runner.clear();
     },
+
+    /**
+     * Save an uploader credential (the pgyer API key) into
+     * `config/upload.local.env`, which the engine sources after `upload.env`.
+     * The value is never echoed back — the panel only learns whether one is set.
+     */
+    saveUploadCredential({ provider, apiKey } = {}) {
+      const home = homeOf();
+      const id = String(provider || '').trim();
+      const uploaders = listUploaders(home);
+      const uploader = uploaders.find((item) => item.id === id);
+      if (!uploader) throw new Error(`未知上传平台：${id}`);
+      if (!uploader.apiKeyVar) throw new Error(`上传平台 ${uploader.name || id} 不需要配置密钥`);
+      const written = writeUploaderCredential(home, uploader.apiKeyVar, String(apiKey ?? ''));
+      return {
+        ok: true,
+        provider: id,
+        variable: written.name,
+        configured: written.configured,
+        uploaders: uploadersOf(home),
+      };
+    },
   };
 }
 
@@ -950,6 +984,7 @@ export function mountWebPanel(ctx, config = {}) {
     { path: `${ROUTE_BASE}/job/log`, run: (_body, query) => panel.jobLog(query.id) },
     { path: `${ROUTE_BASE}/job/kill`, run: (_body, query) => panel.killJob(query.id) },
     { path: `${ROUTE_BASE}/job/clear`, run: () => panel.clearJobs() },
+    { path: `${ROUTE_BASE}/upload/credential`, run: (body) => panel.saveUploadCredential(body) },
   ];
 
   const disposers = [];

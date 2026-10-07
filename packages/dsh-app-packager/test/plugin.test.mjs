@@ -10,7 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -315,6 +315,7 @@ test('apply 在存在 webServer 时挂上面板路由，缺席时不影响工具
       '/api/app-packager/project',
       '/api/app-packager/project/remove',
       '/api/app-packager/state',
+      '/api/app-packager/upload/credential',
     ],
   );
   // Without a web server the plugin still loads (no optional inject in cordis).
@@ -344,7 +345,7 @@ test('webServer 晚到：apply 用 ctx.inject 等它，服务出现后补挂路�
     },
   };
   waits[0].callback(withServices({}, { webServer: service }));
-  assert.equal(routes.size, 10);
+  assert.equal(routes.size, 11);
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -677,10 +678,54 @@ test('面板 state 带出上传平台清单与其可用性', async () => {
   const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
   const state = await panel.state();
   assert.deepEqual(state.uploaders, [
-    { id: 'pgyer', name: '蒲公英', enabled: true, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'script' },
-    { id: 'store', name: 'store', enabled: false, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'disabled' },
+    { id: 'pgyer', name: '蒲公英', enabled: true, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'script', apiKeyVar: '', credentialConfigured: false },
+    { id: 'store', name: 'store', enabled: false, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'disabled', apiKeyVar: '', credentialConfigured: false },
   ]);
   assert.equal(state.uploadersError, '');
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板把上传密钥写进 config/upload.local.env，只回报「配没配」', async () => {
+  const home = fixtureHome();
+  mkdirSync(join(home, 'config'), { recursive: true });
+  mkdirSync(join(home, 'lib', 'uploaders'), { recursive: true });
+  writeFileSync(join(home, 'lib', 'uploaders', 'pgyer.sh'), 'upload_pgyer_artifact() {\n  :\n}\n');
+  writeFileSync(
+    join(home, 'config', 'upload.env'),
+    [
+      'UPLOAD_PLATFORM_IDS="pgyer store"',
+      'UPLOAD_PLATFORM_pgyer_NAME="蒲公英"',
+      'UPLOAD_PLATFORM_pgyer_SCRIPT=lib/uploaders/pgyer.sh',
+      'UPLOAD_PLATFORM_pgyer_FUNCTION=upload_pgyer_artifact',
+      'UPLOAD_PLATFORM_pgyer_API_KEY_VAR=PGYER_API_KEY',
+      'UPLOAD_PLATFORM_store_NAME="商店"',
+      'UPLOAD_PLATFORM_store_ENABLED=false',
+    ].join('\n'),
+  );
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
+
+  const before = await panel.state();
+  assert.equal(before.uploaders.find((item) => item.id === 'pgyer').credentialConfigured, false);
+  assert.equal(before.uploaders.find((item) => item.id === 'store').apiKeyVar, '', '没声明 API_KEY_VAR 的平台不要密钥行');
+  assert.equal(before.pgyerCli.installed, false, 'fixture 里没装官方 CLI');
+  assert.equal(before.pgyerCli.dir, join(home, 'tools', 'pgyer-cli'), 'CLI 装在引擎目录内部');
+  assert.equal(before.pgyerCli.package, '@pgyer/cli');
+
+  const saved = panel.saveUploadCredential({ provider: 'pgyer', apiKey: 'secret-key' });
+  assert.equal(saved.configured, true);
+  assert.equal(saved.variable, 'PGYER_API_KEY');
+  assert.equal(saved.uploaders.find((item) => item.id === 'pgyer').credentialConfigured, true);
+  assert.equal(JSON.stringify(saved).includes('secret-key'), false, '密钥明文不能回给浏览器');
+  const file = join(home, 'config', 'upload.local.env');
+  assert.ok(readFileSync(file, 'utf8').includes("PGYER_API_KEY='secret-key'"));
+  assert.equal(statSync(file).mode & 0o777, 0o600, '放密钥的文件要是 600');
+
+  // 存空值 = 撤销
+  assert.equal(panel.saveUploadCredential({ provider: 'pgyer', apiKey: '' }).configured, false);
+  assert.equal(readFileSync(file, 'utf8').includes('PGYER_API_KEY'), false);
+  // 不需要密钥的平台、以及没登记过的平台都要拒绝
+  assert.throws(() => panel.saveUploadCredential({ provider: 'store', apiKey: 'x' }), /不需要配置密钥/);
+  assert.throws(() => panel.saveUploadCredential({ provider: 'nope', apiKey: 'x' }), /未知上传平台/);
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -850,6 +895,24 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
     assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
   }
+  // 上传密钥：面板写进 config/upload.local.env，宿主只回「配没配」，明文不回浏览器；
+  // 官方 CLI 装没装也从宿主带出来，免得每次上传都吓唬用户要装一遍。
+  assert.match(source, /await call\('upload\/credential', \{/);
+  assert.match(source, /state\.pgyerCli/);
+  assert.match(source, /item\.credentialConfigured/);
+  for (const key of [
+    'options.cred.label',
+    'options.cred.placeholder.saved',
+    'options.cred.placeholder.empty',
+    'options.cred.save',
+    'options.cred.saved',
+    'options.cred.missing',
+    'options.cred.cli.installed',
+    'options.cred.cli.missing',
+  ]) {
+    assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
+    assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
+  }
   // 每行 SDK 也要写出该平台该找的包名/文件名（Android 的名字带构建号），
   // HarmonyOS 的是 DevEco 的 ohpm 包，标签不能写成「文件名/包名」。
   assert.match(source, /item\.id === 'harmony' \? 'sdk\.package\.ohpm' : 'sdk\.package'/);
@@ -900,7 +963,8 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     },
     projects: [{ id: 'p', appName: 'App', sourceDir: '/tmp/p', sourceDirExists: true, bundleId: 'a.b', enabledPlatforms: ['ios', 'android', 'harmony'], error: null }],
     profiles: [{ file: '/tmp/a.mobileprovision', name: 'adhoc', kind: 'adhoc', bundleId: 'a.b' }],
-    uploaders: [{ id: 'pgyer', name: '蒲公英', enabled: true, available: true, platforms: ['ios'] }],
+    uploaders: [{ id: 'pgyer', name: '蒲公英', enabled: true, available: true, platforms: ['ios'], apiKeyVar: 'PGYER_API_KEY', credentialConfigured: false }],
+    pgyerCli: { package: '@pgyer/cli', version: '', dir: '/tmp/home/tools/pgyer-cli', bin: '/tmp/home/tools/pgyer-cli/node_modules/.bin/pgyer', installed: false },
   };
   const renderWithState = (value) => {
     let call = 0;

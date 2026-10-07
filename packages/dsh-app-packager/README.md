@@ -51,9 +51,15 @@ centre column:
   targets the engine declares in `config/upload.env` and that are actually
   usable (`ENABLED=true` with provider script and function present — pgyer by
   default), greying out the rest with the reason (disabled / not implemented in
-  the engine yet) and sending the ticked ones as one comma separated `--upload`;
-  *HarmonyOS debug HAP* and *Keep work dir* live in an *Advanced* fold, each
-  with a one-line explanation.
+  the engine yet) and sending the ticked ones as one comma separated `--upload`.
+  An uploader that declares `UPLOAD_PLATFORM_<id>_API_KEY_VAR` (pgyer declares
+  `PGYER_API_KEY`) also gets a masked credential row: *Save* writes the key into
+  `config/upload.local.env` (mode 600, the file `lib/init.sh` sources), the row
+  says whether one is stored, and the key only ever travels engine-ward — `GET
+  state` carries a `credentialConfigured` boolean, never the secret. The same
+  row reports whether the official CLI is installed (with its package and
+  version once it is). *HarmonyOS debug HAP* and *Keep work dir* live in an
+  *Advanced* fold, each with a one-line explanation.
 - **SDK** — the detected HBuilderX app/CLI and its version series, and each
   platform's SDK directory with its state (`ready` / `mismatch` / `missing`).
   *One-click setup* asks the engine to download and unpack the matching SDK for
@@ -79,7 +85,7 @@ centre column:
   running one is never dropped, or there would be nothing left to stop).
 
 The panel only calls same-origin routes registered by this plugin
-(`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill|job/clear`) — no
+(`/api/app-packager/state|init|doctor|pick|project|project/remove|job|job/log|job/kill|job/clear|upload/credential`) — no
 build logic runs in the browser. It needs a profile that ships the web app
 (`@deepseek-ai/dsh-web-app`, as the desktop and web profiles do); in a headless
 profile the panel is simply absent and the four tools keep working.
