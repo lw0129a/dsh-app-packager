@@ -212,18 +212,25 @@ check_contains "等名额时状态带上已等秒数" "等待 HBuilderX 名额�
 # HBuilderX 5.26 的 Android 编译器不认「项目在 node_modules 里」的路径：编译器自己生成的
 # ./uni_modules/<插件>/instans/types 相对导入会报 "index not found"，于是 npm 分发
 # （home 在 <profile>/node_modules/dsh-app-packager/home 下）时 Android 必然失败。
-engine 'source "$PIPELINE_ROOT/lib/init.sh" >/dev/null 2>&1
+engine '
   APP_PACKAGER_CACHE_ROOT=/tmp/ap-cache
   WORK_ROOT="/x/node_modules/dsh-app-packager/home/workspaces"
   relocate_work_root_out_of_node_modules >/dev/null
   printf "%s" "$WORK_ROOT"'
 check "工作区在 node_modules 里就挪到缓存目录" "/tmp/ap-cache/workspaces" "$OUT"
 
-engine 'source "$PIPELINE_ROOT/lib/init.sh" >/dev/null 2>&1
+engine '
   WORK_ROOT="$HOME/AppPackager/workspaces"
   relocate_work_root_out_of_node_modules >/dev/null
   printf "%s" "$WORK_ROOT"'
 check "工作区不在 node_modules 里就原样保留" "$HOME/AppPackager/workspaces" "$OUT"
+
+# 只定义函数不够：面板/CLI 的构建入口是 runner.sh（它自己 source config/settings.env，
+# 不经过 init.sh），第一版就漏在这里，Android 照旧失败。
+check "runner.sh（面板构建入口）也调用工作区外迁" "1" \
+  "$(grep -c '^relocate_work_root_out_of_node_modules$' "$REPO_ENGINE/lib/runner.sh")"
+check "init.sh 也调用工作区外迁" "1" \
+  "$(grep -c '^relocate_work_root_out_of_node_modules$' "$REPO_ENGINE/lib/init.sh")"
 
 if [ "$fails" -eq 0 ]; then
   printf '\nengine.test.sh 全部通过\n'

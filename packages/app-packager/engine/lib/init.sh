@@ -18,28 +18,6 @@ source "$PIPELINE_ROOT/config/settings.env"
 # shellcheck source=/dev/null
 [ -f "$PIPELINE_ROOT/config/upload.local.env" ] && source "$PIPELINE_ROOT/config/upload.local.env"
 
-# HBuilderX 5.26 的 Android 编译器不认「项目位于 node_modules 里」的路径：它把这种路径
-# 当依赖处理，于是自己生成的相对导入 ./uni_modules/<插件>/instans/types 报
-# "failed to resolve ... index not found"。npm 分发时 home 就在
-# <profile>/node_modules/dsh-app-packager/home 下，所以工作区必须挪到 node_modules 外面。
-# 工作区路径必须直接传给 HBuilderX（不能用软链接指回去），否则它看到的仍是 node_modules 路径。
-relocate_work_root_out_of_node_modules() {
-  case "${WORK_ROOT:-}" in
-    */node_modules/*) ;;
-    *) return 0 ;;
-  esac
-  local cache_root="${APP_PACKAGER_CACHE_ROOT:-}"
-  if [ -z "$cache_root" ]; then
-    if [ "$(uname -s)" = "Darwin" ]; then
-      cache_root="$HOME/Library/Caches/app-packager"
-    else
-      cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/app-packager"
-    fi
-  fi
-  WORK_ROOT="$cache_root/workspaces"
-  export WORK_ROOT
-  printf '  [INFO] 工作区改到 node_modules 外面（HBuilderX 的 Android 编译器不支持 node_modules 路径）: %s\n' "$WORK_ROOT"
-}
 relocate_work_root_out_of_node_modules
 
 INIT_STATE="$PIPELINE_ROOT/config/init.local.env"

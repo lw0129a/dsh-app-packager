@@ -8,6 +8,31 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "缺少命令: $1"
 }
 
+# HBuilderX 5.26 的 Android 编译器不认「项目路径里含 node_modules」的工程：它把这种路径当依赖
+# 处理，于是编译器自己生成的相对导入 ./uni_modules/<插件>/instans/types 报
+# "failed to resolve ... index not found"，Android 资源包必然编译失败（iOS/HarmonyOS 走另一条
+# 编译链，同一路径下正常）。npm 分发层把 home 放在 <profile>/node_modules/dsh-app-packager/home
+# 下，工作区正在其中，所以要把工作区挪出 node_modules。传给 HBuilderX 的必须是挪位置后的真实
+# 路径，不能用软链接指回去，否则它看到的仍是 node_modules 路径。
+# 两个入口（init.sh / runner.sh）都在读完 config/*.env 之后调用它。
+relocate_work_root_out_of_node_modules() {
+  case "${WORK_ROOT:-}" in
+    */node_modules/*) ;;
+    *) return 0 ;;
+  esac
+  local cache_root="${APP_PACKAGER_CACHE_ROOT:-}"
+  if [ -z "$cache_root" ]; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      cache_root="$HOME/Library/Caches/app-packager"
+    else
+      cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/app-packager"
+    fi
+  fi
+  WORK_ROOT="$cache_root/workspaces"
+  export WORK_ROOT
+  printf '  [INFO] 工作区改到 node_modules 外面（HBuilderX 的 Android 编译器不支持 node_modules 路径）: %s\n' "$WORK_ROOT"
+}
+
 # 自定义 UTS / 原生插件跨平台联编与归档校验
 # shellcheck source=/dev/null
 source "${PIPELINE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/plugins.sh"

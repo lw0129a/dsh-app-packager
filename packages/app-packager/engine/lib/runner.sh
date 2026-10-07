@@ -19,6 +19,7 @@ source "$PIPELINE_ROOT/config/settings.env"
 [ -f "$PIPELINE_ROOT/config/parallel.local.env" ] && source "$PIPELINE_ROOT/config/parallel.local.env"
 # shellcheck source=/dev/null
 [ -f "$PIPELINE_ROOT/config/upload.local.env" ] && source "$PIPELINE_ROOT/config/upload.local.env"
+relocate_work_root_out_of_node_modules
 parallel_init
 
 ACTION="build"
