@@ -12,6 +12,8 @@
 
 `list` / `doctor` / `env` 是纯 Node 实现，三个平台无差别可用；`doctor` 会明确告诉你缺哪一个工具链。
 
+哪些是实测过的：CI 每次提交都在 `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18 / 20 / 22 上跑单元测试，并在 Windows、macOS/Linux 上各跑一遍 `init` / `list` / `doctor` 冒烟 —— 上面那张表里 Node 层的部分是真在这些系统上跑过的。没覆盖的是真机 Android / HarmonyOS 出包：CI 里没有 HBuilderX，也没有本机 JDK 与 Android SDK，那一段需要你在自己机器上验证。
+
 ## Windows：shell 桥接怎么找 bash
 
 `app-packager` 在 Windows 上按下面顺序探测，命中即用：

@@ -72,6 +72,8 @@ dsh plugin --profile desktop add @lw0129a/dsh-app-packager
 
 Windows 上 CLI 会自动寻找 Git Bash（`%ProgramFiles%\Git\bin\bash.exe`）或回退到 `wsl.exe`，并做路径转换；可用 `APP_PACKAGER_BASH` 指定自己的 bash。细节见 [docs/windows.md](docs/windows.md)。
 
+CI 在 `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22 上跑单测与 `init` / `list` / `doctor` 冒烟，所以纯 Node 那几行是三个系统实测过的；真机 Android / HarmonyOS 出包（需要 HBuilderX 与本机 JDK、Android SDK）没有 CI 覆盖。
+
 ## 仓库结构
 
 ```
