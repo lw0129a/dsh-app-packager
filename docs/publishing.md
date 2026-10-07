@@ -32,6 +32,20 @@ npm install -g --prefix /tmp/ap-prefix /tmp/ap-pack/lw0129a-app-packager-*.tgz
 /tmp/ap-prefix/bin/app-packager doctor
 ```
 
+> **`@lw0129a/dsh-app-packager` 只能用 `pnpm pack` / `pnpm publish` 打包。**
+> 它依赖 `@lw0129a/app-packager` 时写的是 `workspace:^0.1.0`，只有 pnpm 会在打包/发布时改写成 `^0.1.0`；
+> `npm pack` 会原样保留 workspace 协议，装到 profile 里会直接报
+> `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` 或 `ERR_PNPM_FETCH_404`。
+> 要单独检查插件 tarball：
+>
+> ```bash
+> pnpm --filter @lw0129a/dsh-app-packager pack --pack-destination /tmp/ap-pack
+> tar -xzOf /tmp/ap-pack/lw0129a-dsh-app-packager-*.tgz package/package.json | grep -A2 '"dependencies"'
+> # 期望看到 "@lw0129a/app-packager": "^0.1.0"
+> ```
+>
+> CI 的 `pack` 任务已自动校验这一点。
+
 确认无误后发布（两个包都要发，顺序无所谓，但 CLI 先发更符合直觉）：
 
 ```bash

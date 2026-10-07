@@ -47,3 +47,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r pack --pack-destination "$RUNNER_TEMP/tarballs"
       - run: ls -l "$RUNNER_TEMP/tarballs"
+      - name: 校验 tarball（workspace 协议与可执行位）
+        run: |
+          for t in "$RUNNER_TEMP"/tarballs/*.tgz; do
+            if tar -xzOf "$t" package/package.json | grep -q 'workspace:'; then
+              echo "::error::$t 的 package.json 仍含 workspace: 协议（npm 不识别，安装会失败）；请用 pnpm pack / pnpm publish 打包"
+              exit 1
+            fi
+          done
+          tar -tvzf "$RUNNER_TEMP"/tarballs/lw0129a-app-packager-*.tgz | grep 'engine/打包工具.command' | grep -q '^-rwxr' \
+            || { echo "::error::engine/打包工具.command 丢了可执行位"; exit 1; }
