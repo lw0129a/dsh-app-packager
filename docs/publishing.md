@@ -33,7 +33,9 @@ npm 从 2026-07 起收紧了 bypass-2FA granular token：这类 token 不能再�
 | 直接发布，npmrc 里是勾了 Bypass 2FA 的 granular token | 被屏蔽成 `404 Not found`；注册表实际返回 `E_STAGE_REQUIRED`：`this token can only publish to a staging area, and "<包名>" does not exist yet. Create it first with a direct-capable token, then use 'npm stage publish'.` |
 | `npm stage publish`（同一个 bypass token） | **成功**，无需验证码，且**能创建全新包**（npm 2026-10-02 起支持） |
 
-结论：**用 `npm stage publish` 上传，再由本人带 2FA `npm stage approve` 批准**。批准这一步 bypass token 做不了（实测被屏蔽成 `404 staged version "…" not found`），必须真人在终端 `npm login` 后操作。
+结论：**用 `npm stage publish` 上传，再由本人带 2FA 批准**。但批准这一步**在 CLI 上走不通**：`npm stage approve <id>`（试过 Node 20/24 × npm 11.21.0/12.2.0、带与不带 `--otp`、以及裸 curl 打 `POST /-/stage/<id>/approve`）一律返回 `404 staged version "…" not found`，响应头还跟着 `npm-notice: npm tokens that bypass 2FA are being restricted…` —— 注册表把"这个凭证没资格批准"伪装成 404，而 npm CLI 只在收到 401 时才弹验证码输入框，所以它永远不会问你要码，换 Node 版本、换 npm 版本、重登都没用。
+
+**可行的批准入口是 npmjs.com 的 `Staged Packages` 页签**（已登录的浏览器会话 + 页面上的 2FA 弹窗），本人实测通过；这也是 npm 官方文档 `content/packages-and-modules/securing-your-code/staged-publishing.mdx` 里写的两条路之一。
 
 `npm stage` 需要 npm ≥ 11（`npm stage --help` 有输出即支持）。npm 12.2.0 要求 Node ≥ 22.22.2，所以 Node 20 上装 11.x：
 
@@ -84,17 +86,19 @@ sed -i '' 's#"@lw0129a/app-packager": "workspace:\^0.1.0"#"@lw0129a/app-packager
 $NPM stage list                    # 看 stage id 与状态：validating → staged
 ```
 
-然后由包维护者**本人**在终端批准（会提示输入认证器里的 6 位码，30 秒内有效）：
+然后由包维护者**本人**在 npmjs.com 上批准（会弹 2FA 验证码）：
+
+1. 打开 <https://www.npmjs.com>（已登录 `@lw0129a`）；
+2. 进 **Staged Packages** 页签 —— 每个待批包一行，显示包名、`PUBLIC`、版本、shasum、提交者，右侧是 **Approve / Reject / Inspect** 三个按钮；
+3. 两个包各点一次 **Approve**，输入认证器里的 6 位码，立刻发布。
 
 ```bash
-$NPM login                         # 写新的 session token，会覆盖 ~/.npmrc 里的 granular token
-$NPM stage approve <CLI 的 stage id>
-$NPM stage approve <插件的 stage id>
-$NPM stage list                    # 批准成功的条目会消失
-npm view @lw0129a/app-packager version
+$NPM stage list                            # 批准成功的条目会消失
+npm view @lw0129a/app-packager version     # 期望 0.1.0
 ```
 
-> - 刚 stage 完是 `status: validating`（注册表异步校验 tarball），此时批准会报 `staged version "…" not found`，等它变成 `staged` 再批。
+> - 刚 stage 完是 `status: validating`（注册表异步校验 tarball），此时批准/查看可能报 `staged version "…" not found`，等它变成 `staged` 再批。
+> - **不要在这上面反复试 CLI**：`npm stage approve` 对这类凭证固定 404（见上一节），`--otp` 也救不回来。
 > - `npm stage download <id>` 目前在注册表侧 404（`GET /-/stage/***/tarball`），所以**发布前在本地用 `pnpm -r pack` 检查 tarball**，别指望下载回来验。
 > - 若本地 npm 缓存目录权限有问题（`EPERM … _cacache`），加 `npm_config_cache=/tmp/ap-npmcache`。
 > - 发错了内容可以 `npm unpublish @lw0129a/app-packager@<version>`，但 24 小时后同名同版本不可复用，优先发新版本。
@@ -149,9 +153,10 @@ description:
 
 ### 本项目的上架记录
 
-- 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。
+- 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
+- 2026-10-07：两个包以 staged publishing 发出并由维护者在 npmjs.com 批准，`@lw0129a/app-packager@0.1.0` 与 `@lw0129a/dsh-app-packager@0.1.0` 已上线（`latest` 均指向 0.1.0，暂存区已清空）。随后本机 `desktop` profile 已从「本地 tarball + `pnpm-workspace.yaml` override」改回从 registry 安装，并在一个全新临时 profile 里验证过 `dsh plugin --profile <name> add @lw0129a/dsh-app-packager` 无需任何 override 即可装载（`--dump-config` 里能看到 `- id: app-packager` 那一层）。
 - 当天唯一的红项是仓库年龄（仓库建于 `2026-10-07T02:50:28Z`，24 小时门槛在 `2026-10-08T02:50Z`），按第 3 条的机制等它自己转绿。
-- 收录后市场是打开时实时拉的，重新打开插件市场即可搜到；npm 发布完成后下载量与一键安装命令会自动补上。
+- 收录后市场是打开时实时拉的，重新打开插件市场即可搜到；npm 已发布，下载量与一键安装命令会自动补上。
 
 
 ## 四、用户侧安装方式
