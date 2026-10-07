@@ -63,6 +63,12 @@ jobs:
       - run: ls -l "$RUNNER_TEMP/tarballs"
 
       - name: 发布（trusted publishing）
+        # npm 把 OIDC 换取 token 的失败吞在 verbose 级别里，最终只报一句
+        # `ENEEDAUTH need auth`（看不出是「没配 trusted publisher」还是「没给 id-token」）。
+        # 打开 verbose 后日志里会多一行 `oidc Failed token exchange request with body message: …`，
+        # 那才是真正的原因。
+        env:
+          NPM_CONFIG_LOGLEVEL: verbose
         run: |
           set -euo pipefail
           # 普通变量而不是数组：空数组在 `set -u` + bash 3.2（macOS）下会报 unbound。
