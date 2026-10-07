@@ -61,6 +61,42 @@ test('listProjects 套用引擎的平台默认值（iOS/HarmonyOS 开，Android 
   rmSync(home, { recursive: true, force: true });
 });
 
+test('parseEnvText 读得懂 printf %q 写出的 ANSI-C 值（含中文）', () => {
+  // `printf '%q'` writes non-ASCII names as ANSI-C escapes; bash 3.2 on macOS
+  // mixes raw bytes and escapes, so both shapes must decode to the same text.
+  const octal = parseEnvText("APP_NAME=$'\\346\\274\\224\\347\\244\\272\\345\\272\\224\\347\\224\\250'\n");
+  assert.equal(octal.APP_NAME, '演示应用');
+  assert.equal(parseEnvText("SCHEME=UniAppX\n").SCHEME, 'UniAppX');
+});
+
+test('listProjects 还原 %q 写坏的 APP_NAME（半截 UTF-8 字节）', () => {
+  const home = tempDir('app-packager-home-');
+  const dir = join(home, 'config', 'projects');
+  mkdirSync(dir, { recursive: true });
+  // Byte-for-byte what macOS bash 3.2 `printf '%q'` produced for 演示应用:
+  // raw e6 bc, then \224, then 示 — invalid UTF-8, so a plain utf8 read mangles it.
+  const name = Buffer.concat([
+    Buffer.from("PROJECT_ID=demo\nAPP_NAME=$'", 'utf8'),
+    Buffer.from([0xe6, 0xbc]),
+    Buffer.from('\\224', 'utf8'),
+    Buffer.from('示', 'utf8'),
+    Buffer.from([0xe5, 0xba]),
+    Buffer.from('\\224', 'utf8'),
+    Buffer.from([0xe7]),
+    Buffer.from('\\224', 'utf8'),
+    Buffer.from([0xa8]),
+    Buffer.from("'\nSOURCE_DIR=", 'utf8'),
+    Buffer.from(join(home, 'demo'), 'utf8'),
+    Buffer.from('\n', 'utf8'),
+  ]);
+  writeFileSync(join(dir, 'demo.env'), name);
+
+  const projects = listProjects(home);
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0].appName, '演示应用');
+  rmSync(home, { recursive: true, force: true });
+});
+
 test('materialize 复制引擎、二次调用不再复制、保留本地配置', () => {
   const home = tempDir('app-packager-home-');
   const first = materialize(home);
