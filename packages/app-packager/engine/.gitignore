@@ -19,7 +19,18 @@ logs/*
 # Signing materials and secrets
 signing/current/
 *.p12
+*.pfx
 *.mobileprovision
+*.provisionprofile
+*.jks
+*.keystore
+*.p7b
+*.p8
+*.pem
+*.key
+*.cer
+!signing/apple/AppleRootCA.cer
+!signing/apple/AppleWWDRCAG3.cer
 
 # Machine-local initialization and project registrations
 config/settings.local.env

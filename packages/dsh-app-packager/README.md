@@ -43,7 +43,7 @@ centre column:
   dialog and *Add project* registers the picked directory through the engine's
   `register` subcommand, so a project anywhere on disk gets the same
   `config/projects/<id>.env` the wizard would write. The field is the folder
-  that **holds** your projects (e.g. `/Users/lw/work/anjuyi`) — the engine scans
+  that **holds** your projects (e.g. `/Users/you/work/projects`) — the engine scans
   one level below it and registers every uni-app x project it finds, so picking
   projects one by one is unnecessary (several picked folders are joined into
   that one field).

@@ -187,7 +187,7 @@ certificates/Android/keystore.properties
 
 主菜单在环境预检完成后询问是否上传，并以列表展示启用中的上传平台，可多选。上传逻辑位于 `lib/upload.sh` 和 `lib/uploaders/`，与签名、打包逻辑解耦。
 
-当前支持蒲公英上传 iOS IPA、Android APK 和 HarmonyOS HAP；HAP 发布需要发布证书 P12、“指定设备发布”Profile（包含测试设备 UDID）和 P12 明文密码。蒲公英配置兼容原 `uni-platform-app` 的 `PGYER_API_KEY`、`PGYER_UPDATE_DESCRIPTION` 字段，未复制企业微信、Web 构建或 Docker 推送逻辑。上传平台和通用参数在 `config/upload.env` 中人工维护，当前已预留蒲公英、App Store、华为应用市场、小米应用市场、应用宝；API Key、Token、证书密码等本机敏感配置放在 `config/upload.local.env`：
+当前支持蒲公英上传 iOS IPA、Android APK 和 HarmonyOS HAP；HAP 发布需要发布证书 P12、“指定设备发布”Profile（包含测试设备 UDID）和 P12 明文密码。蒲公英配置兼容旧版项目脚本里的 `PGYER_API_KEY`、`PGYER_UPDATE_DESCRIPTION` 字段，未复制企业微信、Web 构建或 Docker 推送逻辑。上传平台和通用参数在 `config/upload.env` 中人工维护，当前已预留蒲公英、App Store、华为应用市场、小米应用市场、应用宝；API Key、Token、证书密码等本机敏感配置放在 `config/upload.local.env`：
 
 ```bash
 cp config/upload.local.env.example config/upload.local.env

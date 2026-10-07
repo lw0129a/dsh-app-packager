@@ -10,7 +10,8 @@
 git clone https://github.com/lw0129a/dsh-app-packager.git
 cd dsh-app-packager
 pnpm install          # pnpm 版本由 packageManager 字段锁定
-pnpm test             # 两个包的 node --test
+pnpm test             # 先跑项目配置守卫，再跑两个包的 node --test
+pnpm guard:check      # 只看 git 眼里的文件；`.githooks/pre-commit` 也会跑它
 ```
 
 Node 18 及以上，`.nvmrc` 钉的是 Node 20。
@@ -18,7 +19,7 @@ Node 18 及以上，`.nvmrc` 钉的是 Node 20。
 ## 提 PR 之前
 
 ```bash
-pnpm test             # 必须
+pnpm test             # 必须（里面已经带了项目配置守卫）
 pnpm docs:check       # 改了文档就必须跑
 pnpm -r pack --pack-destination /tmp/ap-pack   # 改了会发布的内容就跑
 ```

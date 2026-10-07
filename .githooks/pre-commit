@@ -1,0 +1,9 @@
+#!/bin/sh
+# 提交前守卫：要打包的业务项目配置、密钥、证书、安装包都不许进这个插件仓库。
+# 启用一次即可：git config core.hooksPath .githooks
+# 没装 node 就不拦（CI 的 `pnpm test` 里还有一道同样的检查）。
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: 没找到 node，跳过项目配置守卫（CI 仍会检查）" >&2
+  exit 0
+fi
+exec node "$(git rev-parse --show-toplevel)/scripts/check-no-local-config.mjs"

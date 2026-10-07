@@ -44,6 +44,7 @@ pnpm test                          # 两个包的 node --test
 node --test packages/app-packager/test/packager.test.mjs       # 单包
 node --test packages/dsh-app-packager/test/plugin.test.mjs
 pnpm cli list                      # 直接跑本地 CLI（= node packages/app-packager/bin/app-packager.mjs）
+pnpm guard:check                   # 业务项目配置/密钥/证书守卫（pnpm test 里也会跑）
 pnpm docs:check                    # 中英文档配对检查
 pnpm -r pack --pack-destination /tmp/ap-pack   # 发布前看 tarball
 ```

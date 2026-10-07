@@ -420,19 +420,19 @@ test('面板登记项目：pick 走注入的选择器，project 调引擎 regist
     spawn: fakeSpawn(record),
     pick: async (options) => {
       picked.push(options);
-      return { path: '/tmp/anjuyi/uni-platform-app' };
+      return { path: '/tmp/projects/demo-app' };
     },
   });
 
-  assert.equal((await panel.pickFolder()).path, '/tmp/anjuyi/uni-platform-app');
+  assert.equal((await panel.pickFolder()).path, '/tmp/projects/demo-app');
   assert.equal(picked.length, 1, 'pick 由宿主注入，测试里绝不弹真实对话框');
 
   await assert.rejects(() => panel.addProject({ dir: '   ' }), /请先选择或输入项目目录/);
 
-  const result = await panel.addProject({ dir: '/tmp/anjuyi/uni-platform-app' });
-  assert.deepEqual(record[0].args, ['register', '/tmp/anjuyi/uni-platform-app'], '登记复用引擎的 register 子命令');
+  const result = await panel.addProject({ dir: '/tmp/projects/demo-app' });
+  assert.deepEqual(record[0].args, ['register', '/tmp/projects/demo-app'], '登记复用引擎的 register 子命令');
   assert.equal(result.code, 0);
-  assert.deepEqual(result.dirs, ['/tmp/anjuyi/uni-platform-app']);
+  assert.deepEqual(result.dirs, ['/tmp/projects/demo-app']);
   assert.ok(Array.isArray(result.projects));
 
   // 多选目录：换行或逗号分隔都合成一次 register 调用。

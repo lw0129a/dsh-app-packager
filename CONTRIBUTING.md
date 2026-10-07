@@ -10,7 +10,8 @@ Thanks for helping. This project ships a local packaging toolchain, so a wrong c
 git clone https://github.com/lw0129a/dsh-app-packager.git
 cd dsh-app-packager
 pnpm install          # pnpm is pinned through the packageManager field
-pnpm test             # node --test for both packages
+pnpm test             # the project-config guard, then node --test for both packages
+pnpm guard:check      # checks git-tracked files only; `.githooks/pre-commit` runs it too
 ```
 
 Node 18 or newer. Node 20 is what `.nvmrc` pins.
@@ -18,7 +19,7 @@ Node 18 or newer. Node 20 is what `.nvmrc` pins.
 ## Before you open a PR
 
 ```bash
-pnpm test             # required
+pnpm test             # required (includes the project-config guard)
 pnpm docs:check       # required when you touched documentation
 pnpm -r pack --pack-destination /tmp/ap-pack   # when you touched anything shipped
 ```

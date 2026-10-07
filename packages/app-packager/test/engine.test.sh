@@ -89,7 +89,7 @@ engine 'APP_PACKAGER_PROFILE_FILE=/nope/absent.mobileprovision; apply_build_opti
 check "apply_build_option_overrides 描述文件不存在退出码" "1" "$STATUS"
 check_contains "apply_build_option_overrides 描述文件不存在提示" "指定的描述文件不存在" "$OUT"
 
-engine 'APP_PACKAGER_PACKAGE_KIND=appstore; EXPECTED_BUNDLE_ID=com.szaj.admin.app; apply_build_option_overrides'
+engine 'APP_PACKAGER_PACKAGE_KIND=appstore; EXPECTED_BUNDLE_ID=com.example.demoapp; apply_build_option_overrides'
 check "apply_build_option_overrides 缺少该类型描述文件退出码" "1" "$STATUS"
 check_contains "apply_build_option_overrides 缺少该类型描述文件提示" "未找到 appstore 类型的描述文件" "$OUT"
 

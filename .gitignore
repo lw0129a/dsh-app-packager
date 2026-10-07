@@ -5,3 +5,21 @@ node_modules/
 
 # Local AppPackager runtime state materialized by `app-packager init`
 .app-packager/
+
+# Secrets, signing material and installers must never reach the plugin repo
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.jks
+*.keystore
+*.p7b
+*.p8
+*.pem
+*.key
+*.cer
+!packages/app-packager/engine/signing/apple/*.cer
+*.ipa
+*.apk
+*.hap
+*.tgz

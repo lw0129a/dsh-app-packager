@@ -10,7 +10,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "pnpm -r test",
+    "test": "node scripts/check-no-local-config.mjs && pnpm -r test",
+    "guard:check": "node scripts/check-no-local-config.mjs",
     "docs:check": "node scripts/check-docs.mjs",
     "cli": "node packages/app-packager/bin/app-packager.mjs",
     "doctor": "node packages/app-packager/bin/app-packager.mjs doctor",
