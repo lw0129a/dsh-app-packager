@@ -72,6 +72,36 @@ export function materializedVersion(home) {
 }
 
 /**
+ * Written into a fresh engine home when the engine ships no `.gitignore` of its
+ * own — npm drops that file from the tarball. Keeps a user who versions the
+ * engine directory from committing local config, certificates or SDK copies.
+ */
+export const HOME_GITIGNORE = `# AppPackager 引擎目录：本地配置、证书、SDK 与产物不进 Git
+.DS_Store
+config/*.local.env
+config/init.local.env
+config/projects/*.env
+!config/projects/project.env.example
+certificates/*
+!certificates/README.md
+!certificates/处理证书.command
+signing/current/
+sdk/*
+!sdk/README.md
+!sdk/处理SDK.command
+packages/
+logs/*
+!logs/.gitkeep
+workspaces/
+.tmp/
+*.p12
+*.mobileprovision
+*.ipa
+*.apk
+*.hap
+`;
+
+/**
  * Copy the packaged engine into `home`.
  *
  * Scripts, docs and templates are refreshed on every version bump; files the
@@ -118,5 +148,7 @@ export function materialize(home, { force = false } = {}) {
   walk(ENGINE_SOURCE);
 
   fs.writeFileSync(path.join(home, VERSION_FILE), `${version}\n`);
+  const ignore = path.join(home, '.gitignore');
+  if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, HOME_GITIGNORE);
   return result;
 }

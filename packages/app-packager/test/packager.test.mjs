@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listProjects, parseEnvText } from '../src/projects.mjs';
-import { engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
+import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
 import { runDoctor } from '../src/doctor.mjs';
 
 function tempDir(prefix) {
@@ -69,6 +69,13 @@ test('materialize 复制引擎、二次调用不再复制、保留本地配置',
   assert.ok(isMaterialized(home));
   assert.ok(existsSync(engineEntryPath(home)));
   assert.ok(readFileSync(join(home, 'lib', 'common.sh'), 'utf8').includes('PROJECT_SEARCH_ROOTS'));
+
+  // The home gets secret-protecting ignore rules; the packaged engine has no
+  // `.gitignore` of its own (npm drops it), so the fallback must list them.
+  assert.ok(readFileSync(join(home, '.gitignore'), 'utf8').includes('config/projects/*.env'));
+  for (const pattern of ['config/*.local.env', 'certificates/*', 'sdk/*', '*.p12']) {
+    assert.ok(HOME_GITIGNORE.includes(pattern), `.gitignore 模板缺少 ${pattern}`);
+  }
 
   // A user-owned file must survive a forced refresh.
   writeFileSync(join(home, 'config', 'settings.local.env'), 'LOCAL_TWEAK=1\n');
