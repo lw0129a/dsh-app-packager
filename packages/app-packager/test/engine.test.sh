@@ -150,6 +150,13 @@ engine_sdk 'mkdir -p "$(harmony_sdk_dir)/oh_modules/@dcloudio/uni-app-x-runtime"
   sdk_install harmony --yes 2>&1 | grep -c SHOULD_NOT_RUN'
 check "sdk_install 已就绪时不再调用安装动作" "0" "$OUT"
 
+# 人读版（sdk urls / sdk text）也要读出本机 HBuilderX 版本：面板走 JSON，文本模式曾恒为「未知」。
+engine_sdk 'find_hbuilderx() { return 0; }; read_hbuilderx_version() { HX_VERSION=5.26.2026091802; HX_SERIES=5.26; }; \
+  sdk_status_text | grep "^版本:"'
+check "sdk_status_text 报出本机 HBuilderX 版本" "版本: 5.26.2026091802" "$OUT"
+engine_sdk 'find_hbuilderx() { return 1; }; sdk_status_text | grep "^版本:"'
+check "sdk_status_text 未检测到 HBuilderX 时仍写未知" "版本: 未知" "$OUT"
+
 # settings.local.env 里的 SDK 路径写成跟随引擎目录的形式：引擎目录整体挪走后不失效。
 engine_sdk 'LOCAL_IOS_SDK_DIR="$PIPELINE_ROOT/sdk/iOS/5.26"; LOCAL_ANDROID_SDK_DIR=""; \
   LOCAL_HARMONY_SDK_DIR=""; write_local_settings >/dev/null; \

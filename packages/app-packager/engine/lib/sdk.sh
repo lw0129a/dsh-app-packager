@@ -141,6 +141,10 @@ sdk_status_json() {
 
 sdk_status_text() {
   local series kind state dir page direct package
+  # 人读版也要先解析本机 HBuilderX，否则「版本」一栏恒为未知（JSON 版会解析）。
+  if find_hbuilderx >/dev/null 2>&1; then
+    read_hbuilderx_version
+  fi
   series="$(sdk_series)"
   printf '\nHBuilderX: %s\n' "${HBUILDERX_APP:-（未检测到）}"
   printf '版本: %s\n' "${HX_VERSION:-未知}"
