@@ -118,7 +118,7 @@ export function runDoctor({ home, platform = 'all' } = {}) {
   if (!materialized) {
     checks.push(check('projects', '项目配置', 'warn', '引擎未初始化', '运行 `app-packager init`'));
   } else if (projects.length === 0) {
-    checks.push(check('projects', '项目配置', 'warn', '未发现 config/projects/*.env', '把 uni-app x 项目放在引擎同级目录，或运行 `app-packager init` 走初始化向导'));
+    checks.push(check('projects', '项目配置', 'warn', '未发现 config/projects/*.env', '把 uni-app x 项目放在引擎同级目录，或运行 `app-packager register <项目目录>`；插件面板里有「选择目录…」按钮'));
   } else {
     const missing = projects.filter((project) => project.sourceDir && !project.sourceDirExists);
     checks.push(

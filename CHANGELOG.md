@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-10-08
+
+### Added
+
+- **`register`** registers a uni-app x project from anywhere on disk, on both surfaces: the CLI (`app-packager register <dir...>`) and the engine itself (`./打包工具.command register <dir...>`, engine script version `2026.10.08.1`). It reuses the wizard's registration code, so the written `config/projects/<id>.env` is identical; a directory that is not itself a project has its immediate children scanned. The command is non-interactive — no platform preflight, no "press enter" — and exits 1 with `[WARN] 指定目录里没有找到 uni-app x 项目` when nothing matches. Nothing outside the engine directory is written.
+- **Panel: *Choose folder…* / *Add project*** — the projects card takes a directory, either typed or picked from the host's own folder dialog (macOS `osascript`, Windows PowerShell `FolderBrowserDialog`, Linux `zenity`; where no picker exists the panel asks for a typed path instead). *Add project* runs the engine's `register`, then refreshes the list. Two new same-origin routes carry it: `/api/app-packager/pick` and `/api/app-packager/project`.
+
+### Fixed
+
+- **Chinese project names no longer show as mojibake.** The engine writes `APP_NAME` with `printf '%q'`, and macOS bash 3.2 emits a mixture of raw bytes and `\NNN` escapes for one character (under `LC_ALL=C` it is all-octal). `src/projects.mjs` did not understand `$'...'` at all, so `app-packager list` and the panel displayed the escape text — and a plain UTF-8 read could not even recover it, because the value can contain a partial UTF-8 sequence. `parseEnvText` now decodes ANSI-C escapes, and `parseEnvFile` re-reads a file byte-wise when its UTF-8 form is lossy, so both escape shapes and hand-written UTF-8 files all decode to the original name.
+
 ## [0.2.1] - 2026-10-08
 
 ### Fixed
@@ -42,7 +53,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.2.1...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.2.2...main
+[0.2.2]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.2
 [0.2.1]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.1
 [0.2.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.0
 [0.1.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.1.0

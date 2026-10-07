@@ -254,6 +254,8 @@ test('apply 在存在 webServer 时挂上面板路由，缺席时不影响工具
       '/api/app-packager/job',
       '/api/app-packager/job/kill',
       '/api/app-packager/job/log',
+      '/api/app-packager/pick',
+      '/api/app-packager/project',
       '/api/app-packager/state',
     ],
   );
@@ -284,7 +286,7 @@ test('webServer 晚到：apply 用 ctx.inject 等它，服务出现后补挂路�
     },
   };
   waits[0].callback(withServices({}, { webServer: service }));
-  assert.equal(routes.size, 6);
+  assert.equal(routes.size, 8);
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -333,6 +335,38 @@ test('面板路由：state / init / doctor 走通，非法平台报错且不启�
   await routes.get('/api/app-packager/job')(fakeReq({ method: 'POST', body: { kind: 'build', platform: 'windows' } }), badRes);
   assert.equal(badRes.statusCode, 500);
   assert.match(badRes.json().error, /platform 必须是/);
+
+  // /project without a directory must fail before any engine run.
+  const noDirRes = fakeRes();
+  await routes.get('/api/app-packager/project')(fakeReq({ method: 'POST', body: {} }), noDirRes);
+  assert.equal(noDirRes.statusCode, 500);
+  assert.match(noDirRes.json().error, /请先选择或输入项目目录/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('面板登记项目：pick 走注入的选择器，project 调引擎 register 子命令', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const picked = [];
+  const panel = createPanel({
+    config: { home },
+    spawn: fakeSpawn(record),
+    pick: async (options) => {
+      picked.push(options);
+      return { path: '/tmp/anjuyi/uni-platform-app' };
+    },
+  });
+
+  assert.equal((await panel.pickFolder()).path, '/tmp/anjuyi/uni-platform-app');
+  assert.equal(picked.length, 1, 'pick 由宿主注入，测试里绝不弹真实对话框');
+
+  await assert.rejects(() => panel.addProject({ dir: '   ' }), /请先选择或输入项目目录/);
+
+  const result = await panel.addProject({ dir: '/tmp/anjuyi/uni-platform-app' });
+  assert.deepEqual(record[0].args, ['register', '/tmp/anjuyi/uni-platform-app'], '登记复用引擎的 register 子命令');
+  assert.equal(result.code, 0);
+  assert.equal(result.dir, '/tmp/anjuyi/uni-platform-app');
+  assert.ok(Array.isArray(result.projects));
   rmSync(home, { recursive: true, force: true });
 });
 

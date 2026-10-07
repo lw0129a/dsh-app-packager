@@ -23,6 +23,7 @@ const HELP = `AppPackager ${packageVersion()} — uni-app x 打包命令行
   init                 复制打包引擎到 APP_PACKAGER_HOME，并运行初始化向导
   doctor [--platform]  检查当前机器能构建哪些平台（默认全部）
   list                 列出已配置的项目
+  register <目录...>   登记 uni-app x 项目目录（给父目录则扫描其下一层）
   check <平台> [项目]  调用引擎检查打包环境
   build <平台> [项目]  调用引擎执行打包（平台: ios | android | harmony | all）
   run <引擎参数...>    原样透传给引擎（等价于 打包工具.command 的命令行模式）
@@ -93,7 +94,7 @@ function printProjects(home, projects) {
   console.log(`引擎目录: ${home}`);
   if (projects.length === 0) {
     console.log('未发现项目配置 config/projects/*.env。');
-    console.log('把 uni-app x 项目放到引擎同级目录，然后运行 `app-packager init`。');
+    console.log('把 uni-app x 项目放到引擎同级目录，或运行 `app-packager register <项目目录>`。');
     return;
   }
   for (const project of projects) {
@@ -179,6 +180,14 @@ export async function main(argv) {
       if (flags.json) console.log(JSON.stringify({ home, projects }, null, 2));
       else printProjects(home, projects);
       return 0;
+    }
+    case 'register': {
+      const dirs = flags._.slice(1);
+      if (dirs.length === 0) {
+        console.error('用法: app-packager register <项目目录...> [--dir <引擎目录>]');
+        return 1;
+      }
+      return withEngine(home, ['register', ...dirs], flags);
     }
     case 'check': {
       const platform = flags._[1];

@@ -330,6 +330,33 @@ register_discovered_projects() {
   [ "$found" -gt 0 ]
 }
 
+# 登记用户明确指定的目录（不依赖 PROJECT_SEARCH_ROOTS）：
+# 目录本身是 uni-app x 项目就登记它，否则登记其下一层的 uni-app x 项目。
+register_paths() {
+  local dir child registered=0
+  for dir in "$@"; do
+    if is_uni_app_project "$dir"; then
+      register_project_path "$dir" && registered=$((registered + 1))
+      continue
+    fi
+    for child in "$dir"/*; do
+      [ -d "$child" ] || continue
+      case "$(basename "$child")" in
+        .*|node_modules|unpackage|_*) continue ;;
+      esac
+      is_uni_app_project "$child" || continue
+      register_project_path "$child" && registered=$((registered + 1))
+    done
+  done
+
+  if [ "$registered" -eq 0 ]; then
+    printf '  [WARN] 指定目录里没有找到 uni-app x 项目（需要 manifest.json + pages.json）\n'
+    return 1
+  fi
+  printf '  已登记/已存在项目: %s\n' "$registered"
+  return 0
+}
+
 print_registered_projects() {
   local id file count=0
   printf '已读取项目:\n'

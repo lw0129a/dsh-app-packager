@@ -31,14 +31,18 @@ centre column:
   one platform or all of them, with hints for every failed item.
 - **Projects** — every `config/projects/*.env`, its source directory (flagging
   a missing one), the platforms it enables, and per-project *Env check* /
-  *Build* buttons. Shared build options: version override, upload to pgyer,
+  *Build* buttons. The **Choose folder…** button opens the host's own folder
+  dialog and *Add project* registers the picked directory through the engine's
+  `register` subcommand, so a project anywhere on disk gets the same
+  `config/projects/<id>.env` the wizard would write; pick a parent folder
+  instead and the engine scans one level below it. Shared build options: version override, upload to pgyer,
   HarmonyOS debug HAP, keep the intermediate work directory.
 - **Job** — the running check/build with its live engine log, its verdict
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
 
 The panel only calls same-origin routes registered by this plugin
-(`/api/app-packager/state|init|doctor|job|job/log|job/kill`) — no build logic
-runs in the browser. It needs a profile that ships the web app
+(`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`) — no
+build logic runs in the browser. It needs a profile that ships the web app
 (`@deepseek-ai/dsh-web-app`, as the desktop and web profiles do); in a headless
 profile the panel is simply absent and the four tools keep working.
 
@@ -123,6 +127,7 @@ engine, pick platforms, configure signing), use the CLI:
 
 ```bash
 npx app-packager init
+npx app-packager register ~/work/shop   # or register a directory directly
 ```
 
 ## Platform support

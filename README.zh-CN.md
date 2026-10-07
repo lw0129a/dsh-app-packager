@@ -28,6 +28,7 @@ npm i -g app-packager
 app-packager init          # 首次：把打包引擎复制到 ~/AppPackager，并进入初始化向导
 app-packager doctor        # 检查这台机器能打哪些平台
 app-packager list          # 列出已发现的 uni-app x 项目
+app-packager register ~/work/shop   # 登记任意目录下的项目
 app-packager build android my-project --upload pgyer
 app-packager build ios --all
 ```
@@ -39,7 +40,7 @@ npx app-packager doctor
 npx app-packager build harmony my-project
 ```
 
-引擎目录默认 `~/AppPackager`，可用 `APP_PACKAGER_HOME` 环境变量或 `--dir <路径>` 指定。初始化向导会把同级目录下的 uni-app x 项目自动登记到 `config/projects/`；也可以用 `--search-roots` 追加扫描目录。
+引擎目录默认 `~/AppPackager`，可用 `APP_PACKAGER_HOME` 环境变量或 `--dir <路径>` 指定。初始化向导会把同级目录下的 uni-app x 项目自动登记到 `config/projects/`；也可以用 `--search-roots` 追加扫描目录，或用 `app-packager register <路径>`（面板里的「选择目录…」按钮）登记磁盘上任意位置的项目。
 
 ### 方式二：DeepSeek Harness 插件
 

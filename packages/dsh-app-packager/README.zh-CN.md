@@ -20,10 +20,10 @@ dsh plugin --profile desktop add dsh-app-packager
 
 - **引擎** —— 引擎目录、引擎版本、是否已物化，以及探测到的 bash 桥接（macOS/Linux 的 `bash`、Windows 的 Git Bash 或 WSL）；缺引擎时点「初始化引擎」一键释放。
 - **环境检查（Node）** —— 与 `app_packager_doctor` 同一份报告，可只查某个平台或全部，每个失败项都带修复提示。
-- **项目** —— 列出 `config/projects/*.env`：源码目录（不存在会标注）、启用的平台，每个项目一组「环境检查 / 打包」按钮。公共打包选项：版本号、上传 pgyer、HarmonyOS debug 包、保留构建目录。
+- **项目** —— 列出 `config/projects/*.env`：源码目录（不存在会标注）、启用的平台，每个项目一组「环境检查 / 打包」按钮。公共打包选项：版本号、上传 pgyer、HarmonyOS debug 包、保留构建目录。「选择目录…」按钮打开系统自带的目录对话框，「添加项目」把选中的目录交给引擎的 `register` 子命令登记，因此磁盘上任意位置的项目都会得到与向导完全一致的 `config/projects/<id>.env`；选中的是父目录时引擎会自动往下扫一层。
 - **任务** —— 当前 check/build 的实时引擎日志、判定结果（出现 `[FAIL]` 或非零退出码即失败）与「停止」按钮。
 
-面板只调用本插件注册的同源路由（`/api/app-packager/state|init|doctor|job|job/log|job/kill`），打包逻辑不在浏览器里跑。它需要带 Web 应用的 profile（`@deepseek-ai/dsh-web-app`，desktop 与 web profile 都带）；headless profile 里面板不出现，四个工具照常可用。
+面板只调用本插件注册的同源路由（`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`），打包逻辑不在浏览器里跑。它需要带 Web 应用的 profile（`@deepseek-ai/dsh-web-app`，desktop 与 web profile 都带）；headless profile 里面板不出现，四个工具照常可用。
 
 ## 工具
 
@@ -93,6 +93,7 @@ AppPackager 引擎目录：/Users/me/AppPackager
 
 ```bash
 npx app-packager init
+npx app-packager register ~/work/shop   # 也可以直接登记某个目录
 ```
 
 ## 平台

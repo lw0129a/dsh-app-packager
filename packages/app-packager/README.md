@@ -33,6 +33,7 @@ app-packager init --no-wizard     # engine only, no wizard
 app-packager doctor               # health check: Node / bash / Xcode / HBuilderX / JDK / SDK / project config
 app-packager doctor --platform android
 app-packager list                 # list discovered uni-app x projects (reads config/projects/*.env)
+app-packager register ~/work/shop  # register a project dir (a parent dir is scanned one level down)
 app-packager env                  # print engine dir, version, shell and search roots
 
 app-packager check android shop   # pre-build check for one platform

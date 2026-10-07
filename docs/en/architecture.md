@@ -10,7 +10,7 @@ Three layers, one behaviour: the original bash packaging toolchain stays the sin
    bin/app-packager.mjs        packages/dsh-app-packager/index.js      client.js (panel)
           │  (arg parsing)            │  (4 tools)        │                    │ fetch
           └──────────────┬───────────┴───────────────────┘                    │
-                         ▼                        web.js (6 exact routes) ◄───┘
+                         ▼                        web.js (8 exact routes) ◄───┘
             packages/app-packager/src/*.mjs          ← pure Node, no runtime deps
             home · projects · engine · doctor · cli
                          │  spawn bash (stdin ignored)
@@ -24,14 +24,14 @@ Three layers, one behaviour: the original bash packaging toolchain stays the sin
 | Path | Responsibility |
 | --- | --- |
 | `packages/app-packager/bin/app-packager.mjs` | Executable entry; parses argv and dispatches to `src/cli.mjs`. |
-| `packages/app-packager/src/cli.mjs` | Command table (`init` `doctor` `list` `check` `build` `run` `env` `version`), option parsing, pass-through of unknown engine arguments. |
+| `packages/app-packager/src/cli.mjs` | Command table (`init` `doctor` `list` `register` `check` `build` `run` `env` `version`), option parsing, pass-through of unknown engine arguments. |
 | `packages/app-packager/src/home.mjs` | Engine directory resolution (`--dir` → `APP_PACKAGER_HOME` → `~/AppPackager`), version-stamped materialisation, user-file preservation, `HOME_GITIGNORE`. |
 | `packages/app-packager/src/projects.mjs` | Reads `config/projects/*.env` (quoting, `\ ` escapes, `$VAR`/`${VAR}` expansion, `export` prefix) and reports enabled platforms. |
 | `packages/app-packager/src/engine.mjs` | bash discovery (`native` / `git-bash` / `wsl`), path translation, `PIPELINE_ROOT` + `PROJECT_SEARCH_ROOTS` injection, spawn with timeout and line streaming. |
 | `packages/app-packager/src/doctor.mjs` | Node-side environment checks (Node, engine, shell bridge, Xcode tooling, HBuilderX, JDK, Android SDK, DevEco Studio, signing dirs, project config). |
 | `packages/app-packager/engine/` | The original toolchain, byte-for-byte; `engine/项目介绍.md` is its authoritative spec. |
 | `packages/dsh-app-packager/index.js` | Host plugin: registers 4 tools with hand-written JSON Schemas, renders engine output as text; no `@deepseek-ai/*` runtime imports. |
-| `packages/dsh-app-packager/web.js` | Host half of the panel: `engineArgsFor` (the single place that turns tool arguments into engine argv), a small in-memory job runner (check/build, output cap, SIGTERM stop) and `mountWebPanel`, which registers six exact routes on `webServer` and returns a disposer — `null` when no web server exists. |
+| `packages/dsh-app-packager/web.js` | Host half of the panel: `engineArgsFor` (the single place that turns tool arguments into engine argv), a small in-memory job runner (check/build, output cap, SIGTERM stop) and `mountWebPanel`, which registers eight exact routes on `webServer` (the two extra ones are the host folder dialog and project registration) and returns a disposer — `null` when no web server exists. |
 | `packages/dsh-app-packager/client.js` | Browser half: a hand-written `__ModuleLoader__` bundle (no build step, no npm dependency — `require('react')` comes from the host's seed table) contributing a row to `sidebar.panellist` and a page to the keyed `main` slot. |
 
 ## Web panel

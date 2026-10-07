@@ -33,6 +33,7 @@ app-packager init --no-wizard     # 只释放引擎，不走向导
 app-packager doctor               # 体检：Node / bash / Xcode / HBuilderX / JDK / SDK / 项目配置
 app-packager doctor --platform android
 app-packager list                 # 列出已发现的 uni-app x 项目（读 config/projects/*.env）
+app-packager register ~/work/shop  # 登记项目目录（给父目录则扫描其下一层）
 app-packager env                  # 打印引擎目录、版本、shell 与扫描根
 
 app-packager check android shop   # 打包前检查某平台

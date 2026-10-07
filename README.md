@@ -28,6 +28,7 @@ npm i -g app-packager
 app-packager init          # first run: copy the engine to ~/AppPackager and start the wizard
 app-packager doctor        # what can this machine build?
 app-packager list          # list the uni-app x projects found
+app-packager register ~/work/shop   # register a project dir anywhere on disk
 app-packager build android my-project --upload pgyer
 app-packager build ios --all
 ```
@@ -39,7 +40,7 @@ npx app-packager doctor
 npx app-packager build harmony my-project
 ```
 
-The engine directory defaults to `~/AppPackager`; override it with the `APP_PACKAGER_HOME` environment variable or `--dir <path>`. The wizard registers uni-app x projects found next to it into `config/projects/`; `--search-roots` adds more directories to scan.
+The engine directory defaults to `~/AppPackager`; override it with the `APP_PACKAGER_HOME` environment variable or `--dir <path>`. The wizard registers uni-app x projects found next to it into `config/projects/`; `--search-roots` adds more directories to scan, and `app-packager register <path>` (or the panel's **Choose folder…** button) registers a project anywhere on disk.
 
 ### Option 2: DeepSeek Harness plugin
 

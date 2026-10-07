@@ -47,7 +47,12 @@ window.__ModuleLoader__.load({
       'doctor.ok': '结论：当前环境可以打包。',
       'doctor.bad': '结论：{failures} 项失败、{warnings} 项警告。',
       projects: '项目',
-      'projects.empty': '未发现项目配置 config/projects/*.env。把 uni-app x 项目放到引擎同级目录，或运行 `npx app-packager init`。',
+      'projects.empty': '未发现项目配置 config/projects/*.env。用下面的「选择目录…」指定一个 uni-app x 项目目录，或把它放进引擎同级目录。',
+      'projects.dir': '项目目录',
+      'projects.dirHint': 'uni-app x 项目目录，或它的父目录',
+      'projects.pick': '选择目录…',
+      'projects.add': '添加项目',
+      'projects.pickManual': '当前系统没有可用的目录选择器，请手动输入路径。',
       'projects.sourceMissing': '（未配置源码目录）',
       'projects.sourceGone': '源码目录不存在',
       platforms: '平台',
@@ -92,7 +97,12 @@ window.__ModuleLoader__.load({
       'doctor.ok': 'This machine can build.',
       'doctor.bad': '{failures} failed, {warnings} warnings.',
       projects: 'Projects',
-      'projects.empty': 'No project configs (config/projects/*.env) found. Put a uni-app x project next to the engine, or run `npx app-packager init`.',
+      'projects.empty': 'No project configs (config/projects/*.env) found. Use “Choose folder…” below to pick a uni-app x project, or put one next to the engine.',
+      'projects.dir': 'Project directory',
+      'projects.dirHint': 'uni-app x project folder, or its parent folder',
+      'projects.pick': 'Choose folder…',
+      'projects.add': 'Add project',
+      'projects.pickManual': 'This system has no folder picker; type the path instead.',
       'projects.sourceMissing': '(no source directory)',
       'projects.sourceGone': 'source directory missing',
       platforms: 'Platforms',
@@ -213,6 +223,7 @@ window.__ModuleLoader__.load({
       const [harmonyDebug, setHarmonyDebug] = useState(false);
       const [keepWork, setKeepWork] = useState(false);
       const [rowPlatform, setRowPlatform] = useState({});
+      const [projectDir, setProjectDir] = useState('');
       const logRef = useRef(null);
 
       const guard = useCallback(async (key, work) => {
@@ -285,6 +296,24 @@ window.__ModuleLoader__.load({
       });
 
       const stopJob = () => guard('job', async () => setJob(await call(`job/kill?id=${encodeURIComponent(job.id)}`, { method: 'POST' })));
+
+      // The host opens the OS folder dialog; a plain cancel is not an error, but a
+      // missing picker falls back to typing the path by hand.
+      const pickDirectory = () => guard('pick', async () => {
+        const picked = await call('pick', { method: 'POST', body: {} });
+        if (picked && picked.path) setProjectDir(picked.path);
+        else if (picked && !picked.cancelled) setError(`${t('projects.pickManual')}\n${picked.error || ''}`.trim());
+      });
+
+      const addProject = () => guard('project', async () => {
+        const result = await call('project', { method: 'POST', body: { dir: projectDir } });
+        if (result && result.code !== 0) {
+          setError(String(result.stdout || result.stderr || '').trim() || t('error'));
+          return;
+        }
+        setProjectDir('');
+        await refresh();
+      });
 
       const button = (label, onClick, options = {}) => h(
         'button',
@@ -376,6 +405,20 @@ window.__ModuleLoader__.load({
           { style: styles.groupHead },
           h('span', { style: styles.groupTitle }, `${t('projects')}（${projects.length}）`),
           button(t('refresh'), refresh, { disabled: !state || Boolean(busy) }),
+        ),
+        h(
+          'div',
+          { style: styles.actions },
+          h('span', { style: styles.muted }, t('projects.dir')),
+          h('input', {
+            className: 'ap-input',
+            style: { flex: '1', minWidth: '180px' },
+            placeholder: t('projects.dirHint'),
+            value: projectDir,
+            onChange: (event) => setProjectDir(event.target.value),
+          }),
+          button(t('projects.pick'), pickDirectory, { disabled: Boolean(busy) }),
+          button(t('projects.add'), addProject, { primary: true, disabled: Boolean(busy) || !projectDir.trim() }),
         ),
         h(
           'div',

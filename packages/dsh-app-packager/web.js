@@ -12,6 +12,8 @@
  *
  * @module dsh-app-packager/web
  */
+import { execFile as execFileCallback } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   PLATFORM_LABELS,
   isMaterialized,
@@ -30,6 +32,7 @@ export const PLATFORM_VALUES = ['ios', 'android', 'harmony', 'all'];
 const JOB_LIMIT = 6;
 const OUTPUT_LIMIT = 400_000;
 const BODY_LIMIT = 1_000_000;
+const execFileAsync = promisify(execFileCallback);
 
 /**
  * Build the engine CLI argument list: `打包工具.command [check] <平台> [项目] [选项]`.
@@ -56,6 +59,38 @@ export function engineArgsFor(args = {}, { check = false } = {}) {
   if (args.harmonyDebug) out.push('--harmony-debug');
   if (args.keepWork) out.push('--keep-work');
   return out;
+}
+
+const FOLDER_PROMPT = '选择 uni-app x 项目目录';
+
+/**
+ * Ask the host OS for a folder. The browser half cannot read the filesystem, so
+ * the dialog has to run here; each platform's own picker is used instead of a
+ * dependency, and a missing picker only means "type the path yourself".
+ *
+ * @param {{prompt?: string}} [options]
+ * @returns {Promise<{path: string, cancelled?: boolean, error?: string}>}
+ */
+export async function pickFolder({ prompt = FOLDER_PROMPT } = {}) {
+  const run = async (file, args) => (await execFileAsync(file, args, { windowsHide: true })).stdout.trim();
+  let script;
+  try {
+    if (process.platform === 'darwin') {
+      script = `POSIX path of (choose folder with prompt ${JSON.stringify(prompt)})`;
+      return { path: await run('osascript', ['-e', script]) };
+    }
+    if (process.platform === 'win32') {
+      script = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = ${JSON.stringify(prompt)}; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`;
+      return { path: await run('powershell', ['-NoProfile', '-STA', '-Command', script]) };
+    }
+    return { path: await run('zenity', ['--file-selection', '--directory', `--title=${prompt}`]) };
+  } catch (error) {
+    const detail = String(error?.stderr || error?.message || error).trim();
+    // Cancelling exits non-zero everywhere ("User canceled" / -128 / 1); only a
+    // picker that does not exist at all is worth showing as an error.
+    const cancelled = error?.code === 1 || /-128|user cancel|用户取消/i.test(detail);
+    return { path: '', cancelled, error: cancelled ? '' : detail };
+  }
 }
 
 /** Keep the tail of a long build log so one run cannot grow without bound. */
@@ -195,7 +230,7 @@ export function createJobRunner({ spawn = runEngine, limit = JOB_LIMIT, outputLi
  *
  * @param {{config?: object, spawn?: typeof runEngine, limit?: number, outputLimit?: number}} [options]
  */
-export function createPanel({ config = {}, spawn = runEngine, limit, outputLimit } = {}) {
+export function createPanel({ config = {}, spawn = runEngine, pick = pickFolder, limit, outputLimit } = {}) {
   const runner = createJobRunner({ spawn, limit, outputLimit });
   const homeOf = () => resolveHome(config.home || '');
 
@@ -282,6 +317,40 @@ export function createPanel({ config = {}, spawn = runEngine, limit, outputLimit
       return job;
     },
 
+    /** Host-side folder dialog; never throws for a plain cancel. */
+    pickFolder(options) {
+      return pick(options);
+    },
+
+    /**
+     * Register one project directory by calling the engine's own `register`
+     * subcommand, so the written config/projects/<id>.env is byte-identical to
+     * what the interactive wizard produces. With a parent directory the engine
+     * scans one level below it.
+     */
+    async addProject({ dir } = {}) {
+      const target = String(dir || '').trim();
+      if (!target) throw new Error('请先选择或输入项目目录');
+      const home = homeOf();
+      if (!isMaterialized(home)) materialize(home);
+      const shell = shellAvailable();
+      if (!shell.available) throw new Error(`当前系统上无法运行 bash 引擎：${shell.error}`);
+      const result = await spawn(home, ['register', target], {
+        stdio: 'pipe',
+        searchRoots: config.searchRoots,
+        timeoutMs: 120_000,
+      });
+      const projects = projectsOf(home);
+      return {
+        dir: target,
+        code: result.code,
+        stdout: result.stdout || '',
+        stderr: result.stderr || '',
+        projects: Array.isArray(projects) ? projects : [],
+        projectsError: Array.isArray(projects) ? '' : projects.error,
+      };
+    },
+
     killJob(id) {
       return runner.kill(id);
     },
@@ -340,6 +409,8 @@ export function mountWebPanel(ctx, config = {}) {
     { path: `${ROUTE_BASE}/state`, run: () => panel.state() },
     { path: `${ROUTE_BASE}/init`, run: (_body, _query) => panel.init(_body) },
     { path: `${ROUTE_BASE}/doctor`, run: (_body) => panel.doctor(_body) },
+    { path: `${ROUTE_BASE}/pick`, run: () => panel.pickFolder() },
+    { path: `${ROUTE_BASE}/project`, run: (body) => panel.addProject(body) },
     { path: `${ROUTE_BASE}/job`, run: (_body) => panel.startJob(_body) },
     { path: `${ROUTE_BASE}/job/log`, run: (_body, query) => panel.jobLog(query.id) },
     { path: `${ROUTE_BASE}/job/kill`, run: (_body, query) => panel.killJob(query.id) },

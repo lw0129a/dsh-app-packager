@@ -723,6 +723,19 @@ if [ "${1:-}" = "diagnose" ]; then
   exit 0
 fi
 
+# 登记指定目录（不扫描其他位置、不构建）:
+#   打包工具.command register <uni-app x 项目目录> [更多目录...]
+if [ "${1:-}" = "register" ]; then
+  shift
+  if [ "$#" -eq 0 ]; then
+    printf '用法: %s register <uni-app x 项目目录> [更多目录...]\n' "$TOOL_NAME"
+    exit 2
+  fi
+  status=0
+  register_paths "$@" || status=1
+  exit "$status"
+fi
+
 # 可通过参数直接执行，例如:
 #   打包工具.command ios <项目ID>
 #   打包工具.command android <项目ID>

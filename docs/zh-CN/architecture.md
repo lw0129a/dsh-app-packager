@@ -10,7 +10,7 @@
    bin/app-packager.mjs        packages/dsh-app-packager/index.js      client.js（面板）
           │  （参数解析）              │  （4 个工具）     │                    │ fetch
           └──────────────┬───────────┴───────────────────┘                    │
-                         ▼                        web.js（6 条 exact 路由）◄───┘
+                         ▼                        web.js（8 条 exact 路由）◄───┘
             packages/app-packager/src/*.mjs          ← 纯 Node，无运行时依赖
             home · projects · engine · doctor · cli
                          │  spawn bash（丢弃 stdin）
@@ -24,14 +24,14 @@
 | 路径 | 职责 |
 | --- | --- |
 | `packages/app-packager/bin/app-packager.mjs` | 可执行入口，解析 argv 后交给 `src/cli.mjs`。 |
-| `packages/app-packager/src/cli.mjs` | 命令表（`init` `doctor` `list` `check` `build` `run` `env` `version`）、选项解析、无法识别的参数透传给引擎。 |
+| `packages/app-packager/src/cli.mjs` | 命令表（`init` `doctor` `list` `register` `check` `build` `run` `env` `version`）、选项解析、无法识别的参数透传给引擎。 |
 | `packages/app-packager/src/home.mjs` | 引擎目录解析（`--dir` → `APP_PACKAGER_HOME` → `~/AppPackager`）、带版本号的物化、保留用户文件、`HOME_GITIGNORE`。 |
 | `packages/app-packager/src/projects.mjs` | 读 `config/projects/*.env`（引号、`\ ` 转义、`$VAR`/`${VAR}` 展开、`export` 前缀），并给出启用的平台。 |
 | `packages/app-packager/src/engine.mjs` | bash 探测（`native` / `git-bash` / `wsl`）、路径转换、注入 `PIPELINE_ROOT` 与 `PROJECT_SEARCH_ROOTS`、带超时与逐行回显的 spawn。 |
 | `packages/app-packager/src/doctor.mjs` | Node 侧体检（Node、引擎、shell 桥接、Xcode 工具、HBuilderX、JDK、Android SDK、DevEco Studio、签名目录、项目配置）。 |
 | `packages/app-packager/engine/` | 原工具链，逐字节保留；行为权威说明是 `engine/项目介绍.md`。 |
 | `packages/dsh-app-packager/index.js` | 宿主插件：注册四个工具（手写 JSON Schema），把引擎输出渲染成文本；不导入任何 `@deepseek-ai/*` 运行时包。 |
-| `packages/dsh-app-packager/web.js` | 面板的宿主侧：`engineArgsFor`（工具参数 → 引擎 argv 的唯一出处）、内存里的小任务执行器（check/build、输出上限、SIGTERM 停止）、`mountWebPanel`（在 `webServer` 上注册 6 条 exact 路由并返回清理函数；没有 Web 服务时返回 `null`）。 |
+| `packages/dsh-app-packager/web.js` | 面板的宿主侧：`engineArgsFor`（工具参数 → 引擎 argv 的唯一出处）、内存里的小任务执行器（check/build、输出上限、SIGTERM 停止）、`mountWebPanel`（在 `webServer` 上注册 8 条 exact 路由并返回清理函数，多出的两条是宿主侧目录对话框与项目登记；没有 Web 服务时返回 `null`）。 |
 | `packages/dsh-app-packager/client.js` | 面板的浏览器侧：手写的 `__ModuleLoader__` bundle（零构建、零 npm 依赖 —— `require('react')` 来自宿主 seed 表），往 `sidebar.panellist` 加一行、往 keyed 的 `main` 槽加一页。 |
 
 ## Web 面板
