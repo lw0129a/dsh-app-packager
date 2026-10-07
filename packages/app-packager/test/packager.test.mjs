@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { listProjects, parseEnvText } from '../src/projects.mjs';
 import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
 import { runDoctor } from '../src/doctor.mjs';
@@ -94,8 +94,9 @@ test('resolveHome 尊重显式目录与 APP_PACKAGER_HOME', () => {
   const previous = process.env.APP_PACKAGER_HOME;
   process.env.APP_PACKAGER_HOME = '/tmp/explicit-home';
   try {
-    assert.equal(resolveHome(), '/tmp/explicit-home');
-    assert.equal(resolveHome('/tmp/other'), '/tmp/other');
+    // resolveHome 会规范化成绝对路径（Windows 上 /tmp/... 变成 D:\tmp\...），所以按平台期望比较
+    assert.equal(resolveHome(), resolve('/tmp/explicit-home'));
+    assert.equal(resolveHome('/tmp/other'), resolve('/tmp/other'));
   } finally {
     if (previous === undefined) delete process.env.APP_PACKAGER_HOME;
     else process.env.APP_PACKAGER_HOME = previous;

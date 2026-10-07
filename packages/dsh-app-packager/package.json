@@ -78,7 +78,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/plugin.test.mjs"
   },
   "dependencies": {
     "@lw0129a/app-packager": "workspace:^0.1.0"

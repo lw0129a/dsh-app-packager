@@ -55,5 +55,10 @@ jobs:
               exit 1
             fi
           done
-          tar -tvzf "$RUNNER_TEMP"/tarballs/lw0129a-app-packager-*.tgz | grep 'engine/打包工具.command' | grep -q '^-rwxr' \
+          # 不能靠 `tar -tv` 里 grep 中文文件名：GNU tar 在非 tty 下按 escape 风格打印成 \346\211\223...
+          # 解包后直接测执行位，跟 tar 的列目录转义规则无关。
+          tmp="$RUNNER_TEMP/tarball-check"; rm -rf "$tmp"; mkdir -p "$tmp"
+          tar -xzf "$RUNNER_TEMP"/tarballs/lw0129a-app-packager-*.tgz -C "$tmp"
+          [ -x "$tmp/package/engine/打包工具.command" ] \
             || { echo "::error::engine/打包工具.command 丢了可执行位"; exit 1; }
+          echo "tarball 校验通过"
