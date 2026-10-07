@@ -28,6 +28,7 @@ window.__ModuleLoader__.load({
     const PANEL_ORDER = 60;
     const ROUTE = 'api/app-packager';
     const PLATFORMS = ['all', 'ios', 'android', 'harmony'];
+    const NOTICE_LINES = 20;
 
     const zh = {
       'entry.label': '应用打包',
@@ -75,6 +76,9 @@ window.__ModuleLoader__.load({
       'job.kind.build': '打包',
       'job.dropped': '（日志过长，已省略前 {n} 字符）',
       'job.waiting': '等待输出…',
+      'job.problems': '发现 {errors} 项错误、{warnings} 项警告：',
+      'job.warnOnly': '发现 {warnings} 项警告：',
+      'job.more': '…另有 {n} 行，完整内容见下方日志',
       error: '出错了',
       loading: '加载中…',
       'platform.all': '全部',
@@ -125,6 +129,9 @@ window.__ModuleLoader__.load({
       'job.kind.build': 'Build',
       'job.dropped': '(log truncated, {n} leading characters dropped)',
       'job.waiting': 'Waiting for output…',
+      'job.problems': '{errors} error(s), {warnings} warning(s):',
+      'job.warnOnly': '{warnings} warning(s):',
+      'job.more': '…and {n} more lines; see the full log below',
       error: 'Something went wrong',
       loading: 'Loading…',
       'platform.all': 'All',
@@ -173,6 +180,8 @@ window.__ModuleLoader__.load({
       badge: { fontSize: '11px', padding: '1px 7px', borderRadius: '999px', border: '1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42))' },
       log: { margin: 0, padding: '8px 10px', maxHeight: '320px', overflow: 'auto', fontSize: '11.5px', lineHeight: 1.45, fontFamily: "var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)", whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.09))', borderRadius: '6px' },
       error: { border: '1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5))', color: 'var(--dsw-alias-state-error, #ff6b6b)', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', whiteSpace: 'pre-wrap' },
+      warn: { border: '1px solid var(--dsw-alias-state-warning, rgba(210,153,34,.5))', color: 'var(--dsw-alias-state-warning, #d29922)', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', whiteSpace: 'pre-wrap' },
+      problemTitle: { fontWeight: 600, marginBottom: '2px' },
     };
 
     /** Same-origin call into the host half; throws the host's error message. */
@@ -340,6 +349,41 @@ window.__ModuleLoader__.load({
         return `${t('job.failed')}${value.code === null ? '' : ` · ${tf('job.exit', { code: value.code })}`}`;
       };
 
+      // The engine reports problems as `[FAIL] …` / `[WARN] …` lines buried in a
+      // long log; the host half already extracted them, so show them up front
+      // instead of making the user scroll the raw output. A host half older
+      // than this panel sends no `summary`, so fall back to reading the log
+      // here — that way a page refresh is enough, no host restart needed.
+      const summarizeLog = (text) => {
+        const failures = [];
+        const warnings = [];
+        for (const line of String(text || '').split('\n')) {
+          const match = /^\s*\[(FAIL|WARN)\]\s*(.+?)\s*$/.exec(line);
+          if (match) (match[1] === 'FAIL' ? failures : warnings).push(match[2]);
+        }
+        return { errorCount: failures.length, warningCount: warnings.length, failures, warnings };
+      };
+
+      const jobNotice = (value) => {
+        const summary = value && (value.summary || summarizeLog(value.output));
+        if (!summary || (!summary.errorCount && !summary.warningCount)) return null;
+        const block = (box, title, lines) => h(
+          'div',
+          { style: box },
+          h('div', { style: styles.problemTitle }, title),
+          lines.slice(0, NOTICE_LINES).map((line, index) => h('div', { key: index }, `• ${line}`)),
+          lines.length > NOTICE_LINES ? h('div', { style: styles.muted }, tf('job.more', { n: lines.length - NOTICE_LINES })) : null,
+        );
+        return h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+          summary.errorCount
+            ? block(styles.error, tf('job.problems', { errors: summary.errorCount, warnings: summary.warningCount }), summary.failures || [])
+            : null,
+          summary.warningCount ? block(styles.warn, tf('job.warnOnly', { warnings: summary.warningCount }), summary.warnings || []) : null,
+        );
+      };
+
       const header = h(
         'div',
         { style: styles.head },
@@ -478,6 +522,7 @@ window.__ModuleLoader__.load({
           jobRunning ? button(t('job.stop'), stopJob, { disabled: Boolean(busy) }) : null,
         ),
         job && job.error && job.error !== '已被取消' ? h('div', { style: styles.error }, job.error) : null,
+        jobNotice(job),
         job && job.dropped ? h('div', { style: styles.muted }, tf('job.dropped', { n: job.dropped })) : null,
         job
           ? h('pre', { ref: logRef, style: styles.log }, job.output || t('job.waiting'))

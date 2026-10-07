@@ -104,6 +104,39 @@ function append(job, chunk) {
   }
 }
 
+const FAIL_LINE = /^\s*\[FAIL\]\s*(.+?)\s*$/;
+const WARN_LINE = /^\s*\[WARN\]\s*(.+?)\s*$/;
+const RESULT_LINE = /结果:\s*errors=(\d+)\s+warnings=(\d+)/g;
+
+/**
+ * Turn engine output into the explicit error summary the panel shows above the
+ * raw log: the `[FAIL]` / `[WARN]` lines themselves plus their totals. The
+ * engine prints one `结果: errors=N warnings=M` per checked project, so those
+ * counts are summed; without them the line counts stand in for a run still in
+ * flight.
+ *
+ * @param {string} [text]
+ * @returns {{errorCount: number, warningCount: number, failures: string[], warnings: string[]}}
+ */
+export function summarizeOutput(text = '') {
+  const failures = [];
+  const warnings = [];
+  for (const line of String(text).split('\n')) {
+    const failure = FAIL_LINE.exec(line);
+    const warning = WARN_LINE.exec(line);
+    if (failure) failures.push(failure[1]);
+    if (warning) warnings.push(warning[1]);
+  }
+  let errorCount = failures.length;
+  let warningCount = warnings.length;
+  const counted = [...String(text).matchAll(RESULT_LINE)];
+  if (counted.length > 0) {
+    errorCount = counted.reduce((total, match) => total + Number(match[1]), 0);
+    warningCount = counted.reduce((total, match) => total + Number(match[2]), 0);
+  }
+  return { errorCount, warningCount, failures, warnings };
+}
+
 function jobView(job) {
   return {
     id: job.id,
@@ -120,6 +153,7 @@ function jobView(job) {
     finishedAt: job.finishedAt,
     dropped: job.dropped,
     output: job.output,
+    summary: summarizeOutput(job.output),
   };
 }
 

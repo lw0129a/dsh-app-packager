@@ -14,7 +14,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apply, inject, name } from '../index.js';
-import { createPanel, engineArgsFor, mountWebPanel } from '../web.js';
+import { createPanel, engineArgsFor, mountWebPanel, summarizeOutput } from '../web.js';
 
 /**
  * Mirror cordis service access: reading `ctx.<service>` without declaring it in
@@ -87,14 +87,14 @@ function fakeRes() {
 }
 
 /** A spawn stub: records the argv, streams one line, resolves once settled. */
-function fakeSpawn(record, { code = 0, hang = false } = {}) {
+function fakeSpawn(record, { code = 0, hang = false, stdout = 'done\n' } = {}) {
   return (home, args, options) =>
     new Promise((resolve) => {
       record.push({ home, args });
       options.onSpawn?.({ kill: (signal) => record.push({ killed: signal }) });
       options.onLine?.('engine line', 'stdout');
       if (hang) return;
-      setImmediate(() => resolve({ code, signal: null, stdout: 'done\n', stderr: '' }));
+      setImmediate(() => resolve({ code, signal: null, stdout, stderr: '' }));
     });
 }
 
@@ -396,6 +396,59 @@ test('面板任务：check 传 check 子命令、日志可轮询、运行中可�
   rmSync(home, { recursive: true, force: true });
 });
 
+test('summarizeOutput：把 [FAIL]/[WARN] 提出来，并汇总 结果: 行', () => {
+  const engineCheck = [
+    '========== CHECK: demo (演示应用) ==========',
+    '[OK]   源码目录: /tmp/demo',
+    '[FAIL] Profile 不存在: /home/signing/current/demo.mobileprovision',
+    '[FAIL] p12 不存在: /home/signing/current/cert.p12',
+    '[OK]   Keychain 已保存 p12 密码: demo-p12',
+    '结果: errors=2 warnings=0',
+    '========== ANDROID CHECK: demo ==========',
+    '[WARN] 未配置 release keystore，将沿用项目内签名配置',
+    '结果: errors=0 warnings=1',
+  ].join('\n');
+  const summary = summarizeOutput(engineCheck);
+  assert.equal(summary.errorCount, 2, '每个项目的 结果: 行求和');
+  assert.equal(summary.warningCount, 1);
+  assert.deepEqual(summary.failures, [
+    'Profile 不存在: /home/signing/current/demo.mobileprovision',
+    'p12 不存在: /home/signing/current/cert.p12',
+  ]);
+  assert.deepEqual(summary.warnings, ['未配置 release keystore，将沿用项目内签名配置']);
+
+  // 还在跑、没有 结果: 行时用行数兜底。
+  assert.deepEqual(summarizeOutput('[FAIL] 打包脚本不存在: /tmp/demo/build.sh\n'), {
+    errorCount: 1,
+    warningCount: 0,
+    failures: ['打包脚本不存在: /tmp/demo/build.sh'],
+    warnings: [],
+  });
+  assert.deepEqual(summarizeOutput(''), { errorCount: 0, warningCount: 0, failures: [], warnings: [] });
+});
+
+test('面板任务：引擎报错在任务对象上带出结构化摘要', async () => {
+  const home = fixtureHome();
+  const record = [];
+  const panel = createPanel({
+    config: { home },
+    spawn: fakeSpawn(record, {
+      code: 1,
+      stdout: '[FAIL] Profile 不存在: /tmp/demo.mobileprovision\n结果: errors=1 warnings=0\n',
+    }),
+  });
+  const started = panel.startJob({ kind: 'check', platform: 'ios', project: 'demo' });
+  await settle();
+  await settle();
+
+  const job = panel.jobLog(started.id);
+  assert.equal(job.code, 1);
+  assert.equal(job.ok, false, '有 [FAIL] 时任务不算成功');
+  assert.equal(job.summary.errorCount, 1);
+  assert.deepEqual(job.summary.failures, ['Profile 不存在: /tmp/demo.mobileprovision']);
+  rmSync(home, { recursive: true, force: true });
+});
+
 test('mountWebPanel 在没有 webServer 时返回 null，且不直接读 ctx.webServer', () => {
   const { ctx } = harness();
   assert.equal(mountWebPanel(ctx, {}), null);
@@ -447,6 +500,10 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.equal(slots[1].options.key, 'app-packager');
   assert.equal(dictionaries[0].namespace, 'app-packager');
   assert.deepEqual(Object.keys(dictionaries[0].dict.zh).sort(), Object.keys(dictionaries[0].dict.en).sort());
+
+  // The notice must not depend on the host half sending `summary`: the panel
+  // falls back to reading the raw log, so a page refresh alone is enough.
+  assert.match(source, /value\.summary \|\| summarizeLog\(value\.output\)/);
 
   // Render with the real dictionaries: a typo in the panel path throws here.
   const zh = dictionaries[0].dict.zh;

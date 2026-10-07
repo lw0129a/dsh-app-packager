@@ -39,6 +39,9 @@ centre column:
   HarmonyOS debug HAP, keep the intermediate work directory.
 - **Job** — the running check/build with its live engine log, its verdict
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
+  Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above
+  the log together with the totals, so a missing profile, p12 or SDK is readable
+  without scrolling the raw output.
 
 The panel only calls same-origin routes registered by this plugin
 (`/api/app-packager/state|init|doctor|pick|project|job|job/log|job/kill`) — no

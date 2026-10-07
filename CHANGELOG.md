@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-10-08
+
+### Added
+
+- **The panel now shows engine errors instead of hiding them in the log.** A check or build whose engine output contains `[FAIL] …` / `[WARN] …` lines gets an explicit box above the raw log, listing those lines and the total counts (the engine prints one `结果: errors=N warnings=M` per checked project, so the counts are summed; a run still in flight falls back to the line counts). So a missing profile, a missing p12, an incomplete iOS SDK or a missing HarmonyOS runtime is readable without scrolling, in both the failed and the partially-warned case. `web.js` exports `summarizeOutput()` and every job record carries `summary`, so the same structure is available to any other surface.
+
 ## [0.2.2] - 2026-10-08
 
 ### Added
@@ -53,7 +59,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.2.2...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.2.3...main
+[0.2.3]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.3
 [0.2.2]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.2
 [0.2.1]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.1
 [0.2.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.2.0
