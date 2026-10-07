@@ -166,7 +166,11 @@ sdk_status_text() {
     printf '  目录: %s\n' "$dir"
     printf '  官方页面: %s\n' "$page"
     [ -n "$direct" ] && printf '  直接下载: %s\n' "$direct"
-    printf '  文件名/包名: %s\n' "$package"
+    case "$kind" in
+      # HarmonyOS 的 runtime 是 DevEco 的 ohpm 包，npm 上查不到（`npm view` 会 404），标签要说清。
+      harmony) printf '  ohpm 包名: %s（DevEco Studio 的 ohpm 仓库，不在 npm 上）\n' "$package" ;;
+      *) printf '  文件名/包名: %s\n' "$package" ;;
+    esac
     printf '  一键配置: %s sdk install %s --yes\n' "$(basename "$PIPELINE_ROOT/打包工具.command")" "$kind"
   done
   printf '\n处理 sdk/ 目录里已下载的压缩包: %s sdk process\n' "$(basename "$PIPELINE_ROOT/打包工具.command")"

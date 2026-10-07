@@ -156,6 +156,12 @@ engine_sdk 'find_hbuilderx() { return 0; }; read_hbuilderx_version() { HX_VERSIO
 check "sdk_status_text 报出本机 HBuilderX 版本" "版本: 5.26.2026091802" "$OUT"
 engine_sdk 'find_hbuilderx() { return 1; }; sdk_status_text | grep "^版本:"'
 check "sdk_status_text 未检测到 HBuilderX 时仍写未知" "版本: 未知" "$OUT"
+# HarmonyOS 的「包名」是 DevEco 的 ohpm 包，npm 上查不到；标签不能跟 iOS/Android 的压缩包名混在一起。
+engine_sdk 'sdk_series() { printf "5.26"; }; find_hbuilderx() { return 0; }; \
+  read_hbuilderx_version() { HX_VERSION=5.26.2026091802; HX_SERIES=5.26; }; \
+  sdk_status_text | grep "ohpm 包名:"'
+check "sdk_status_text 把 HarmonyOS 的包名标成 ohpm 包" \
+  "  ohpm 包名: @dcloudio/uni-app-x-runtime@5.26.*（DevEco Studio 的 ohpm 仓库，不在 npm 上）" "$OUT"
 
 # settings.local.env 里的 SDK 路径写成跟随引擎目录的形式：引擎目录整体挪走后不失效。
 engine_sdk 'LOCAL_IOS_SDK_DIR="$PIPELINE_ROOT/sdk/iOS/5.26"; LOCAL_ANDROID_SDK_DIR=""; \

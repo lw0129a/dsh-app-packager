@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+
+- **The HarmonyOS line of `sdk urls` / `sdk text` is now labelled as an ohpm package** (engine script version `2026.10.10.5`). All three platforms shared the `文件名/包名:` label, so HarmonyOS printed `@dcloudio/uni-app-x-runtime@5.26.*`, which reads like an npm package; it is a DevEco **ohpm** package (`npm view` answers 404) that `ohpm install` unpacks into `sdk/HarmonyOS/<series>/oh_modules`. That line now reads `ohpm 包名: …（DevEco Studio 的 ohpm 仓库，不在 npm 上）`, matching the wording the interactive init flow already used.
+
 ### Fixed
 
 - **The human-readable `sdk urls` / `sdk text` output no longer reports the HBuilderX version as unknown** (engine script version `2026.10.10.4`). The text path never resolved the local HBuilderX app, so it printed `版本: 未知` even though the JSON path (`sdk status`, which the panel uses) read the real version from the same installation. Both paths now resolve it; a machine without HBuilderX still prints `未知`.
