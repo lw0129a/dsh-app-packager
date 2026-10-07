@@ -677,6 +677,18 @@ window.__ModuleLoader__.load({
 
       // SDK setup: the engine recommends the download entry per platform from the
       // local HBuilderX version, and the same `sdk install` call performs it.
+      // 这些派生值必须在使用它们的卡片之前声明：卡片是立刻求值的 const，
+      // 放到后面就是 TDZ（`Cannot access 'hb' before initialization`），
+      // state 一到就整块面板崩成白屏。
+      const sdkInfo = (state && state.sdk) || null;
+      const sdkList = (sdkInfo && sdkInfo.platforms) || [];
+      const hb = (sdkInfo && sdkInfo.hbuilderx) || null;
+      const sdkMark = (item) => (item.state === 'ready' ? 'ok' : item.state === 'mismatch' ? 'warn' : 'fail');
+      const sdkStateText = (item) => (item.state === 'ready'
+        ? t('sdk.ready')
+        : item.state === 'mismatch'
+          ? tf('sdk.mismatch', { series: item.series })
+          : t('sdk.missing'));
       const sdkCard = !state ? null : h(
         'div',
         { style: styles.group },
@@ -721,17 +733,6 @@ window.__ModuleLoader__.load({
 
       const projects = (state && state.projects) || [];
       const profiles = (state && state.profiles) || [];
-      // SDK setup is driven by the engine's own `sdk status`; the panel only picks
-      // labels. `sdkError` is a failed status read, not a missing SDK.
-      const sdkInfo = (state && state.sdk) || null;
-      const sdkList = (sdkInfo && sdkInfo.platforms) || [];
-      const hb = (sdkInfo && sdkInfo.hbuilderx) || null;
-      const sdkMark = (item) => (item.state === 'ready' ? 'ok' : item.state === 'mismatch' ? 'warn' : 'fail');
-      const sdkStateText = (item) => (item.state === 'ready'
-        ? t('sdk.ready')
-        : item.state === 'mismatch'
-          ? tf('sdk.mismatch', { series: item.series })
-          : t('sdk.missing'));
       const profilesNote = (state && state.profilesError) || (profiles.length ? t('options.profile.auto') : t('options.profiles.none'));
       // The engine owns this list; we only filter presets with it.
       const overrideKeys = (state && state.overrideKeys) || null;

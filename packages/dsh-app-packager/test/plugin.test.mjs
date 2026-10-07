@@ -801,6 +801,59 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   const icon = slots[0].component();
   assert.equal(icon.type, 'svg');
 
+  // state 到手后的那次重渲染才是真实路径：卡片是立刻求值的 const，派生值若声明在卡片
+  // 后面就是 TDZ，面板会先闪一下（state=null 那次正常）再白屏 —— 线上症状
+  // `Cannot access 'hb' before initialization`。所以必须拿一份有内容的 state 再渲染一次。
+  const realState = {
+    engineVersion: '0.6.2', home: '/tmp/home', homeVersion: '0.6.2', materialized: true, engineDrift: false,
+    canUpgrade: false, sdkError: '', profilesError: '', projectsError: '', uploadersError: '',
+    options: { fullPermission: true }, presets: { p: {} }, overrideKeys: ['APP_NAME'], jobs: [],
+    plugin: { root: '/tmp/plugin' }, shell: { available: true, kind: 'bash', shell: { command: 'bash' } },
+    sdk: {
+      sdkRoot: '/tmp/home/sdk', archives: [], incompleteDownloads: 0,
+      hbuilderx: { found: true, version: '5.26.2026091802', series: '5.26' },
+      platforms: [
+        { id: 'ios', label: 'iOS', series: '5.26', dir: '/tmp/home/sdk/iOS/5.26', state: 'ready', ready: true, page: 'https://example.com/ios', direct: 'https://example.com/iOS.zip', package: 'UniAppX-iOS@5.26.zip' },
+        { id: 'harmony', label: 'HarmonyOS', series: '5.26', dir: '/tmp/home/sdk/HarmonyOS/5.26', state: 'missing', ready: false, page: 'https://example.com/harmony', direct: '', package: '@dcloudio/uni-app-x-runtime@5.26.*' },
+      ],
+    },
+    projects: [{ id: 'p', appName: 'App', sourceDir: '/tmp/p', sourceDirExists: true, bundleId: 'a.b', enabledPlatforms: ['ios', 'android', 'harmony'], error: null }],
+    profiles: [{ file: '/tmp/a.mobileprovision', name: 'adhoc' }],
+    uploaders: [{ id: 'pgyer', label: '蒲公英', enabled: true, available: true, platforms: ['ios'] }],
+  };
+  const renderWithState = (value) => {
+    let call = 0;
+    const stateful = {
+      createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+      useState: (initial) => {
+        const first = typeof initial === 'function' ? initial() : initial;
+        return [call++ === 0 ? value : first, () => {}];
+      },
+      useEffect: () => {},
+      useCallback: (fn) => fn,
+      useRef: () => ({ current: null }),
+    };
+    const made = definition.factory((id) => {
+      if (id === 'react') return stateful;
+      throw new Error(`意外的 require：${id}`);
+    });
+    const panelSlots = [];
+    const panelDicts = [];
+    made.apply({
+      // 词典是在 effect 里注册的，必须真的跑一遍（和上面那套 harness 一样）。
+      effect: (fn) => { fn(); },
+      locale: { register: (namespace, dict) => { panelDicts.push(dict); return () => {}; }, bind: () => (key) => key },
+      slots: { inject: (slot, register) => { register(); return () => {}; }, register: (options, component) => { panelSlots.push({ options, component }); return () => {}; } },
+    });
+    const dict = panelDicts[0].zh;
+    return panelSlots[1].component({ t: (key) => (key in dict ? dict[key] : key) });
+  };
+  const stateTexts = flatten(renderWithState(realState));
+  assert.ok(stateTexts.some((text) => text.includes('5.26.2026091802')), '有 state 时 HBuilderX 版本行要渲染出来');
+  assert.ok(stateTexts.some((text) => text.includes('UniAppX-iOS@5.26.zip')), '有 state 时 SDK 行要给出文件名/包名');
+  const emptyTexts = flatten(renderWithState({}));
+  assert.ok(emptyTexts.length > 0, '字段缺失的 state 也不能崩，至少要渲染出壳');
+
   // 卸载要注销两个槽位，否则热重载会留下重复入口。
   effects.at(-1)();
   assert.deepEqual(disposed, ['sidebar.panellist', 'main']);
