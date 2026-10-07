@@ -678,10 +678,11 @@ test('面板 state 带出上传平台清单与其可用性', async () => {
   const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
   const state = await panel.state();
   assert.deepEqual(state.uploaders, [
-    { id: 'pgyer', name: '蒲公英', enabled: true, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'script', apiKeyVar: '', credentialConfigured: false },
-    { id: 'store', name: 'store', enabled: false, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'disabled', apiKeyVar: '', credentialConfigured: false },
+    { id: 'pgyer', name: '蒲公英', enabled: true, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'script', apiKeyVar: '', credentialConfigured: false, userKeyVar: '', userKeyConfigured: false },
+    { id: 'store', name: 'store', enabled: false, available: false, platforms: ['ios', 'android', 'harmony'], reason: 'disabled', apiKeyVar: '', credentialConfigured: false, userKeyVar: '', userKeyConfigured: false },
   ]);
   assert.equal(state.uploadersError, '');
+  assert.deepEqual(state.artifacts, [], '没打过包时上传板块没有产物可列');
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -698,6 +699,7 @@ test('面板把上传密钥写进 config/upload.local.env，只回报「配没�
       'UPLOAD_PLATFORM_pgyer_SCRIPT=lib/uploaders/pgyer.sh',
       'UPLOAD_PLATFORM_pgyer_FUNCTION=upload_pgyer_artifact',
       'UPLOAD_PLATFORM_pgyer_API_KEY_VAR=PGYER_API_KEY',
+      'UPLOAD_PLATFORM_pgyer_USER_KEY_VAR=PGYER_USER_KEY',
       'UPLOAD_PLATFORM_store_NAME="商店"',
       'UPLOAD_PLATFORM_store_ENABLED=false',
     ].join('\n'),
@@ -706,6 +708,7 @@ test('面板把上传密钥写进 config/upload.local.env，只回报「配没�
 
   const before = await panel.state();
   assert.equal(before.uploaders.find((item) => item.id === 'pgyer').credentialConfigured, false);
+  assert.equal(before.uploaders.find((item) => item.id === 'pgyer').userKeyConfigured, false);
   assert.equal(before.uploaders.find((item) => item.id === 'store').apiKeyVar, '', '没声明 API_KEY_VAR 的平台不要密钥行');
   assert.equal(before.pgyerCli.installed, false, 'fixture 里没装官方 CLI');
   assert.equal(before.pgyerCli.dir, join(home, 'tools', 'pgyer-cli'), 'CLI 装在引擎目录内部');
@@ -720,12 +723,83 @@ test('面板把上传密钥写进 config/upload.local.env，只回报「配没�
   assert.ok(readFileSync(file, 'utf8').includes("PGYER_API_KEY='secret-key'"));
   assert.equal(statSync(file).mode & 0o777, 0o600, '放密钥的文件要是 600');
 
+  // User Key 是第二把可选的密钥：单独保存、单独撤销，互不影响。
+  const savedUser = panel.saveUploadCredential({ provider: 'pgyer', userKey: 'user-key' });
+  assert.equal(savedUser.variable, 'PGYER_USER_KEY');
+  assert.deepEqual(savedUser.variables, ['PGYER_USER_KEY']);
+  assert.equal(JSON.stringify(savedUser).includes('user-key'), false, 'User Key 也不能回给浏览器');
+  assert.equal(savedUser.uploaders.find((item) => item.id === 'pgyer').userKeyConfigured, true);
+  assert.equal(savedUser.uploaders.find((item) => item.id === 'pgyer').credentialConfigured, true, '存 User Key 不能清掉 API Key');
+  assert.ok(readFileSync(file, 'utf8').includes("PGYER_USER_KEY='user-key'"));
+
+  const both = panel.saveUploadCredential({ provider: 'pgyer', apiKey: 'a', userKey: 'b' });
+  assert.deepEqual(both.variables, ['PGYER_API_KEY', 'PGYER_USER_KEY']);
+
   // 存空值 = 撤销
   assert.equal(panel.saveUploadCredential({ provider: 'pgyer', apiKey: '' }).configured, false);
   assert.equal(readFileSync(file, 'utf8').includes('PGYER_API_KEY'), false);
+  assert.ok(readFileSync(file, 'utf8').includes('PGYER_USER_KEY'), '撤销 API Key 不该顺手删掉 User Key');
   // 不需要密钥的平台、以及没登记过的平台都要拒绝
   assert.throws(() => panel.saveUploadCredential({ provider: 'store', apiKey: 'x' }), /不需要配置密钥/);
+  assert.throws(() => panel.saveUploadCredential({ provider: 'store', userKey: 'x' }), /不需要配置 User Key/);
+  assert.throws(() => panel.saveUploadCredential({ provider: 'pgyer' }), /没有要保存的密钥/);
   assert.throws(() => panel.saveUploadCredential({ provider: 'nope', apiKey: 'x' }), /未知上传平台/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('上传是独立动作：只送已归档的安装包，不重新打包', async () => {
+  const home = fixtureHome();
+  mkdirSync(join(home, 'config'), { recursive: true });
+  mkdirSync(join(home, 'lib', 'uploaders'), { recursive: true });
+  writeFileSync(join(home, 'lib', 'uploaders', 'pgyer.sh'), 'upload_pgyer_artifact() {\n  :\n}\n');
+  writeFileSync(
+    join(home, 'config', 'upload.env'),
+    [
+      'UPLOAD_PLATFORM_IDS="pgyer"',
+      'UPLOAD_PLATFORM_pgyer_NAME="蒲公英"',
+      'UPLOAD_PLATFORM_pgyer_SCRIPT=lib/uploaders/pgyer.sh',
+      'UPLOAD_PLATFORM_pgyer_FUNCTION=upload_pgyer_artifact',
+      'UPLOAD_PLATFORM_pgyer_PLATFORMS="ios android"',
+    ].join('\n'),
+  );
+  mkdirSync(join(home, 'packages', 'iOS'), { recursive: true });
+  writeFileSync(join(home, 'packages', 'iOS', 'demo-1.0.0.json'), '{}');
+  writeFileSync(
+    join(home, 'packages', 'iOS', 'demo-latest.json'),
+    JSON.stringify({
+      project_id: 'demo',
+      display_name: '演示应用',
+      platform: 'ios',
+      version: '1.0.0',
+      built_at: '2026-01-02T03:04:05Z',
+      ipa_path: '/tmp/demo.ipa',
+    }),
+  );
+
+  // upload 子命令只说「哪个平台、哪个项目、送到哪」，打包参数一个都不带。
+  assert.deepEqual(
+    engineArgsFor({ action: 'upload', platform: 'ios', project: 'demo', upload: 'pgyer' }),
+    ['upload', 'ios', 'demo', '--to', 'pgyer'],
+  );
+  assert.deepEqual(engineArgsFor({ action: 'upload', platform: 'all', upload: 'pgyer' }), ['upload', 'all', '--to', 'pgyer']);
+  assert.deepEqual(engineArgsFor({ platform: 'ios', project: 'demo', noUpload: true }), ['ios', 'demo', '--no-upload']);
+
+  const record = [];
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn(record) });
+  const state = await panel.state();
+  assert.deepEqual(
+    state.artifacts.map((item) => [item.platform, item.projectId, item.artifactExists, item.artifactPath]),
+    [['ios', 'demo', false, '/tmp/demo.ipa']],
+    '存档记录里没有的安装包文件要如实标成不存在',
+  );
+
+  const job = await panel.startJob({ kind: 'upload', platforms: ['ios'], projects: ['demo'], upload: 'pgyer' });
+  assert.equal(job.kind, 'upload');
+  assert.deepEqual(
+    record.map((entry) => entry.args).filter((args) => args[0] === 'upload'),
+    [['upload', 'ios', 'demo', '--to', 'pgyer']],
+    'upload 不做打包前检查、也不重新打包',
+  );
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -873,10 +947,21 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   // The notice must not depend on the host half sending `summary`: the panel
   // falls back to reading the raw log, so a page refresh alone is enough.
   assert.match(source, /value\.summary \|\| summarizeLog\(value\.output\)/);
-  // 打包范围与上传勾选都必须走宿主的 platforms/projects/upload 字段。
+  // 打包范围走宿主的 platforms/projects 字段；打包选项绝不顺带上传。
   assert.match(source, /platforms: spec\.platforms \|\| \[spec\.platform\]/);
   assert.match(source, /projects: spec\.projects \|\| \(spec\.project \? \[spec\.project\] : \[\]\)/);
-  assert.match(source, /uploaders\.filter\(\(item\) => uploads\[item\.id\]\)/);
+  assert.match(source, /body\.noUpload = true/);
+  // 上传是独立板块：产物清单 + 每行一个上传按钮，分发平台与两把密钥都在这里。
+  assert.match(source, /body\.upload = spec\.targets \|\| uploadTargets\(\)/);
+  assert.match(source, /artifacts\.map\(\(item\) => h\(/);
+  assert.match(source, /button\(t\('upload\.action'\), \(\) => startUpload\(item\)/);
+  assert.match(source, /uploaders\.map\(\(item\) => checkbox\(/);
+  assert.match(source, /uploaders\.filter\(\(item\) => item\.apiKeyVar\)\.map\(\(item\) => credentialRow\(item, 'apiKey'\)\)/);
+  assert.match(source, /uploaders\.filter\(\(item\) => item\.userKeyVar\)\.map\(\(item\) => credentialRow\(item, 'userKey'\)\)/);
+  for (const key of ['upload', 'upload.hint', 'upload.empty', 'upload.target', 'upload.target.none', 'upload.action', 'upload.missing', 'upload.builtAt', 'job.kind.upload']) {
+    assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
+    assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
+  }
   // 面板里升级插件换掉的就是宿主里的那个条目：升级成功后客户端半边要等一次页面加载才回来，
   // 所以必须明确提示刷新（并给按钮），否则用户会以为入口又丢了。
   assert.match(source, /job\.kind === 'upgrade' && !job\.running && job\.ok/);
@@ -909,6 +994,10 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     'options.cred.missing',
     'options.cred.cli.installed',
     'options.cred.cli.missing',
+    'options.cred.userKey.label',
+    'options.cred.userKey.placeholder.saved',
+    'options.cred.userKey.placeholder.empty',
+    'options.cred.userKey.hint',
   ]) {
     assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
     assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
@@ -941,7 +1030,7 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   const texts = flatten(tree);
   assert.ok(texts.includes(zh.scope), '打包范围区块渲染出来了');
   assert.ok(texts.includes(zh['scope.hint']));
-  assert.ok(texts.includes(zh['options.uploaders.none']), 'state 还没到时应提示没有可用上传平台，而不是崩掉');
+  assert.ok(texts.includes(zh['upload.target.none']), 'state 还没到时应提示没有可用的分发平台，而不是崩掉');
   const icon = slots[0].component();
   assert.equal(icon.type, 'svg');
 
@@ -963,7 +1052,8 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     },
     projects: [{ id: 'p', appName: 'App', sourceDir: '/tmp/p', sourceDirExists: true, bundleId: 'a.b', enabledPlatforms: ['ios', 'android', 'harmony'], error: null }],
     profiles: [{ file: '/tmp/a.mobileprovision', name: 'adhoc', kind: 'adhoc', bundleId: 'a.b' }],
-    uploaders: [{ id: 'pgyer', name: '蒲公英', enabled: true, available: true, platforms: ['ios'], apiKeyVar: 'PGYER_API_KEY', credentialConfigured: false }],
+    uploaders: [{ id: 'pgyer', name: '蒲公英', enabled: true, available: true, platforms: ['ios'], apiKeyVar: 'PGYER_API_KEY', credentialConfigured: false, userKeyVar: 'PGYER_USER_KEY', userKeyConfigured: false }],
+    artifacts: [{ platform: 'ios', projectId: 'p', displayName: '演示应用', version: '1.0.0', builtAt: '2026-01-02T03:04:05Z', artifactPath: '/tmp/home/packages/iOS/p-latest.ipa', artifactExists: true, artifactSize: 2048, infoFile: '/tmp/home/packages/iOS/p-latest.json' }],
     pgyerCli: { package: '@pgyer/cli', version: '', dir: '/tmp/home/tools/pgyer-cli', bin: '/tmp/home/tools/pgyer-cli/node_modules/.bin/pgyer', installed: false },
   };
   const renderWithState = (value) => {
@@ -999,6 +1089,12 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   // 宿主半给的形状是 `{available, shell: {kind, command}}`；以前读外层 kind，
   // 界面上就是「undefined · /bin/bash」。
   assert.ok(stateTexts.some((text) => text.includes('native · /bin/bash')), 'Shell 桥接要读嵌套的 shell.kind');
+  // 上传板块：产物来自 state.artifacts，两把密钥各占一行（User Key 是可选的第二把）。
+  assert.ok(stateTexts.some((text) => text.includes('/tmp/home/packages/iOS/p-latest.ipa')), '有产物时上传板块要列出安装包路径');
+  assert.ok(stateTexts.includes(zh['upload.action']), '每个产物一个上传按钮');
+  assert.ok(stateTexts.includes('2 KB'), '产物大小按本机文件算出来');
+  assert.ok(stateTexts.some((text) => text.includes('蒲公英 API Key')), 'API Key 一行');
+  assert.ok(stateTexts.some((text) => text.includes('蒲公英 User Key')), 'User Key 一行');
   assert.ok(!stateTexts.some((text) => text.includes('undefined')), '面板不应该渲染出 undefined');
   const emptyTexts = flatten(renderWithState({}));
   assert.ok(emptyTexts.length > 0, '字段缺失的 state 也不能崩，至少要渲染出壳');
@@ -1102,7 +1198,7 @@ test('client half：每个板块都能折叠，且互不影响', () => {
     options: { fullPermission: true }, presets: {}, overrideKeys: [], jobs: [],
     plugin: { root: '/tmp/plugin' }, shell: { available: true, shell: { kind: 'native', command: '/bin/bash' } },
     sdk: { sdkRoot: '/tmp/home/sdk', archives: [], incompleteDownloads: 0, hbuilderx: { found: true, version: '5.26.1', series: '5.26' }, platforms: [] },
-    projects: [{ id: 'demo', appName: '演示项目', sourceDir: '/tmp/demo-src', sourceDirExists: true, enabledPlatforms: ['ios', 'android', 'harmony'] }], profiles: [], uploaders: [],
+    projects: [{ id: 'demo', appName: '演示项目', sourceDir: '/tmp/demo-src', sourceDirExists: true, enabledPlatforms: ['ios', 'android', 'harmony'] }], profiles: [], uploaders: [], artifacts: [],
   };
 
   const hookValues = [];
@@ -1148,12 +1244,13 @@ test('client half：每个板块都能折叠，且互不影响', () => {
   // 注意别把箭头（`ap-fold-arrow`）也算成开关：按空格切分类名。
   const folds = () => elements(tree).filter((node) => String(node.props.className || '').split(' ').includes('ap-fold'));
   const opened = folds();
-  assert.equal(opened.length, 7, `引擎/环境检查/SDK/项目列表/打包选项/打包范围/任务 都要能折叠，实际 ${opened.length}`);
+  assert.equal(opened.length, 8, `引擎/环境检查/SDK/项目列表/打包选项/打包范围/上传/任务 都要能折叠，实际 ${opened.length}`);
   assert.ok(opened.every((node) => node.props['aria-expanded'] === 'true'), '默认是展开的');
   assert.ok(opened.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
   assert.ok(opened.some((node) => textOf(node).includes(dict['projects'])), '项目列表整体一个开关');
   assert.ok(opened.some((node) => textOf(node).includes(dict['options'])), '打包选项自己一个开关（不再塞在项目列表里）');
   assert.ok(opened.some((node) => textOf(node).includes(dict['scope'])), '打包范围自己一个开关');
+  assert.ok(opened.some((node) => textOf(node).includes(dict['upload'])), '上传自己一个开关（打包与上传分开）');
   // 拿「引擎目录」这行当探针：顶栏也印着同一个 home 路径，用路径断言会误伤。
   const probe = dict['engine.home'];
   assert.ok(probe && textOf(tree).includes(probe), '展开时能看到引擎目录那一行');
@@ -1179,7 +1276,7 @@ test('client half：每个板块都能折叠，且互不影响', () => {
   projectFold.props.onClick();
   assert.ok(!textOf(tree).includes('/tmp/demo-src'), '合上项目列表后整个列表不再渲染');
   assert.ok(textOf(tree).includes(dict['options']), '合上项目列表不影响打包选项');
-  assert.ok(textOf(tree).includes(dict['options.uploaders.none']), '打包选项的内容照常渲染');
+  assert.ok(textOf(tree).includes(dict['upload.target.none']), '上传板块照常渲染');
   assert.ok(textOf(tree).includes(dict['scope.hint']), '打包范围照常渲染');
 });
 

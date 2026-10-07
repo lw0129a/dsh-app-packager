@@ -287,6 +287,65 @@ check "iOS/Android 的蒲公英上传走官方 CLI" "1" \
 check "手写 curl 的旧上传函数已经删掉" "0" \
   "$(grep -c 'pgyer_upload_legacy_artifact' "$REPO_ENGINE/lib/uploaders/pgyer.sh")"
 
+# User Key 是可选的第二把密钥：CLI 通过环境变量拿到，接口调用带上 _u_key。
+cat >"$TMP/tools/pgyer-cli/node_modules/.bin/pgyer" <<'SH'
+#!/bin/sh
+printf 'cli:%s|%s\n' "${PGYER_API_KEY:-}" "${PGYER_USER_KEY:-}"
+SH
+chmod +x "$TMP/tools/pgyer-cli/node_modules/.bin/pgyer"
+OUT="$(PIPELINE_ROOT="$TMP" PGYER_USER_KEY=user-key bash -c '
+  source "'"$REPO_ENGINE"'/lib/common.sh"
+  source "'"$REPO_ENGINE"'/lib/uploaders/pgyer.sh"
+  printf "%s|" "$(pgyer_user_key)"
+  pgyer_cli_run api-key version
+' 2>&1)"
+STATUS=$?
+check "pgyer_cli_run 把 API Key 与 User Key 一起交给 CLI" "user-key|cli:api-key|user-key" "$OUT"
+check "蒲公英的三个接口调用都带上 _u_key（不填则一个都不带）" "3" \
+  "$(grep -c '_u_key=\${user_key}' "$REPO_ENGINE/lib/uploaders/pgyer.sh")"
+
+# 打包与上传是两条流程：upload 只送「上一次打包」归档的安装包，绝不重新打包。
+engine 'parse_args upload ios demo --to pgyer; printf "%s|%s|%s|%s" "$ACTION" "$PLATFORM" "$PROJECT_ID" "$UPLOAD_SELECTED_PLATFORMS"'
+check "parse_args upload ios demo --to pgyer" "upload|ios|demo|pgyer" "$OUT"
+
+engine 'parse_args upload all --all; printf "%s|%s|%s" "$ACTION" "$PLATFORM" "$PROJECT_ID"'
+check "parse_args upload all --all" "upload|all|__ALL__" "$OUT"
+
+engine 'parse_args upload ios demo --to nope'
+check "parse_args --to 未解析到平台时退出码" "1" "$STATUS"
+check_contains "parse_args --to 未解析到平台时提示" "--to 未解析到可用平台" "$OUT"
+
+engine 'printf "%s" "$(upload_enabled_platforms)"'
+check "upload_enabled_platforms 只列已启用的平台" "pgyer" "$OUT"
+
+engine 'PROJECT_ID=demo; printf "%s" "$(upload_latest_info_file ios)"'
+check "产物定位到 packages/iOS/<项目>-latest.json" "$TMP/packages/iOS/demo-latest.json" "$OUT"
+
+# 假 provider：upload 只关心「归档文件在不在、provider 说成功还是失败」。
+mkdir -p "$TMP/packages/iOS"
+cat >"$TMP/packages/iOS/demo-latest.json" <<'JSON'
+{"project_id":"demo","display_name":"演示项目","platform":"ios","version":"1.0.0","ipa_path":"/tmp/demo.ipa"}
+JSON
+cat >"$TMP/lib/uploaders/pgyer.sh" <<'SH'
+upload_pgyer_artifact() { printf 'STUB-UPLOAD %s\n' "$(basename "$1")"; return 0; }
+SH
+
+engine 'PROJECT_ID=demo; UPLOAD_SELECTED_PLATFORMS=pgyer; upload_latest_artifact ios; printf "|rc=%s" "$?"'
+check_contains "upload_latest_artifact 把 latest.json 交给 provider" "STUB-UPLOAD demo-latest.json" "$OUT"
+check_contains "upload_latest_artifact 成功返回 0" "|rc=0" "$OUT"
+
+engine 'PROJECT_ID=nope; upload_latest_artifact ios || printf "|rc=%s" "$?"'
+check_contains "没打过包时只提示不报错" "还没有打包记录" "$OUT"
+check_contains "没打过包时返回失败" "|rc=1" "$OUT"
+
+cat >"$TMP/lib/uploaders/pgyer.sh" <<'SH'
+upload_pgyer_artifact() { return 1; }
+SH
+engine 'PROJECT_ID=demo; UPLOAD_SELECTED_PLATFORMS=pgyer; upload_latest_artifact ios || printf "|rc=%s" "$?"'
+check_contains "独立上传时 provider 失败要如实返回" "|rc=1" "$OUT"
+engine 'PROJECT_ID=demo; UPLOAD_SELECTED_PLATFORMS=pgyer; run_post_build_uploads "$PIPELINE_ROOT/packages/iOS/demo-latest.json"; printf "|rc=%s" "$?"'
+check_contains "打包流程里上传失败不影响打包结果" "|rc=0" "$OUT"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nengine.test.sh 全部通过\n'
 else

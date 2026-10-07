@@ -101,11 +101,14 @@ window.__ModuleLoader__.load({
       options: '打包选项',
       'options.version': '版本号',
       'options.upload': '上传',
-      'options.uploaders.none': '没有可用的上传平台：在 config/upload.env 里把对应平台的 ENABLED 设为 true（本地覆盖写 config/upload.local.env）。',
       'options.uploader.disabled': '未启用',
       'options.uploader.unimplemented': '引擎里还没有实现',
       'options.uploader.platforms': '支持 {platforms}',
       'options.cred.label': '{name} API Key',
+      'options.cred.userKey.label': '{name} User Key',
+      'options.cred.userKey.placeholder.saved': '已配置，填新值可覆盖；清空并保存即撤销',
+      'options.cred.userKey.placeholder.empty': '粘贴 User Key（uKey，可留空）',
+      'options.cred.userKey.hint': '官方 CLI 与 API 2.0 只需要 API Key；User Key 是蒲公英 API 1.0 上传接口的必填项（uKey），存下来备用，填了会一起送给 CLI 和 HAP 接口。',
       'options.cred.placeholder.saved': '已配置，填新值可覆盖',
       'options.cred.placeholder.empty': '粘贴 API Key',
       'options.cred.save': '保存',
@@ -113,6 +116,14 @@ window.__ModuleLoader__.load({
       'options.cred.missing': '未配置 API Key，上传会被跳过',
       'options.cred.cli.installed': '官方 CLI {package}{version} 已装在插件目录里',
       'options.cred.cli.missing': '首次上传时自动把官方 CLI 装进插件目录（需要 Node 18+）',
+      upload: '上传',
+      'upload.hint': '上传只送「上一次打包」归档的安装包，不重新打包；没有产物就先打包一次。',
+      'upload.empty': '还没有打包好的安装包。先在上面的「打包选项 / 打包范围」里打包一次。',
+      'upload.target': '分发平台',
+      'upload.target.none': '没有已启用的上传平台，先去 config/upload.env 打开一个。',
+      'upload.action': '上传',
+      'upload.missing': '安装包已不在',
+      'upload.builtAt': '打包于 {time}',
       'options.harmonyDebug': 'HarmonyOS debug 包',
       'options.keepWork': '保留构建目录',
       'options.harmonyDebug.hint': '生成可侧载的 debug HAP（签名用调试证书），发布包不要勾。',
@@ -154,6 +165,7 @@ window.__ModuleLoader__.load({
       'job.exit': '退出码 {code}',
       'job.kind.check': '环境检查',
       'job.kind.build': '打包',
+      'job.kind.upload': '上传',
       'job.kind.sdk': 'SDK 配置',
       'job.kind.upgrade': '插件升级',
       'job.dropped': '（日志过长，已省略前 {n} 字符）',
@@ -237,11 +249,14 @@ window.__ModuleLoader__.load({
       options: 'Build options',
       'options.version': 'Version',
       'options.upload': 'Upload',
-      'options.uploaders.none': 'No upload target is available: set ENABLED=true for one in config/upload.env (override locally in config/upload.local.env).',
       'options.uploader.disabled': 'disabled',
       'options.uploader.unimplemented': 'not implemented in the engine yet',
       'options.uploader.platforms': 'for {platforms}',
       'options.cred.label': '{name} API key',
+      'options.cred.userKey.label': '{name} User Key',
+      'options.cred.userKey.placeholder.saved': 'Configured — type a new value to replace it, or clear it to remove',
+      'options.cred.userKey.placeholder.empty': 'Paste the User Key (uKey, optional)',
+      'options.cred.userKey.hint': 'The official CLI and API 2.0 only need the API key. The User Key is the uKey the legacy API 1.0 upload endpoint requires — it is stored for later and, when set, also sent to the CLI and the HAP endpoints.',
       'options.cred.placeholder.saved': 'Configured — type a new value to replace it',
       'options.cred.placeholder.empty': 'Paste the API key',
       'options.cred.save': 'Save',
@@ -249,6 +264,14 @@ window.__ModuleLoader__.load({
       'options.cred.missing': 'No API key configured — the upload is skipped',
       'options.cred.cli.installed': 'Official CLI {package}{version} is installed in the plugin folder',
       'options.cred.cli.missing': 'The official CLI is installed into the plugin folder on the first upload (needs Node 18+)',
+      upload: 'Upload',
+      'upload.hint': 'Uploading ships the installer archived by the last build — it never rebuilds. No installer yet? Build one first.',
+      'upload.empty': 'No installer has been built yet. Run a build from Build options / Build scope above.',
+      'upload.target': 'Distribution',
+      'upload.target.none': 'No uploader is enabled — turn one on in config/upload.env.',
+      'upload.action': 'Upload',
+      'upload.missing': 'installer is gone',
+      'upload.builtAt': 'built {time}',
       'options.harmonyDebug': 'HarmonyOS debug HAP',
       'options.keepWork': 'Keep work dir',
       'options.harmonyDebug.hint': 'Builds a debug-signed HAP you can sideload; do not tick it for a release.',
@@ -290,6 +313,7 @@ window.__ModuleLoader__.load({
       'job.exit': 'exit code {code}',
       'job.kind.check': 'Environment check',
       'job.kind.build': 'Build',
+      'job.kind.upload': 'Upload',
       'job.kind.sdk': 'SDK setup',
       'job.kind.upgrade': 'Plugin upgrade',
       'job.blockedByCheck': 'The pre-build environment check failed, so the build did not start. Fix the [FAIL] items above, then press “Build” again.',
@@ -589,9 +613,12 @@ window.__ModuleLoader__.load({
       const runDoctor = () => guard('doctor', async () => setDoctor(await call('doctor', { method: 'POST', body: { platform } })));
 
       // Upload targets are whatever the engine declares in config/upload.env; the
-      // ticked ones go to the engine as one comma separated `--upload <a,b>`.
+      // ticked ones go to the engine as one comma separated `--to <a,b>`. They
+      // belong to the upload card only — a build never uploads on its own.
       const uploaders = (state && state.uploaders) || [];
-      const uploadArg = () => uploaders.filter((item) => uploads[item.id]).map((item) => item.id).join(',');
+      // Installers the engine already archived (`<home>/packages/<平台>/*-latest.json`).
+      const artifacts = (state && state.artifacts) || [];
+      const uploadTargets = () => uploaders.filter((item) => item.available && uploads[item.id] !== false).map((item) => item.id).join(',');
       const uploaderNote = (item) => {
         if (!item.enabled) return t('options.uploader.disabled');
         if (!item.available) return t('options.uploader.unimplemented');
@@ -615,13 +642,54 @@ window.__ModuleLoader__.load({
         if (!item.credentialConfigured) notes.push(t('options.cred.missing'));
         return notes.join(' · ');
       };
-      const saveCredential = (item) =>
+      // One row per secret: `apiKey` (required) and `userKey` (optional, pgyer's
+      // API 1.0 uKey). Only the field the user typed into is written, so saving
+      // one never clears the other.
+      const credentialRow = (item, field) => {
+        const slot = `${item.id}:${field}`;
+        const configured = field === 'userKey' ? item.userKeyConfigured : item.credentialConfigured;
+        // API Key 的词典键没有字段前缀（`options.cred.label`），User Key 才有。
+        const keys = field === 'userKey'
+          ? { label: 'options.cred.userKey.label', saved: 'options.cred.userKey.placeholder.saved', empty: 'options.cred.userKey.placeholder.empty' }
+          : { label: 'options.cred.label', saved: 'options.cred.placeholder.saved', empty: 'options.cred.placeholder.empty' };
+        return h(
+          'div',
+          { className: 'ap-row', key: `cred-${slot}` },
+          h('span', { className: 'ap-row-label' }, tf(keys.label, { name: item.name })),
+          h(
+            'div',
+            { className: 'ap-row-value' },
+            h(
+              'div',
+              { style: styles.actions },
+              h('input', {
+                className: 'ap-input',
+                type: 'password',
+                style: { flex: '1', minWidth: '220px' },
+                placeholder: t(configured ? keys.saved : keys.empty),
+                value: uploadSecret[slot] || '',
+                onChange: (event) => setUploadSecret({ ...uploadSecret, [slot]: event.target.value }),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') saveCredential(item, field);
+                },
+              }),
+              button(t('options.cred.save'), () => saveCredential(item, field), { disabled: Boolean(busy), small: true }),
+              configured ? h('span', { className: 'ap-tag ok' }, t('options.cred.saved')) : null,
+            ),
+            h('div', { className: 'ap-note' }, field === 'userKey' ? t('options.cred.userKey.hint') : credentialNote(item)),
+          ),
+        );
+      };
+      const saveCredential = (item, field = 'apiKey') =>
         guard(`cred:${item.id}`, async () => {
+          const slot = `${item.id}:${field}`;
           const payload = await call('upload/credential', {
             method: 'POST',
-            body: { provider: item.id, apiKey: uploadSecret[item.id] || '' },
+            body: field === 'userKey'
+              ? { provider: item.id, userKey: uploadSecret[slot] || '' }
+              : { provider: item.id, apiKey: uploadSecret[slot] || '' },
           });
-          setUploadSecret({ ...uploadSecret, [item.id]: '' });
+          setUploadSecret({ ...uploadSecret, [slot]: '' });
           setState((current) => (current ? { ...current, uploaders: payload.uploaders } : current));
         });
       // Batch scope: platforms × projects become one engine run each, and no
@@ -636,28 +704,31 @@ window.__ModuleLoader__.load({
       const setAllProjects = (on) => setBatchProjects(Object.fromEntries(projects.map((project) => [project.id, on])));
       const runBatch = (kind) => startJob(kind, { platforms: effectivePlatforms, projects: pickedProjects() });
 
+      // 打包与上传是两条流程：打包绝不顺带上传（noUpload），上传只带上要送的分发平台
+      // （`upload` 走引擎的 `--to`）与它自己的产物范围。
       const startJob = (kind, spec) => guard('job', async () => {
-        const uploaderIds = uploadArg();
-        const started = await call('job', {
-          method: 'POST',
-          body: {
-            kind,
-            platforms: spec.platforms || [spec.platform],
-            projects: spec.projects || (spec.project ? [spec.project] : []),
-            upload: uploaderIds,
-            noUpload: !uploaderIds,
-            version,
-            harmonyDebug,
-            keepWork,
-            fullPermission,
-            packageKind,
-            profile: profileFile || undefined,
-            set: overrides,
-          },
-        });
-        setJob(started);
+        const body = {
+          kind,
+          platforms: spec.platforms || [spec.platform],
+          projects: spec.projects || (spec.project ? [spec.project] : []),
+        };
+        if (kind === 'upload') {
+          body.upload = spec.targets || uploadTargets();
+        } else {
+          body.noUpload = true;
+          body.version = version;
+          body.harmonyDebug = harmonyDebug;
+          body.keepWork = keepWork;
+          body.fullPermission = fullPermission;
+          body.packageKind = packageKind;
+          body.profile = profileFile || undefined;
+          body.set = overrides;
+        }
+        setJob(await call('job', { method: 'POST', body }));
         refresh();
       });
+      const startUpload = (item) =>
+        startJob('upload', { platforms: [item.platform], projects: [item.projectId], targets: uploadTargets() });
 
       const stopJob = () => guard('job', async () => setJob(await call(`job/kill?id=${encodeURIComponent(job.id)}`, { method: 'POST' })));
       // 清除 = 让宿主把已结束的任务从列表里删掉，本站跟着回到「暂无任务」。
@@ -1004,25 +1075,13 @@ window.__ModuleLoader__.load({
             }),
       );
 
+      // 打包选项只放打包本身的东西：上传目标与密钥都在下面的「上传」板块。
       const optionsCard = h(
         Section,
         { t, title: t('options') },
         h(
           'div',
           { style: styles.actions },
-          uploaders.length === 0
-            ? h('span', { style: styles.muted }, t('options.uploaders.none'))
-            : h(
-                'span',
-                { style: styles.actions },
-                h('span', { style: styles.muted }, t('options.upload')),
-                uploaders.map((item) => checkbox(
-                  `${item.name}${uploaderNote(item) ? ` · ${uploaderNote(item)}` : ''}`,
-                  Boolean(uploads[item.id]),
-                  (on) => setUploads({ ...uploads, [item.id]: on }),
-                  { disabled: !item.available, title: uploaderNote(item) || undefined },
-                )),
-              ),
           h('input', {
             className: 'ap-input',
             style: { width: '120px' },
@@ -1093,37 +1152,6 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
-        uploaders
-          .filter((item) => item.apiKeyVar)
-          .map((item) =>
-            h(
-              'div',
-              { className: 'ap-row', key: `cred-${item.id}` },
-              h('span', { className: 'ap-row-label' }, tf('options.cred.label', { name: item.name })),
-              h(
-                'div',
-                { className: 'ap-row-value' },
-                h(
-                  'div',
-                  { style: styles.actions },
-                  h('input', {
-                    className: 'ap-input',
-                    type: 'password',
-                    style: { flex: '1', minWidth: '220px' },
-                    placeholder: item.credentialConfigured ? t('options.cred.placeholder.saved') : t('options.cred.placeholder.empty'),
-                    value: uploadSecret[item.id] || '',
-                    onChange: (event) => setUploadSecret({ ...uploadSecret, [item.id]: event.target.value }),
-                    onKeyDown: (event) => {
-                      if (event.key === 'Enter') saveCredential(item);
-                    },
-                  }),
-                  button(t('options.cred.save'), () => saveCredential(item), { disabled: Boolean(busy), small: true }),
-                  item.credentialConfigured ? h('span', { className: 'ap-tag ok' }, t('options.cred.saved')) : null,
-                ),
-                h('div', { className: 'ap-note' }, credentialNote(item)),
-              ),
-            ),
-          ),
       );
 
       const scopeCard = h(
@@ -1164,6 +1192,61 @@ window.__ModuleLoader__.load({
             effectivePlatforms.length === 0 ? h('span', { style: styles.muted }, t('scope.nonePicked')) : null,
           ),
         );
+
+      // 上传是独立流程：这里列出引擎已归档的安装包（packages/<平台>/*-latest.json），
+      // 一行一个产物、一键单独上传，不会重新打包。
+      const fileSize = (bytes) => (bytes >= 1024 * 1024
+        ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+      const uploadCard = h(
+        Section,
+        { t, title: t('upload'), actions: h('span', { style: styles.muted }, t('upload.hint')) },
+        artifacts.length === 0
+          ? h('div', { className: 'ap-note' }, t('upload.empty'))
+          : h(
+              'div',
+              null,
+              artifacts.map((item) => h(
+                'div',
+                { className: 'ap-row', key: `artifact-${item.platform}-${item.projectId}` },
+                h('span', { className: 'ap-row-label' }, onePlatform(item.platform)),
+                h(
+                  'div',
+                  { className: 'ap-row-value' },
+                  h(
+                    'div',
+                    { style: styles.actions },
+                    h('span', { className: 'ap-project-name' }, `${item.displayName}${item.version ? ` ${item.version}` : ''}`),
+                    item.artifactExists
+                      ? h('span', { className: 'ap-muted' }, fileSize(item.artifactSize))
+                      : h('span', { className: 'ap-tag warn' }, t('upload.missing')),
+                    item.builtAt ? h('span', { className: 'ap-muted' }, tf('upload.builtAt', { time: item.builtAt })) : null,
+                    button(t('upload.action'), () => startUpload(item), {
+                      primary: true,
+                      small: true,
+                      disabled: Boolean(busy) || jobRunning || !item.artifactExists || uploadTargets() === '',
+                    }),
+                  ),
+                  h('div', { className: 'ap-note' }, item.artifactPath),
+                ),
+              )),
+            ),
+        h(
+          'div',
+          { style: styles.actions },
+          h('span', { style: styles.muted }, t('upload.target')),
+          uploaders.length === 0
+            ? h('span', { style: styles.muted }, t('upload.target.none'))
+            : uploaders.map((item) => checkbox(
+                `${item.name}${uploaderNote(item) ? ` · ${uploaderNote(item)}` : ''}`,
+                item.available && uploads[item.id] !== false,
+                (on) => setUploads({ ...uploads, [item.id]: on }),
+                { disabled: !item.available, title: uploaderNote(item) || undefined },
+              )),
+        ),
+        uploaders.filter((item) => item.apiKeyVar).map((item) => credentialRow(item, 'apiKey')),
+        uploaders.filter((item) => item.userKeyVar).map((item) => credentialRow(item, 'userKey')),
+      );
 
       const jobCard = h(
         Section,
@@ -1211,6 +1294,7 @@ window.__ModuleLoader__.load({
         projectsCard,
         optionsCard,
         scopeCard,
+        uploadCard,
         jobCard,
       );
     }

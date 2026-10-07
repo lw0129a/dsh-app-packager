@@ -42,6 +42,9 @@ app-packager build ios --all      # 打所有启用 iOS 的项目
 app-packager build harmony shop --harmony-debug
 app-packager build android shop --upload pgyer --version 1.2.0
 
+app-packager upload ios shop             # 只上传「上一次打包」归档的安装包，不重新打包
+app-packager upload all shop --to pgyer  # --to 指定分发平台，可逗号分隔
+
 app-packager ios shop             # 可省略 build，参数直接透传给引擎
 app-packager run list             # 或用 run 显式转发任意引擎参数
 
@@ -59,6 +62,7 @@ app-packager sdk process          # 处理你自己放进 sdk/ 的压缩包
 | `--json` | `doctor` / `list` / `env` 输出 JSON，便于脚本处理 |
 | `--search-roots <路径>` | 项目扫描根，`:` 分隔（默认引擎目录的上一级） |
 | `--upload pgyer` / `--no-upload` | 打包后上传 pgyer / 明确不上传 |
+| `--to pgyer` | `upload` 动作的分发平台，可逗号分隔；不写则用 `config/upload.env` 里已启用的平台 |
 | `--version <版本>` | 覆盖打包版本号 |
 | `--harmony-debug` | 打 HarmonyOS 调试侧载包 |
 | `--keep-work` | 保留本次临时工作区 |
@@ -68,6 +72,8 @@ app-packager sdk process          # 处理你自己放进 sdk/ 的压缩包
 ### 蒲公英上传
 
 `--upload pgyer` 需要本机的蒲公英 API Key：优先读环境变量 `PGYER_API_KEY`（面板里保存的 Key 会写进引擎目录的 `config/upload.local.env`），其次读 macOS Keychain（service `app-packager-pgyer`），最后才在交互终端里问。iOS/Android 产物走蒲公英官方 CLI `@pgyer/cli` 的快速上传，CLI **不预装、不装全局**，第一次真的上传时才用 `npm install` 装进引擎目录内部的 `tools/pgyer-cli`（需要 Node.js 18+ 与 npm；`PGYER_CLI_DIR` 可改位置，`PGYER_CLI_VERSION` 默认 `0.1.5`）。HarmonyOS HAP 仍走接口上传，因为蒲公英要求 HAP 随包上传 P12 证书，而官方 CLI 没有这一步。
+
+上传是一条独立流程：`app-packager upload <平台> <项目> [--to 平台]` 把**上一次打包**归档好的安装包送出去（`packages/<平台>/<项目ID>-latest.json` 指向的那个文件），完全不重新打包；还没有打包记录时只会提示一句。打包时顺手勾的上传仍然「失败不影响打包结果」，而这条独立动作如实返回上传结果——面板的「上传」板块就是按这个语义做的。蒲公英的 **User Key**（API 1.0 的 `uKey`）是可选项，只有接口上传会用到：官方 CLI 与 API 2.0 都只认 API Key。写进 `config/upload.local.env` 的 `PGYER_USER_KEY` 即可（对应 `UPLOAD_PLATFORM_pgyer_USER_KEY_VAR`），填了之后 HAP 的接口请求会带上 `_u_key`。
 
 ## 引擎目录
 

@@ -42,6 +42,9 @@ app-packager build ios --all      # every project with iOS enabled
 app-packager build harmony shop --harmony-debug
 app-packager build android shop --upload pgyer --version 1.2.0
 
+app-packager upload ios shop             # ship the installer the last build archived (no rebuild)
+app-packager upload all shop --to pgyer  # only the distribution platforms you name
+
 app-packager ios shop             # `build` may be omitted; the argument is forwarded to the engine
 app-packager run list             # or forward arbitrary engine arguments explicitly
 
@@ -59,6 +62,7 @@ app-packager sdk process          # import archives you already put in sdk/
 | `--json` | JSON output for `doctor` / `list` / `env`, for scripting |
 | `--search-roots <path>` | Project search roots, `:`-separated (defaults to the engine directory's parent) |
 | `--upload pgyer` / `--no-upload` | Upload to pgyer after building / explicitly skip upload |
+| `--to pgyer` | `upload`: which distribution platforms to send to (comma separated; defaults to the enabled ones in `config/upload.env`) |
 | `--version <version>` | Override the build version |
 | `--harmony-debug` | Produce a HarmonyOS debug sideload package |
 | `--keep-work` | Keep this run's temporary workspace |
@@ -68,6 +72,8 @@ app-packager sdk process          # import archives you already put in sdk/
 ### Pgyer uploads
 
 `--upload pgyer` needs a pgyer API key: it reads `PGYER_API_KEY` from the environment first (the panel stores the key you type into the engine directory's `config/upload.local.env`), then the macOS Keychain (service `app-packager-pgyer`), and only prompts on an interactive terminal as a last resort. iOS and Android artifacts go through pgyer's official CLI, `@pgyer/cli`: it is **never installed globally or up front** — the first real upload runs `npm install` into `tools/pgyer-cli` inside the engine directory (needs Node.js 18+ and npm; `PGYER_CLI_DIR` moves it, `PGYER_CLI_VERSION` pins `0.1.5`). HarmonyOS HAP keeps using the API upload, because pgyer requires the P12 certificate to accompany a HAP and the CLI has no such step.
+
+Uploading is a flow of its own: `app-packager upload <platform> <project> [--to <平台>]` sends the installer the **last build** archived (`packages/<Platform>/<项目ID>-latest.json` and the file it names) without rebuilding anything — with nothing archived it only says so. Build-time uploads stay non-fatal, the standalone action reports the real result, which is what the panel's *Upload* card is built on. pgyer's *User Key* (the `uKey` of API 1.0) is optional and only used by the API path — the CLI and API 2.0 take the API key alone; store it in `config/upload.local.env` as `PGYER_USER_KEY` (`UPLOAD_PLATFORM_pgyer_USER_KEY_VAR`), and the HAP calls then carry `_u_key`.
 
 ## Engine directory
 

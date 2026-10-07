@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { listProjects, parseEnvText } from '../src/projects.mjs';
-import { listUploaders, pgyerCliStatus, selectableUploaders, writeUploaderCredential } from '../src/uploaders.mjs';
+import { listArtifacts, listUploaders, pgyerCliStatus, selectableUploaders, writeUploaderCredential } from '../src/uploaders.mjs';
 import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
 import { runDoctor } from '../src/doctor.mjs';
 
@@ -172,6 +172,7 @@ test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () =>
       'UPLOAD_PLATFORM_pgyer_SCRIPT=lib/uploaders/pgyer.sh',
       'UPLOAD_PLATFORM_pgyer_FUNCTION=upload_pgyer_artifact',
       'UPLOAD_PLATFORM_pgyer_API_KEY_VAR=PGYER_API_KEY',
+      'UPLOAD_PLATFORM_pgyer_USER_KEY_VAR=PGYER_USER_KEY',
       'UPLOAD_PLATFORM_huawei_NAME="华为应用市场"',
       'UPLOAD_PLATFORM_huawei_ENABLED=false',
       'UPLOAD_PLATFORM_declared_missing_NAME="没实现"',
@@ -194,6 +195,8 @@ test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () =>
     reason: '',
     apiKeyVar: 'PGYER_API_KEY',
     credentialConfigured: false,
+    userKeyVar: 'PGYER_USER_KEY',
+    userKeyConfigured: false,
   });
   assert.equal(uploaders[1].available, false);
   assert.equal(uploaders[1].reason, 'disabled', 'ENABLED=false 直接不可用');
@@ -209,10 +212,12 @@ test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () =>
   assert.deepEqual(selectableUploaders(home, ['ios']).map((item) => item.id), ['pgyer'], '按产物平台过滤');
 
   // 密钥只回报「配没配」，明文永远不出现在这个结构里。
-  writeFileSync(join(home, 'config', 'upload.local.env'), "PGYER_API_KEY='from-local'\n");
+  writeFileSync(join(home, 'config', 'upload.local.env'), "PGYER_API_KEY='from-local'\nPGYER_USER_KEY='user-local'\n");
   const withKey = listUploaders(home)[0];
   assert.equal(withKey.credentialConfigured, true, 'config/upload.local.env 里配了密钥就算已配置');
+  assert.equal(withKey.userKeyConfigured, true, 'User Key 同样只看配没配');
   assert.equal(JSON.stringify(withKey).includes('from-local'), false, '密钥明文不能出现在 listUploaders 结果里');
+  assert.equal(JSON.stringify(withKey).includes('user-local'), false, 'User Key 明文也不能出现');
 
   writeFileSync(join(home, 'config', 'upload.local.env'), 'UPLOAD_PLATFORM_IDS="nope"\n');
   rmSync(join(home, 'lib', 'uploaders', 'pgyer.sh'), { force: true });
@@ -251,6 +256,46 @@ test('writeUploaderCredential 写 config/upload.local.env（保留其它行、�
   assert.equal(readFileSync(file, 'utf8').includes('PGYER_API_KEY'), false);
 
   assert.throws(() => writeUploaderCredential(home, 'BAD-NAME', 'x'), /非法配置项/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('listArtifacts 列出各平台已归档的安装包，缺文件的也如实标出来', () => {
+  const home = tempDir('app-packager-artifacts-');
+  const ios = join(home, 'packages', 'iOS');
+  const android = join(home, 'packages', 'Android');
+  mkdirSync(ios, { recursive: true });
+  mkdirSync(android, { recursive: true });
+  writeFileSync(join(ios, 'demo-latest.ipa'), 'ipa-bytes');
+  writeFileSync(join(ios, 'demo-latest.json'), JSON.stringify({
+    project_id: 'demo',
+    display_name: '演示项目',
+    version: '1.0.0',
+    built_at: '2026-10-07T18:24:00+08:00',
+    ipa_path: join(ios, 'demo-latest.ipa'),
+  }));
+  // Android 的包已经没了（-latest.json 还在），要能报出来而不是给一个死链。
+  writeFileSync(join(android, 'other-latest.json'), JSON.stringify({
+    project_id: 'other',
+    version: '2.0.0',
+    built_at: '2026-10-07T19:00:00+08:00',
+    apk_path: join(android, 'other-latest.apk'),
+  }));
+  // 半截 JSON 不是产物，直接跳过。
+  writeFileSync(join(android, 'broken-latest.json'), '{');
+
+  const artifacts = listArtifacts(home);
+  assert.deepEqual(artifacts.map((item) => `${item.platform}:${item.projectId}`), ['android:other', 'ios:demo'], '按打包时间倒序');
+  const [other, demo] = artifacts;
+  assert.equal(other.artifactExists, false, 'apk 不在就要如实说');
+  assert.equal(other.artifactSize, 0);
+  assert.equal(other.displayName, 'other', '没有 display_name 时退回项目 ID');
+  assert.equal(demo.displayName, '演示项目');
+  assert.equal(demo.version, '1.0.0');
+  assert.equal(demo.artifactExists, true);
+  assert.equal(demo.artifactSize, 'ipa-bytes'.length);
+  assert.equal(demo.infoFile, join(ios, 'demo-latest.json'));
+
+  assert.deepEqual(listArtifacts(join(home, 'nowhere')), [], '没有 packages 目录就是空列表');
   rmSync(home, { recursive: true, force: true });
 });
 

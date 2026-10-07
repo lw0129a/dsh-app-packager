@@ -188,7 +188,7 @@ upload_artifact_with_platform() {
 }
 
 run_post_build_uploads() {
-  local info_file="${1:-${BUILD_INFO_FILE:-}}" provider artifact_platform
+  local info_file="${1:-${BUILD_INFO_FILE:-}}" provider artifact_platform strict="${2:-false}" status=0
   [ -n "${UPLOAD_SELECTED_PLATFORMS:-}" ] || return 0
   if [ -z "$info_file" ] || [ ! -f "$info_file" ]; then
     warn "上传跳过：未找到构建信息文件"
@@ -204,15 +204,57 @@ run_post_build_uploads() {
   for provider in $(printf '%s' "$UPLOAD_SELECTED_PLATFORMS" | tr ',' ' '); do
     if ! upload_platform_enabled "$provider"; then
       warn "上传跳过：平台未启用: $provider"
+      status=1
       continue
     fi
     if ! upload_platform_supports_artifact "$provider" "$artifact_platform"; then
       log "上传跳过：$(upload_platform_name "$provider") 不支持 $(printf '%s' "$artifact_platform" | tr '[:lower:]' '[:upper:]') 安装包"
+      status=1
       continue
     fi
     if ! upload_artifact_with_platform "$provider" "$info_file"; then
       warn "上传失败但不影响打包结果: $(upload_platform_name "$provider") / $artifact_platform"
+      status=1
     fi
   done
+  # 打包流程把上传当附加步骤（失败也不回滚打包），独立上传流程则要把失败如实返回。
+  [ "$strict" = "true" ] && return "$status"
   return 0
+}
+
+# ---------------------------------------------------------------------------
+# 独立上传流程（打包工具.command upload）
+#
+# 打包和上传是两件事：upload 只读「上一次打包」留下的 build-info.json，把当时
+# 归档的安装包送到分发平台，不触发任何构建。
+# ---------------------------------------------------------------------------
+
+upload_latest_info_file() {
+  local platform="$1"
+  case "$platform" in
+    ios) printf '%s\n' "$PACKAGE_IOS_DIR/${PROJECT_ID}-latest.json" ;;
+    android) printf '%s\n' "$PACKAGE_ANDROID_DIR/${PROJECT_ID}-latest.json" ;;
+    harmony) printf '%s\n' "$PACKAGE_HARMONY_DIR/${PROJECT_ID}-latest.json" ;;
+    *) return 1 ;;
+  esac
+}
+
+upload_enabled_platforms() {
+  local id
+  for id in $(upload_platform_ids); do
+    upload_platform_enabled "$id" && printf '%s\n' "$id"
+  done
+}
+
+upload_latest_artifact() {
+  local platform="$1" info_file
+  info_file="$(upload_latest_info_file "$platform")" || die "upload 不认识平台: $platform"
+  if [ ! -f "$info_file" ]; then
+    warn "上传跳过：$(printf '%s' "$platform" | tr '[:lower:]' '[:upper:]') 还没有打包记录（${info_file}），先打包一次"
+    return 1
+  fi
+  log "上传 $(printf '%s' "$platform" | tr '[:lower:]' '[:upper:]') 最近一次打包的安装包"
+  BUILD_INFO_FILE="$info_file"
+  export BUILD_INFO_FILE
+  run_post_build_uploads "$info_file" true
 }

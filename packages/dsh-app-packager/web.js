@@ -19,6 +19,7 @@ import { promisify } from 'node:util';
 import {
   PLATFORM_LABELS,
   isMaterialized,
+  listArtifacts,
   listProjects,
   listUploaders,
   materialize,
@@ -67,10 +68,19 @@ export function engineArgsFor(args = {}, { check = false } = {}) {
   if (!PLATFORM_VALUES.includes(platform)) {
     throw new Error(`platform 必须是 ${PLATFORM_VALUES.join(' | ')}，收到 ${JSON.stringify(args.platform)}`);
   }
-  const out = check ? ['check', platform] : [platform];
+  // Uploading is its own engine action: it ships the archived installer of the
+  // last build, so none of the build options below apply to it.
+  const uploadAction = String(args.action || '') === 'upload';
+  const out = check ? ['check', platform] : uploadAction ? ['upload', platform] : [platform];
   if (args.project) out.push(String(args.project));
   else if (platform !== 'all') out.push('--all');
   if (!check) {
+    if (uploadAction) {
+      // `--to` is the distribution platform list (`pgyer`); without it the
+      // engine falls back to every enabled uploader.
+      if (args.upload) out.push('--to', String(args.upload));
+      return out;
+    }
     if (args.upload) out.push('--upload', String(args.upload));
     if (args.noUpload) out.push('--no-upload');
     if (args.version) out.push('--version', String(args.version));
@@ -582,7 +592,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
   function uploadersOf(home) {
     try {
       return listUploaders(home).map(
-        ({ id, name, enabled, available, platforms, reason, apiKeyVar, credentialConfigured }) => ({
+        ({ id, name, enabled, available, platforms, reason, apiKeyVar, credentialConfigured, userKeyVar, userKeyConfigured }) => ({
           id,
           name,
           enabled,
@@ -590,9 +600,12 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
           platforms,
           reason,
           // Uploaders with a key variable get a credential row in the panel;
-          // only the fact that one is configured crosses to the browser.
+          // only the fact that one is configured crosses to the browser. pgyer
+          // also takes an optional User Key (`uKey`) — same rule for both.
           apiKeyVar,
           credentialConfigured,
+          userKeyVar,
+          userKeyConfigured,
         }),
       );
     } catch (error) {
@@ -697,6 +710,9 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       const home = homeOf();
       const projects = projectsOf(home);
       const uploaders = uploadersOf(home);
+      // Installers the engine already archived: the upload card works on these,
+      // never on a fresh build.
+      const artifacts = listArtifacts(home);
       const profiles = await profilesOf(home);
       const sdk = await sdkStatusOf(home);
       const root = pluginRoot(moduleUrl, env);
@@ -720,6 +736,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
         projectsError: Array.isArray(projects) ? '' : projects.error,
         uploaders: Array.isArray(uploaders) ? uploaders : [],
         uploadersError: Array.isArray(uploaders) ? '' : uploaders.error,
+        artifacts,
         profiles: Array.isArray(profiles) ? profiles : [],
         profilesError: Array.isArray(profiles) ? '' : profiles.error,
         options: optionsOf(home),
@@ -803,6 +820,22 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
           commands: [['upgrade']],
           node: { script: path.join(root, 'upgrade.mjs'), args: [], cwd: root },
           timeoutMs: config.upgradeTimeoutMs || 1_800_000,
+        });
+      }
+
+      // 上传是独立动作：只把已归档的安装包送到分发平台，不重新打包，也不做打包前检查。
+      // 目标平台用 `upload`（分发平台列表，逗号分隔）指定，缺省时引擎用配置里启用过的。
+      if (spec.kind === 'upload') {
+        const platforms = scopePlatforms(spec);
+        return runner.start({
+          kind: 'upload',
+          platform: platforms.join(','),
+          project: scopeProjects(spec).join(','),
+          home,
+          commands: engineCommandsFor({ ...spec, action: 'upload' }),
+          timeoutMs: config.uploadTimeoutMs || 1_800_000,
+          searchRoots: config.searchRoots,
+          shell: shell.shell,
         });
       }
 
@@ -902,23 +935,34 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
     },
 
     /**
-     * Save an uploader credential (the pgyer API key) into
-     * `config/upload.local.env`, which the engine sources after `upload.env`.
-     * The value is never echoed back — the panel only learns whether one is set.
+     * Save uploader credentials into `config/upload.local.env`, which the engine
+     * sources after `upload.env`: the API key, the optional User Key (`uKey`),
+     * or both. Only the fields actually present are written, so a blank submit
+     * clears just that one. Values are never echoed back — the panel only learns
+     * whether each one is set.
      */
-    saveUploadCredential({ provider, apiKey } = {}) {
+    saveUploadCredential({ provider, apiKey, userKey } = {}) {
       const home = homeOf();
       const id = String(provider || '').trim();
       const uploaders = listUploaders(home);
       const uploader = uploaders.find((item) => item.id === id);
       if (!uploader) throw new Error(`未知上传平台：${id}`);
-      if (!uploader.apiKeyVar) throw new Error(`上传平台 ${uploader.name || id} 不需要配置密钥`);
-      const written = writeUploaderCredential(home, uploader.apiKeyVar, String(apiKey ?? ''));
+      const written = [];
+      if (apiKey !== undefined) {
+        if (!uploader.apiKeyVar) throw new Error(`上传平台 ${uploader.name || id} 不需要配置密钥`);
+        written.push(writeUploaderCredential(home, uploader.apiKeyVar, String(apiKey ?? '')));
+      }
+      if (userKey !== undefined) {
+        if (!uploader.userKeyVar) throw new Error(`上传平台 ${uploader.name || id} 不需要配置 User Key`);
+        written.push(writeUploaderCredential(home, uploader.userKeyVar, String(userKey ?? '')));
+      }
+      if (written.length === 0) throw new Error('没有要保存的密钥');
       return {
         ok: true,
         provider: id,
-        variable: written.name,
-        configured: written.configured,
+        variable: written[0].name,
+        configured: written[0].configured,
+        variables: written.map((item) => item.name),
         uploaders: uploadersOf(home),
       };
     },

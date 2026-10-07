@@ -88,6 +88,9 @@ export function listUploaders(home) {
       // panel renders a credential row for those and only ever learns whether
       // one is configured — never the value itself.
       const apiKeyVar = config[`UPLOAD_PLATFORM_${id}_API_KEY_VAR`] || '';
+      // A second, optional secret: pgyer's User Key (`uKey`) only matters for the
+      // legacy API 1.0 upload endpoint, but the user may want it stored here.
+      const userKeyVar = config[`UPLOAD_PLATFORM_${id}_USER_KEY_VAR`] || '';
 
       return {
         id,
@@ -99,6 +102,8 @@ export function listUploaders(home) {
         reason,
         apiKeyVar,
         credentialConfigured: Boolean(apiKeyVar && String(config[apiKeyVar] || '').trim()),
+        userKeyVar,
+        userKeyConfigured: Boolean(userKeyVar && String(config[userKeyVar] || '').trim()),
       };
     });
 }
@@ -147,6 +152,63 @@ export function pgyerCliStatus(home) {
     }
   }
   return { package: packageName || '@pgyer/cli', version, dir, bin, installed: fs.existsSync(bin) };
+}
+
+/**
+ * The installers the engine has already archived, newest first — one entry per
+ * `<home>/packages/<platform>/<project>-latest.json`, the same file
+ * `upload_latest_artifact()` resolves. The panel uploads these without
+ * rebuilding, so it has to show what is actually on disk, including a project
+ * whose installer was pruned away (`artifactExists: false`).
+ *
+ * @param {string} home engine home (PIPELINE_ROOT)
+ * @returns {Array<{platform: string, projectId: string, displayName: string, version: string,
+ *   builtAt: string, artifactPath: string, artifactExists: boolean, artifactSize: number,
+ *   infoFile: string}>}
+ */
+export function listArtifacts(home) {
+  /** Folder name per platform — the folder, not the JSON, says which platform it is. */
+  const folders = [['ios', 'iOS'], ['android', 'Android'], ['harmony', 'HarmonyOS']];
+  const out = [];
+  for (const [platform, folder] of folders) {
+    const dir = path.join(home, 'packages', folder);
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue; // that platform was never built here
+    }
+    for (const name of names) {
+      if (!name.endsWith('-latest.json')) continue;
+      const infoFile = path.join(dir, name);
+      let info = {};
+      try {
+        info = JSON.parse(fs.readFileSync(infoFile, 'utf8'));
+      } catch {
+        continue; // half-written or hand-edited: not worth a row
+      }
+      const projectId = String(info.project_id || name.replace(/-latest\.json$/, ''));
+      const artifactPath = String(info.ipa_path || info.apk_path || info.hap_path || '');
+      let artifactSize = 0;
+      try {
+        artifactSize = fs.statSync(artifactPath).size;
+      } catch {
+        artifactSize = 0;
+      }
+      out.push({
+        platform,
+        projectId,
+        displayName: String(info.display_name || projectId),
+        version: String(info.version || ''),
+        builtAt: String(info.built_at || ''),
+        artifactPath,
+        artifactExists: artifactSize > 0,
+        artifactSize,
+        infoFile,
+      });
+    }
+  }
+  return out.sort((a, b) => b.builtAt.localeCompare(a.builtAt));
 }
 
 /**

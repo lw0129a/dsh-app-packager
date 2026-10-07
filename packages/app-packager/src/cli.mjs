@@ -26,6 +26,7 @@ const HELP = `AppPackager ${packageVersion()} — uni-app x 打包命令行
   register <目录...>   登记 uni-app x 项目目录（给父目录则扫描其下一层）
   check <平台> [项目]  调用引擎检查打包环境
   build <平台> [项目]  调用引擎执行打包（平台: ios | android | harmony | all）
+  upload <平台> [项目] 只上传上一次打包归档的安装包，不重新打包（--to 平台，可逗号分隔）
   run <引擎参数...>    原样透传给引擎（等价于 打包工具.command 的命令行模式）
   env                  打印引擎目录与解析结果
   version              打印版本
@@ -222,7 +223,9 @@ export async function main(argv) {
     default: {
       // Unknown first token: treat the whole command line as an engine action,
       // so `app-packager ios my-project` keeps working like the .command file.
-      if (['ios', 'android', 'harmony', 'all'].includes(command)) {
+      // `upload` is the same kind of engine action — it ships an already
+      // archived installer instead of building one.
+      if (['ios', 'android', 'harmony', 'all', 'upload'].includes(command)) {
         return withEngine(home, argv, flags);
       }
       console.error(`未知命令：${command}`);

@@ -3182,6 +3182,7 @@ collect_artifact() {
       profileName, profileUuid, profileExpiry, signingCertificate, ipa,
       sha256, sourceCommit, appIosCommit, buildStartedAt] = process.argv.slice(1);
     fs.writeFileSync(out, JSON.stringify({
+      platform: "ios",
       project_id: projectId,
       display_name: displayName,
       app_id: appId,

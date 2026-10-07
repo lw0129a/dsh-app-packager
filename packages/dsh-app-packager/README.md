@@ -47,19 +47,27 @@ centre column:
   engine runs executed back to back inside one job, each marked `▶ i/n` in the
   log; the job succeeds only if every run did, keeping the first failing exit
   code.
-- **Shared build options** — version override; **Upload** lists the upload
-  targets the engine declares in `config/upload.env` and that are actually
-  usable (`ENABLED=true` with provider script and function present — pgyer by
-  default), greying out the rest with the reason (disabled / not implemented in
-  the engine yet) and sending the ticked ones as one comma separated `--upload`.
-  An uploader that declares `UPLOAD_PLATFORM_<id>_API_KEY_VAR` (pgyer declares
-  `PGYER_API_KEY`) also gets a masked credential row: *Save* writes the key into
-  `config/upload.local.env` (mode 600, the file `lib/init.sh` sources), the row
-  says whether one is stored, and the key only ever travels engine-ward — `GET
-  state` carries a `credentialConfigured` boolean, never the secret. The same
-  row reports whether the official CLI is installed (with its package and
-  version once it is). *HarmonyOS debug HAP* and *Keep work dir* live in an
-  *Advanced* fold, each with a one-line explanation.
+- **Shared build options** — version override; *HarmonyOS debug HAP* and *Keep
+  work dir* live in an *Advanced* fold, each with a one-line explanation. A
+  build never uploads any more: the panel always sends `noUpload`, because
+  uploading has a card of its own.
+- **Upload** — the installers the engine has already archived, straight from
+  `state.artifacts` (`listArtifacts` reads `packages/iOS|Android|HarmonyOS/
+  <项目ID>-latest.json`): display name, version, file size (or a *no installer
+  archived* tag when the JSON outlived the file) and build time, each with an
+  *Upload* button that starts a `kind: 'upload'` job for that one artifact —
+  the engine's `upload <platform> <project> --to <平台>` action, which never
+  rebuilds. The card also holds the distribution targets (the usable uploaders
+  from `config/upload.env`, ticked ones sent as one comma separated `--to`) and
+  the credential rows: an uploader that declares `UPLOAD_PLATFORM_<id>_API_KEY_VAR`
+  (pgyer declares `PGYER_API_KEY`) or `_USER_KEY_VAR` (`PGYER_USER_KEY`, pgyer's
+  optional API 1.0 `uKey`) gets a masked row each. *Save* writes only the field
+  you typed into, so storing one never clears the other: `POST
+  /api/app-packager/upload/credential` updates `config/upload.local.env` (mode
+  600, the file `lib/init.sh` sources), and the key only ever travels
+  engine-ward — `GET state` carries the booleans `credentialConfigured` /
+  `userKeyConfigured`, never a secret. The card also reports whether the
+  official CLI is installed (with its package and version once it is).
 - **SDK** — the detected HBuilderX app/CLI and its version series, and each
   platform's SDK directory with its state (`ready` / `mismatch` / `missing`).
   *One-click setup* asks the engine to download and unpack the matching SDK for
@@ -73,7 +81,7 @@ centre column:
   `node_modules`. Once the upgrade job succeeds the card tells you to reload the
   page (⌘R) — the browser half only comes back on the next page load — and offers
   a *Reload page* button.
-- **Job** — the running check/build with its live engine log, its verdict
+- **Job** — the running check/build/upload with its live engine log, its verdict
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
   Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above
   the log together with the totals, so a missing profile, p12 or SDK is readable

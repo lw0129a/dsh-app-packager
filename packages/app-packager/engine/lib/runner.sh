@@ -46,6 +46,10 @@ usage() {
   打包工具.command check ios <项目ID>
   打包工具.command check android <项目ID>
   打包工具.command check harmony <项目ID>
+  打包工具.command upload ios <项目ID> [--to 平台]
+  打包工具.command upload android <项目ID> [--to 平台]
+  打包工具.command upload harmony <项目ID> [--to 平台]
+  打包工具.command upload all <项目ID> [--to 平台]
 
 项目:
   从 config/projects/*.env 动态读取，不在本仓库内置业务项目。
@@ -75,8 +79,13 @@ usage() {
   --set KEY=VALUE     覆盖本次构建的打包参数，可重复；可用键见 config/settings.env 说明
   --upload <平台>     打包成功后上传；当前支持 pgyer，可逗号分隔多个平台
   --no-upload         显式跳过上传
+  --to <平台>         upload 动作的分发平台，逗号分隔；默认用 config/upload.env 里已启用的平台
   --all               当前平台的所有已启用项目
   -h, --help          查看帮助
+
+上传:
+  打包和上传是两条流程：upload 只把「上一次打包」归档的安装包传到分发平台，不重新打包。
+  未打过包（没有 <项目ID>-latest.json）时只提示不报错，产物被清理过同样如此。
 
 示例:
   打包工具.command ios <项目ID>
@@ -87,6 +96,8 @@ usage() {
   打包工具.command harmony --all
   打包工具.command android <项目ID> --upload pgyer
   打包工具.command all <项目ID> --upload pgyer
+  打包工具.command upload ios <项目ID> --to pgyer
+  打包工具.command upload all --all
   打包工具.command all
 USAGE
 }
@@ -97,6 +108,7 @@ parse_args() {
       list) ACTION="list"; shift ;;
       profiles) ACTION="profiles"; shift ;;
       check) ACTION="check"; shift ;;
+      upload) ACTION="upload"; shift ;;
       ios|apple|苹果) PLATFORM="ios"; shift ;;
       android|安卓) PLATFORM="android"; shift ;;
       harmony|harmonyos|鸿蒙) PLATFORM="harmony"; shift ;;
@@ -127,6 +139,11 @@ parse_args() {
         [ "$#" -ge 2 ] || die "--upload 缺少平台参数"
         set_upload_platforms "$2"
         [ -n "$UPLOAD_SELECTED_PLATFORMS" ] || die "--upload 未解析到可用平台: $2"
+        shift 2 ;;
+      --to)
+        [ "$#" -ge 2 ] || die "--to 缺少平台参数"
+        set_upload_platforms "$2"
+        [ -n "$UPLOAD_SELECTED_PLATFORMS" ] || die "--to 未解析到可用平台: $2"
         shift 2 ;;
       --no-upload)
         UPLOAD_SELECTED_PLATFORMS=""
@@ -361,6 +378,34 @@ main() {
         *) die "请指定平台: ios、android、harmony 或 all" ;;
       esac
       return 0 ;;
+    upload)
+      local upload_status=0
+      if [ -z "${UPLOAD_SELECTED_PLATFORMS:-}" ]; then
+        UPLOAD_SELECTED_PLATFORMS="$(upload_enabled_platforms | tr '\n' ',' | sed 's/,$//')"
+        [ -n "$UPLOAD_SELECTED_PLATFORMS" ] || die "没有已启用的上传平台：在 config/upload.env 里把对应平台的 ENABLED 设为 true"
+        export UPLOAD_SELECTED_PLATFORMS
+      fi
+      case "$PLATFORM" in
+        ios|android|harmony)
+          while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            load_project "$id"
+            upload_latest_artifact "$PLATFORM" || upload_status=1
+          done < <(selected_projects "$PLATFORM")
+          ;;
+        all)
+          local upload_platform
+          for upload_platform in ios android harmony; do
+            while IFS= read -r id; do
+              [ -n "$id" ] || continue
+              load_project "$id"
+              upload_latest_artifact "$upload_platform" || upload_status=1
+            done < <(selected_projects "$upload_platform")
+          done
+          ;;
+        *) die "upload 需要指定 ios、android、harmony 或 all" ;;
+      esac
+      return "$upload_status" ;;
   esac
 }
 

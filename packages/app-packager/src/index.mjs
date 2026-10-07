@@ -15,6 +15,7 @@ export { engineCommand, findExecutable, resolveShell, runEngine, shellAvailable 
 export { PLATFORMS, findProject, listProjects, parseEnvFile, parseEnvText, projectsDir } from './projects.mjs';
 export {
   ARTIFACT_PLATFORMS,
+  listArtifacts,
   listUploaders,
   pgyerCliStatus,
   selectableUploaders,

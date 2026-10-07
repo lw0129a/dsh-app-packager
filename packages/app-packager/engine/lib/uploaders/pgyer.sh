@@ -11,6 +11,13 @@ pgyer_api_key() {
   fi
 }
 
+# User Key（蒲公英 API 1.0 上传接口必填的 uKey）。官方 CLI 与 API 2.0 都只认 API Key，
+# 这里只负责把用户存的 PGYER_USER_KEY 取出来：CLI 通过环境变量拿到，HAP 的接口调用带上
+# _u_key，对方不需要时忽略即可。
+pgyer_user_key() {
+  printf '%s\n' "${PGYER_USER_KEY:-}"
+}
+
 pgyer_prompt_api_key() {
   local key="" save=""
   [ -t 0 ] && [ "${APP_PACKAGER_NONINTERACTIVE:-0}" != "1" ] || return 1
@@ -195,7 +202,8 @@ pgyer_cli_ensure() {
 pgyer_cli_run() { # 用法: pgyer_cli_run <api_key> <cli 参数...>
   local api_key="$1"
   shift
-  PGYER_API_KEY="$api_key" "$(pgyer_cli_path)" "$@"
+  # User Key 一起交给 CLI：官方 CLI 0.1.5 只读 PGYER_API_KEY，多给一个环境变量不改变行为。
+  PGYER_API_KEY="$api_key" PGYER_USER_KEY="$(pgyer_user_key)" "$(pgyer_cli_path)" "$@"
 }
 
 # 从 CLI 的 stderr 里取一句能给用户看的话（--json 失败时是 {"error":{...}}）
@@ -329,7 +337,7 @@ pgyer_harmony_fail() {
 
 pgyer_upload_harmony_artifact() {
   local info_file="$1" project_id="$2" version="$3" hap_path="$4"
-  local harmony_p12_path="" api_key="" p12_password="" stamp upload_dir description
+  local harmony_p12_path="" api_key="" user_key="" p12_password="" stamp upload_dir description
   local token_response token_status token_code build_key endpoint signature cos_token token_values
   local hap_response hap_status cert_response cert_status poll_response poll_status poll_values poll_code poll_message
   local result_file error_file deadline
@@ -363,6 +371,7 @@ pgyer_upload_harmony_artifact() {
     warn "蒲公英 HAP 上传跳过：未配置 API Key"
     return 1
   fi
+  user_key="$(pgyer_user_key)"
 
   p12_password="$(pgyer_harmony_p12_password || true)"
   [ -n "$p12_password" ] || p12_password="$(pgyer_prompt_harmony_p12_password || true)"
@@ -396,6 +405,9 @@ pgyer_upload_harmony_artifact() {
     --form-string "buildType=hap"
   )
   [ -n "$description" ] && token_args+=(--form-string "buildUpdateDescription=${description}")
+  # User Key（API 1.0 上传接口必填的 uKey）填了就送：API 2.0 自己只需要 _api_key，
+  # 多带一个 _u_key 不影响现有账户，不填则与以前完全一致。
+  [ -n "$user_key" ] && token_args+=(--form-string "_u_key=${user_key}")
   [ -n "${PGYER_BUILD_INSTALL_TYPE:-}" ] && token_args+=(--form-string "buildInstallType=${PGYER_BUILD_INSTALL_TYPE}")
   [ -n "${PGYER_BUILD_PASSWORD:-}" ] && token_args+=(--form-string "buildPassword=${PGYER_BUILD_PASSWORD}")
   token_status="$(curl "${token_args[@]}" "${PGYER_GET_COS_TOKEN_URL:-https://www.pgyer.com/apiv2/app/getCOSToken}" 2>"$error_file" || true)"
@@ -439,16 +451,19 @@ NODE
   fi
 
   log "上传蒲公英 HarmonyOS P12 证书"
-  cert_status="$(curl -sS \
-    --connect-timeout 20 \
-    --max-time "${PGYER_UPLOAD_TIMEOUT_SECONDS:-600}" \
-    -o "$cert_response" \
-    -w '%{http_code}' \
-    -F "file=@${harmony_p12_path}" \
-    --form-string "_api_key=${api_key}" \
-    --form-string "password=${p12_password}" \
-    --form-string "buildKey=${build_key}" \
-    "${PGYER_HARMONY_CERT_UPLOAD_URL:-https://upload.pgyer.com/apiv2/app/uploadHarmonyCert}" 2>>"$error_file" || true)"
+  local -a cert_args=(
+    -sS
+    --connect-timeout 20
+    --max-time "${PGYER_UPLOAD_TIMEOUT_SECONDS:-600}"
+    -o "$cert_response"
+    -w '%{http_code}'
+    -F "file=@${harmony_p12_path}"
+    --form-string "_api_key=${api_key}"
+    --form-string "password=${p12_password}"
+    --form-string "buildKey=${build_key}"
+  )
+  [ -n "$user_key" ] && cert_args+=(--form-string "_u_key=${user_key}")
+  cert_status="$(curl "${cert_args[@]}" "${PGYER_HARMONY_CERT_UPLOAD_URL:-https://upload.pgyer.com/apiv2/app/uploadHarmonyCert}" 2>>"$error_file" || true)"
   if [ -z "$cert_status" ] || [ "$cert_status" -lt 200 ] || [ "$cert_status" -ge 300 ]; then
     return $(pgyer_harmony_fail "$info_file" "$result_file" "P12 证书上传失败: HTTP ${cert_status:-unknown}")
   fi
@@ -462,15 +477,18 @@ NODE
   fi
 
   deadline=$((SECONDS + ${PGYER_POLL_TIMEOUT_SECONDS:-300}))
+  local -a poll_args=(
+    -sS -G
+    --connect-timeout 20
+    --max-time 60
+    -o "$poll_response"
+    -w '%{http_code}'
+    --data-urlencode "_api_key=${api_key}"
+    --data-urlencode "buildKey=${build_key}"
+  )
+  [ -n "$user_key" ] && poll_args+=(--data-urlencode "_u_key=${user_key}")
   while :; do
-    poll_status="$(curl -sS -G \
-      --connect-timeout 20 \
-      --max-time 60 \
-      -o "$poll_response" \
-      -w '%{http_code}' \
-      --data-urlencode "_api_key=${api_key}" \
-      --data-urlencode "buildKey=${build_key}" \
-      "${PGYER_BUILD_INFO_URL:-https://www.pgyer.com/apiv2/app/buildInfo}" 2>>"$error_file" || true)"
+    poll_status="$(curl "${poll_args[@]}" "${PGYER_BUILD_INFO_URL:-https://www.pgyer.com/apiv2/app/buildInfo}" 2>>"$error_file" || true)"
     if [ -z "$poll_status" ] || [ "$poll_status" -lt 200 ] || [ "$poll_status" -ge 300 ]; then
       return $(pgyer_harmony_fail "$info_file" "$result_file" "查询发布状态失败: HTTP ${poll_status:-unknown}")
     fi
