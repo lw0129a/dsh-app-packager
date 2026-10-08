@@ -345,6 +345,13 @@ from pathlib import Path
 import json
 import sys
 
+# Windows 的 Python 默认按 cp1252 编码 stdout，中文状态行会 UnicodeEncodeError 整行丢掉
+# （CI 的 windows 腿就是这么红的）。显式切 UTF-8，并且遇到编不出的字符也别炸。
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 rows = []
 for path in sorted(Path(sys.argv[1]).glob('*.json')):
     try:
@@ -389,6 +396,13 @@ render_parallel_queue() {
 from pathlib import Path
 import json
 import sys
+
+# Windows 的 Python 默认按 cp1252 编码 stdout，中文状态行会 UnicodeEncodeError 整行丢掉
+# （CI 的 windows 腿就是这么红的）。显式切 UTF-8，并且遇到编不出的字符也别炸。
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 root = Path(sys.argv[1])
 rows = []

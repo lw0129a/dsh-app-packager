@@ -194,6 +194,14 @@ engine '
 check_contains "非 TTY 下队列打一行进度快照" "android 35% 等待 HBuilderX 名额" "$OUT"
 check "队列没变化、也没到心跳点就不重复刷" "1" "${OUT##*|}"
 
+# Windows 上 Python 的 stdout 默认按 cp1252 编码，中文状态行会 UnicodeEncodeError，
+# 整行进度就丢掉（CI 的 windows 腿就是因为这个红的）。编码必须钉死在 UTF-8。
+engine '
+  status_dir="$PIPELINE_ROOT/status"; mkdir -p "$status_dir"
+  printf "%s\n" "{\"status\":\"waiting\",\"progress\":35,\"message\":\"等待 HBuilderX 名额\",\"platform\":\"android\",\"project\":\"demo\",\"sequence\":1,\"updated_at\":\"18:09:00\"}" > "$status_dir/1.json"
+  PYTHONIOENCODING=cp1252 render_parallel_queue "$status_dir"'
+check_contains "cp1252 的 Python 也照样打出中文进度行" "android 35% 等待 HBuilderX 名额" "$OUT"
+
 # 等名额时必须把「已等多少秒」写进状态：否则面板上一直挂着上一句消息，
 # HBuilderX 只有 1 个编译位，另外两个平台真的会干等好几分钟。
 # （不走 run_with_timeout：/bin/bash 3.2 上被 TERM 的后台作业会把调用方一起带走。）
