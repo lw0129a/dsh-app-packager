@@ -239,7 +239,11 @@ test('writeUploaderCredential 写 config/upload.local.env（保留其它行、�
   assert.match(text, /^# 由面板写入的本机上传配置/m);
   assert.ok(text.includes('UPLOAD_PLATFORM_huawei_ENABLED=true'), '其它行要保留');
   assert.ok(text.includes("PGYER_API_KEY='abc123'"));
-  assert.equal(statSync(file).mode & 0o777, 0o600, '放密钥的文件要是 600');
+  // Windows 没有 POSIX mode 位（writeFileSync 的 mode 在那里是空操作），所以只在
+  // POSIX 上核对 600 —— 否则 CI 的 windows 腿会因为「本来不存在的东西」变红。
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(file).mode & 0o777, 0o600, '放密钥的文件要是 600');
+  }
 
   // 覆盖：同名行只留一条，引号里的单引号要转义。
   writeUploaderCredential(home, 'PGYER_API_KEY', "it's-2");
