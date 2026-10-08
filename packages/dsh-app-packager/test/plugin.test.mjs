@@ -984,11 +984,14 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
     assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
   }
-  // 面板里升级插件换掉的就是宿主里的那个条目：升级成功后客户端半边要等一次页面加载才回来，
-  // 所以必须明确提示刷新（并给按钮），否则用户会以为入口又丢了。
+  // 面板里升级插件换掉的就是宿主里的那个条目。DSH 按 rev 取客户端模块、页面里的 rev 来自
+  // 启动时的清单，所以升级后**刷新页面会 404、入口消失**（实测旧 rev → 404、当前 rev → 200），
+  // 只有重启 DSH 才会重新出清单。这里钉住「只提示重启、绝不引导刷新」。
   assert.match(source, /job\.kind === 'upgrade' && !job\.running && job\.ok/);
-  assert.match(source, /window\.location\.reload\(\)/);
-  for (const key of ['upgrade.after', 'upgrade.reload']) {
+  assert.ok(!/window\.location\.reload/.test(source), '升级后不能再引导刷新页面（会 404 丢掉入口）');
+  assert.ok(!/upgrade\.reload/.test(source), '「刷新页面」按钮与文案都已删除');
+  assert.match(source, /重启 DeepSeek Harness/);
+  for (const key of ['upgrade.after']) {
     assert.ok(dictionaries[0].dict.zh[key], `中文字典缺少 ${key}`);
     assert.ok(dictionaries[0].dict.en[key], `英文字典缺少 ${key}`);
   }

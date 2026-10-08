@@ -22,7 +22,13 @@ relocate_work_root_out_of_node_modules() {
   esac
   local cache_root="${APP_PACKAGER_CACHE_ROOT:-}"
   if [ -z "$cache_root" ]; then
-    if [ "$(uname -s)" = "Darwin" ]; then
+    # 跟随 DSH：引擎目录是 <profile>/node_modules/dsh-app-packager/home，工作区就放
+    # <profile>/.app-packager/workspaces —— 必须离开 node_modules（HBuilderX 5.26 的
+    # Android 编译器不认这种路径），但也不必跑到 ~/Library/Caches 去。
+    local profile_root="${PIPELINE_ROOT%%/node_modules/*}"
+    if [ -n "$profile_root" ] && [ "$profile_root" != "${PIPELINE_ROOT:-}" ]; then
+      cache_root="$profile_root/.app-packager"
+    elif [ "$(uname -s)" = "Darwin" ]; then
       cache_root="$HOME/Library/Caches/app-packager"
     else
       cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/app-packager"

@@ -219,6 +219,23 @@ engine '
   printf "%s" "$WORK_ROOT"'
 check "工作区在 node_modules 里就挪到缓存目录" "/tmp/ap-cache/workspaces" "$OUT"
 
+# 没显式给 APP_PACKAGER_CACHE_ROOT 时，工作区跟着 DSH profile 目录走：引擎目录是
+# <profile>/node_modules/dsh-app-packager/home，工作区就放 <profile>/.app-packager/workspaces，
+# 不必再跑到 ~/Library/Caches 这种「别的位置」。
+engine '
+  WORK_ROOT="/x/node_modules/dsh-app-packager/home/workspaces"
+  PIPELINE_ROOT="/Users/me/.dsh/profiles/desktop/node_modules/dsh-app-packager/home"
+  relocate_work_root_out_of_node_modules 2>/dev/null
+  printf "%s" "$WORK_ROOT"'
+check "工作区跟随 DSH profile 目录" "/Users/me/.dsh/profiles/desktop/.app-packager/workspaces" "$OUT"
+
+engine '
+  WORK_ROOT="/x/node_modules/dsh-app-packager/home/workspaces"
+  PIPELINE_ROOT="/opt/standalone/app-packager"
+  relocate_work_root_out_of_node_modules 2>/dev/null
+  printf "%s" "$WORK_ROOT"'
+check_contains "不在 DSH 布局里才回落到系统缓存" "app-packager/workspaces" "$OUT"
+
 # 面板把 `sdk status`/`profiles` 的 stdout 当 JSON 解析（web.js:640/609）：外迁说明只能走
 # stderr，否则 SDK 卡片报「无法解析 sdk status 输出：Unexpected token 'I', "[INFO] 工作区改"...」。
 engine '

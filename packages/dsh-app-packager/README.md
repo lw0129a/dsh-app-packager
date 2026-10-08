@@ -89,9 +89,13 @@ centre column:
   profile. The engine directory is renamed out of the way for the duration, so
   an upgrade can never delete your downloaded SDKs, certificates or registered
   projects; the button is hidden when the plugin does not run from a profile's
-  `node_modules`. Once the upgrade job succeeds the card tells you to reload the
-  page (⌘R) — the browser half only comes back on the next page load — and offers
-  a *Reload page* button.
+  `node_modules`. Once the upgrade job succeeds the card tells you to
+  **restart DeepSeek Harness** and deliberately offers no *Reload page* button:
+  the browser asks for client modules by the revision from its boot-time
+  manifest, and after an upgrade that revision no longer exists on the server
+  (`plugins/??<id>/client.js&rev=<old>` answers **404**), so a reload takes the
+  sidebar entry away instead of bringing it back. Restarting DSH rebuilds the
+  manifest.
 - **Job** — the running check/build/upload with its live engine log, its verdict
   (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
   Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above

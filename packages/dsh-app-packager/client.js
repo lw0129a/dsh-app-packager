@@ -74,8 +74,7 @@ window.__ModuleLoader__.load({
       'upgrade.hint': '升级会先把引擎目录（SDK、证书、项目配置）暂存到插件旁边，装完立即移回，不会丢；升级完成后重启 DeepSeek Harness 生效。',
       'upgrade.run': '升级插件',
       'upgrade.unavailable': '这段代码不在 DSH 插件目录里，无法从面板升级：请在终端执行 dsh plugin --profile <profile> add dsh-app-packager@latest。',
-      'upgrade.after': '插件已升级：先刷新页面（⌘R）让新版本加载，侧栏入口会跟着回来；刷新后仍看不到 AppPackager，再重启 DeepSeek Harness。',
-      'upgrade.reload': '刷新页面',
+      'upgrade.after': '插件已升级：请重启 DeepSeek Harness。别拿刷新页面代替 —— 页面里记的是启动时那份清单给的客户端模块版本号，刷新会去取一个已经不存在的版本（404），侧栏入口反而会消失。',
       doctor: '环境检查（Node）',
       'doctor.run': '开始检查',
       'doctor.ok': '结论：当前环境可以打包。',
@@ -225,8 +224,7 @@ window.__ModuleLoader__.load({
       'upgrade.hint': 'The upgrade parks the engine directory (SDKs, certificates, project configs) next to the plugin, installs, then moves it straight back, so nothing is lost. Restart DeepSeek Harness afterwards.',
       'upgrade.run': 'Upgrade plugin',
       'upgrade.unavailable': 'This code is not inside a DSH plugin directory, so the panel cannot upgrade it: run dsh plugin --profile <profile> add dsh-app-packager@latest.',
-      'upgrade.after': 'The plugin has been upgraded: reload the page (⌘R) so the new version loads — the sidebar entry comes back with it. Still no AppPackager after the reload? Restart DeepSeek Harness.',
-      'upgrade.reload': 'Reload page',
+      'upgrade.after': 'The plugin has been upgraded: restart DeepSeek Harness. Do not reload the page instead — the page still holds the client-module revision from boot, so a reload asks for a revision that no longer exists (404) and the sidebar entry disappears.',
       doctor: 'Environment check (Node)',
       'doctor.run': 'Run check',
       'doctor.ok': 'This machine can build.',
@@ -1300,17 +1298,13 @@ window.__ModuleLoader__.load({
         },
         job && job.blockedByCheck ? h('div', { style: styles.error }, t('job.blockedByCheck')) : null,
         job && job.error && job.error !== '已被取消' ? h('div', { style: styles.error }, job.error) : null,
-        // 升级换掉的正是宿主里那个插件条目：成功后客户端半边要等一次页面加载才回来
-        // （客户端模块扫描是「按包增量、只认 fiber 存在的条目」）。给按钮不给自动刷新——
-        // 自动刷新会把用户正看着的构建日志一起丢掉。
+        // 升级换掉的正是宿主里那个插件条目。DSH 的客户端模块是按 rev 取的，而页面里
+        // 存的 rev 来自启动时那份清单：升级后刷新页面，浏览器会拿着旧 rev 去要模块，
+        // 服务端只会 404（实测：旧 rev → 404，当前 rev → 200），客户端这一半加载失败，
+        // 侧栏入口就消失了 —— 只有重启 DSH 才会重新出清单。所以这里只提示重启，
+        // 不给「刷新页面」按钮。
         job && job.kind === 'upgrade' && !job.running && job.ok
-          ? h(
-              'div',
-              { style: styles.warn },
-              t('upgrade.after'),
-              ' ',
-              button(t('upgrade.reload'), () => window.location.reload()),
-            )
+          ? h('div', { style: styles.warn }, t('upgrade.after'))
           : null,
         jobNotice(job),
         job && job.dropped ? h('div', { className: 'ap-note' }, tf('job.dropped', { n: job.dropped })) : null,
