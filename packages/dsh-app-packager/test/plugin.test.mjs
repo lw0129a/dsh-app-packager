@@ -721,7 +721,11 @@ test('面板把上传密钥写进 config/upload.local.env，只回报「配没�
   assert.equal(JSON.stringify(saved).includes('secret-key'), false, '密钥明文不能回给浏览器');
   const file = join(home, 'config', 'upload.local.env');
   assert.ok(readFileSync(file, 'utf8').includes("PGYER_API_KEY='secret-key'"));
-  assert.equal(statSync(file).mode & 0o777, 0o600, '放密钥的文件要是 600');
+  // Windows 没有 POSIX mode 位（writeFileSync 的 mode 在那里是空操作，读回来是 666），
+  // 所以这条只在 POSIX 上核对 —— 否则 CI 的 windows 腿会因为不存在的东西变红。
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(file).mode & 0o777, 0o600, '放密钥的文件要是 600');
+  }
 
   // User Key 是第二把可选的密钥：单独保存、单独撤销，互不影响。
   const savedUser = panel.saveUploadCredential({ provider: 'pgyer', userKey: 'user-key' });
