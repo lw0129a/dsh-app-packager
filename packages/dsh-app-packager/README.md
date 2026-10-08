@@ -33,7 +33,7 @@ centre column:
   re-runs when you switch the platform in that card, and a failure is written
   into the card so *Run check* can retry.
 - **Folding** — every section (Engine / Environment check / SDK / Projects /
-  Build options / Build scope / Upload / Job) starts collapsed; click its title
+  Build options & scope / Upload / Job) starts collapsed; click its title
   to open. The fold state lives with the component, so refreshing state or
   polling a job never loses where the user left it.
 - **Projects** — every `config/projects/*.env`, its source directory (flagging
@@ -47,19 +47,20 @@ centre column:
   one level below it and registers every uni-app x project it finds, so picking
   projects one by one is unnecessary (several picked folders are joined into
   that one field).
-- **Build scope** — the batch entry point: any set of platforms (tick *All* for
-  the three) and any subset of projects (none ticked = every project that
-  platform enables), with one *Env check* / *Build* pair. The engine CLI takes a
-  single platform and a single project per run, so a selection becomes several
-  engine runs executed back to back inside one job, each marked `▶ i/n` in the
-  log; the job succeeds only if every run did, keeping the first failing exit
-  code.
-- **Shared build options** — version override; a build can still upload what it
+- **Build options & scope** — one card for both halves of "how to build" and
+  "what to build": the version override, the *Upload after build* row, the
+  *Advanced* fold, and underneath the boxed scope block — any set of platforms
+  (tick *All* for the three) and any subset of projects (none ticked = every
+  project that platform enables), with the one *Env check* / *Build* pair. The
+  engine CLI takes a single platform and a single project per run, so a
+  selection becomes several engine runs executed back to back inside one job,
+  each marked `▶ i/n` in the log; the job succeeds only if every run did,
+  keeping the first failing exit code. A build can still upload what it
   just produced: the **Upload after build** row ticks the distribution platforms
   (the same selection the Upload card's *Distribution* row edits, sent as one
   comma separated `--upload`), and ticking none sends `noUpload`, so uploading
   without a rebuild stays the Upload card's job. *HarmonyOS debug HAP* and *Keep
-  work dir* live in an *Advanced* fold, each with a one-line explanation.
+  work dir* live in that *Advanced* fold, each with a one-line explanation.
 - **Upload** — the installers the engine has already archived, straight from
   `state.artifacts` (`listArtifacts` reads `packages/iOS|Android|HarmonyOS/
   <项目ID>-latest.json`): display name, version, file size (or a *no installer

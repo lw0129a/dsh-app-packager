@@ -1122,9 +1122,11 @@ window.__ModuleLoader__.load({
       );
 
       // 打包选项只放打包本身的东西：上传目标与密钥都在下面的「上传」板块。
+      // 打包选项与打包范围是同一件事的两半（怎么打 / 打哪些），合成一张卡片：
+      // 上半是参数，下半是范围与「环境检查 / 打包」按钮。范围仍旧框成一块，视觉上分得清。
       const optionsCard = h(
         Section,
-        { t, title: t('options') },
+        { t, title: `${t('options')} · ${t('scope')}` },
         h(
           'div',
           { style: styles.actions },
@@ -1204,17 +1206,9 @@ window.__ModuleLoader__.load({
           uploaderPicker('options.uploadAfterBuild'),
           h('div', { className: 'ap-note' }, t('options.uploadAfterBuild.hint')),
         ),
-      );
-
-      const scopeCard = h(
-          Section,
-          {
-            t,
-            className: 'ap-scope',
-            titleClass: 'ap-sdk-name',
-            title: t('scope'),
-            actions: h('span', { style: styles.muted }, t('scope.hint')),
-          },
+        h(
+          'div',
+          { className: 'ap-scope', style: { marginTop: '10px' } },
           h(
             'div',
             { style: styles.actions },
@@ -1243,7 +1237,9 @@ window.__ModuleLoader__.load({
             button(t('build'), () => runBatch('build'), { primary: true, disabled: Boolean(busy) || jobRunning || effectivePlatforms.length === 0 }),
             effectivePlatforms.length === 0 ? h('span', { style: styles.muted }, t('scope.nonePicked')) : null,
           ),
-        );
+          h('div', { className: 'ap-note' }, t('scope.hint')),
+        ),
+      );
 
       // 上传是独立流程：这里列出引擎已归档的安装包（packages/<平台>/*-latest.json），
       // 一行一个产物、一键单独上传，不会重新打包。
@@ -1333,7 +1329,6 @@ window.__ModuleLoader__.load({
         sdkCard,
         projectsCard,
         optionsCard,
-        scopeCard,
         uploadCard,
         jobCard,
       );

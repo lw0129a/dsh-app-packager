@@ -1063,7 +1063,8 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
     return flatten(node.children, out);
   };
   const texts = flatten(tree);
-  assert.ok(texts.includes(zh.scope), '打包范围区块渲染出来了');
+  // 打包选项与打包范围合并成一张卡片，标题是「打包选项 · 打包范围」。
+  assert.ok(texts.some((text) => text.includes(zh.scope)), '打包范围区块渲染出来了');
   assert.ok(texts.includes(zh['scope.hint']));
   assert.ok(texts.includes(zh['upload.target.none']), 'state 还没到时应提示没有可用的分发平台，而不是崩掉');
   const icon = slots[0].component();
@@ -1314,12 +1315,14 @@ test('client half：每个板块都能折叠，且互不影响', () => {
     }
   };
   const collapsed = folds();
-  assert.equal(collapsed.length, 8, `引擎/环境检查/SDK/项目列表/打包选项/打包范围/上传/任务 都要能折叠，实际 ${collapsed.length}`);
+  assert.equal(collapsed.length, 7, `引擎/环境检查/SDK/项目列表/打包选项与打包范围/上传/任务 都要能折叠，实际 ${collapsed.length}`);
   assert.ok(collapsed.every((node) => node.props['aria-expanded'] === 'false'), '默认全部收起');
   assert.ok(collapsed.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
   assert.ok(collapsed.some((node) => textOf(node).includes(dict['projects'])), '项目列表整体一个开关');
-  assert.ok(collapsed.some((node) => textOf(node).includes(dict['options'])), '打包选项自己一个开关（不再塞在项目列表里）');
-  assert.ok(collapsed.some((node) => textOf(node).includes(dict['scope'])), '打包范围自己一个开关');
+  assert.ok(
+    collapsed.some((node) => textOf(node).includes(dict['options']) && textOf(node).includes(dict['scope'])),
+    '打包选项与打包范围合成一个开关（同一件事的两半）',
+  );
   assert.ok(collapsed.some((node) => textOf(node).includes(dict['upload'])), '上传自己一个开关（打包与上传分开）');
   // 收起时板块内容一点都不渲染（只有标题那一行）。
   assert.ok(!folds().some((node) => textOf(node).includes(dict['scope.hint'])), '收起时连打包范围的说明都看不到');
