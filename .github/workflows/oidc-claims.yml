@@ -1,0 +1,39 @@
+name: OIDC claims (temporary diagnostic)
+
+# 临时诊断：把 GitHub 发给 npm 的 OIDC 身份凭据里的声明打出来（不打凭据本身），
+# 好和 npmjs.com 上 Trusted Publisher 填的字段逐字对照。用完就删。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 打印 OIDC 声明并试一次换票
+        run: |
+          set -euo pipefail
+          resp=$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org")
+          printf '%s' "$resp" > /tmp/oidc.json
+          node -e '
+            const raw = require("fs").readFileSync("/tmp/oidc.json", "utf8");
+            const token = JSON.parse(raw).value;
+            require("fs").writeFileSync("/tmp/oidc.jwt", token);
+            const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+            const keys = ["iss","aud","sub","repository","repository_owner","repository_id",
+              "repository_visibility","workflow","workflow_ref","job_workflow_ref","ref",
+              "environment","event_name","runner_environment"];
+            for (const k of keys) console.log(k.padEnd(22), "=", JSON.stringify(payload[k]));
+          '
+          for pkg in app-packager dsh-app-packager; do
+            echo "--- exchange for $pkg"
+            code=$(curl -sS -o /tmp/exchange.json -w '%{http_code}' \
+              -X POST "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/$pkg" \
+              -H "Authorization: bearer $(cat /tmp/oidc.jwt)")
+            echo "HTTP $code"
+            head -c 600 /tmp/exchange.json; echo
+          done
