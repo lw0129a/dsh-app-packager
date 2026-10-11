@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-11
+
+**The engine no longer dies printing Chinese on a Windows console.** `engine/lib/common.sh` exports `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` for every engine process. Windows `python3` encodes stdout with the local code page (cp1252 / cp936) unless told otherwise, so any engine step that printed Chinese raised `UnicodeEncodeError` mid-run — CI's Windows legs caught it in `android_agp_effective_version` (the `keep 9.3.2 (requested 8.12.0 跨 AGP 大版本)` line). macOS and Linux were already UTF-8, so the export is a no-op there.
+
+**The test suite is portable again.** The JSONC round-trip assertion now reads the normalized file with `grep` instead of a `python3 -c` that embedded a POSIX `/tmp/...` path (MSYS does not rewrite a path that sits inside a code string, so native Python could not open it), and the download-destination test builds its expectation from `os.tmpdir()` instead of a hardcoded `/tmp/dl` (on Windows `path.join('/tmp/dl', 'a.apk')` is `D:\tmp\dl\a.apk`). `pnpm-lock.yaml` also caught up with `workspace:^0.6.3`, without which CI's `pnpm install --frozen-lockfile` aborted with `ERR_PNPM_OUTDATED_LOCKFILE`.
+
 ## [0.6.3] - 2026-10-11
 
 ### Added
