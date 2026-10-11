@@ -450,8 +450,9 @@ cat >"$JSONC" <<'JSON_EOF'
 JSON_EOF
 engine "manifest_jsonc_to_json '$JSONC'"
 check "JSONC manifest 被规范化（打印 changed）" "changed" "$OUT"
-engine "python3 -c \"import json; print(json.load(open('$JSONC'))['url'])\""
-check "字符串里的 // 不被当注释删掉" "http://example.com/a//b" "$OUT"
+# 用 grep 而不是 python 复读：Windows 的 Git Bash 里 /tmp 是 POSIX 路径，原生 python 打不开
+# （路径写在 -c 的代码串里，MSYS 也来不及转换），而引擎自己是把路径当参数传的。
+check "字符串里的 // 不被当注释删掉" "http://example.com/a//b" "$(grep -o 'http://example.com/a//b' "$JSONC")"
 engine "manifest_jsonc_to_json '$JSONC'"
 check "已规范的 manifest 二次运行不再改动" "" "$OUT"
 BAD_JSONC="$TMP/bad-manifest.json"

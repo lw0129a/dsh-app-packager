@@ -1,5 +1,10 @@
 # shellcheck shell=bash
 
+# Windows 上 python3 的 stdout 默认按本地代码页（cp1252 / 936）编码，而引擎里到处是中文输出，
+# 一打印就 UnicodeEncodeError 掐死那一步（CI 的 windows 腿就是这么红的）。强制 UTF-8。
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 log()  { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" >&2; }
 warn() { printf '[%s] WARN %s\n' "$(date '+%H:%M:%S')" "$*" >&2; }
 die()  { printf '[%s] ERROR %s\n' "$(date '+%H:%M:%S')" "$*" >&2; exit 1; }
