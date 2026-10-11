@@ -29,6 +29,16 @@ npm login
 
 `.github/workflows/publish.yml` is ready: a `v*` tag publishes both packages, or run `gh workflow run publish.yml` from the Actions tab. It uses `id-token: write` so npm identifies this repository through OIDC — **the workflow holds no npm token at all**, which sidesteps both "a bypass token cannot publish directly" and "an OTP is required".
 
+> **⛔ 2026-10-11: this path does not work for this repository — don't spend time on it.** The repo was created 2026-10-07, after GitHub's 2026-07-15 cutover, so its OIDC `sub` is forced into the immutable form `repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:…`, while npm's token exchange still matches the legacy `repo:<owner>/<repo>:ref:…`. **No trusted-publisher configuration can succeed**:
+>
+> - Read it with `gh api repos/lw0129a/dsh-app-packager/actions/oidc/customization/sub` → `{"use_default":true,"use_immutable_subject":true,"sub_claim_prefix":"repo:lw0129a@334367781/dsh-app-packager@1408157736"}`.
+> - Nothing configured on npm → `404 OIDC token exchange error - package not found` (dry run `37596831093`, 2026-10-07).
+> - Configured the normal way (Organization/user `lw0129a`, Repository `dsh-app-packager`, Workflow filename `publish.yml`, empty Environment, *Allow npm publish* ticked) → **`401 {"message":"OIDC token exchange error - unauthorized"}`** (runs `38108978783`, `38109042111`).
+> - Adding a second binding written in the immutable form (`lw0129a@334367781` / `dsh-app-packager@1408157736`) → **still 401** (run `38109448853`), so npm is not doing a plain string comparison and filling in the IDs does not help.
+> - There is no switch on the GitHub side: `PUT /repos/{owner}/{repo}/actions/oidc/customization/sub` with `{"use_default":false,"include_claim_keys":["repo","ref"]}` returns 201 and `use_default` really does flip to false, yet `sub_claim_prefix` **still carries the @ID** (restored to `use_default:true` afterwards). [npm/cli#9969](https://github.com/npm/cli/issues/9969) is exactly this mismatch; the controlled probe in [aywengo/mercury#375](https://github.com/aywengo/mercury/issues/375) shows the exchange answering with the same *unauthorized* for a package name that **does not exist at all** — it rejects the token before it ever looks at a package.
+> - Only repositories created before 2026-07-15 still work over OIDC (e.g. `hraness/hra`, legacy `sub`). `lw0129a` owns just `dsh-app-packager` and `awesome-dsh-plugin`, both created 2026-10-07 ⇒ **there is no old repository to route through**.
+> - Conclusion: shelve this preferred path until npm fixes the matching (or GitHub offers an opt-out). Until then `publish.yml`'s *预检 npm trusted publisher* step stays red, and **re-configuring the trusted publisher on npm will not fix it**. Everyday publishing goes through the granular token in section 2.
+
 One-time setup (once per package, after the account is restored): npmjs.com → package → **Settings → Trusted Publisher → GitHub Actions**, then `Organization or user = lw0129a`, `Repository = dsh-app-packager`, `Workflow filename = publish.yml` (leave the environment field empty unless the workflow declares one; both sides must match).
 
 The npm CLI can do it instead (npm ≥ 11.5.1; the bundled npm 10.x has no such subcommand, so use `npx --yes npm@11` or npm 11 from Node 20):
@@ -72,6 +82,44 @@ npm i -g --prefix /tmp/ap-npm11 npm@11
 ```
 
 ## 2. Publishing to npm
+
+### Preferred (verified working on 2026-10-11): publish directly with a bypass-2FA granular token
+
+npmjs.com → avatar → **Access Tokens** → **Generate New Token** → **Granular Access Token**:
+
+| Field | Value |
+| --- | --- |
+| Token name | anything, e.g. `app-packager-publish-2` |
+| Packages and scopes → Permissions | **Read and write (publish and stage)**. The Summary at the bottom of the form then reads `Publish new versions directly` — this *is* the old `Bypass 2FA` checkbox, which the new UI merged into the permission radio. **Read and write (stage only)** gives you a staging-only token (a direct publish fails with `E_STAGE_REQUIRED`) |
+| Select packages | tick just `app-packager` + `dsh-app-packager` (or All packages) |
+| Expiration | write tokens default to 7 days, 90 max — revoke it once you are done |
+
+Creating it asks for the account's 2FA once. **This account's 2FA is a security key (WebAuthn) and there is no 6-digit code** (`Account Settings → Profile` says `Enabled for authorization and publishing` + `1 security key`), so:
+
+- confirm in the browser with Touch ID / the key — **do not wait for a code from an authenticator app, SMS or email; none exists**;
+- a token without bypass always fails with `npm error code EOTP / This operation requires a one-time password from your authenticator`, and `--otp=<code>` has **no code to offer**;
+- **never** feed a code from `npm_recovery_codes.txt` to `--otp` (that puts the account into npm's 72-hour security hold — see the warning at the end of this section).
+
+Once you have the token (**never commit it**):
+
+```bash
+umask 077
+npm config set //registry.npmjs.org/:_authToken='npm_xxx' --location=user   # writes ~/.npmrc
+npm whoami                                                                 # expect lw0129a
+
+pnpm -r pack --pack-destination /tmp/ap-pack2                              # pack the real artefacts
+npm publish /tmp/ap-pack2/app-packager-0.6.2.tgz
+npm publish /tmp/ap-pack2/dsh-app-packager-0.6.2.tgz
+
+npm view app-packager version        # expect 0.6.2
+npm view dsh-app-packager version    # expect 0.6.2
+```
+
+`npm publish <tgz>` printing `+ <name>@<version>` means it went through; the following `Your package is being processed and may take a few minutes to become available.` means the registry is still chewing on it, so `npm view` may need a minute or two (the fastest read is `curl -s -H 'Cache-Control: no-cache' https://registry.npmjs.org/<name>`). **Revoke the token** right after publishing and drop that line from `~/.npmrc`.
+
+---
+
+What follows is the older route used before 2026-10 (`npm stage publish` plus browser approval): unnecessary while a direct-publish token works, kept as a fallback.
 
 Pack the real artefacts with `pnpm pack` first (**the plugin must be packed by pnpm**: its dependency is written as `workspace:^0.2.0`, and only pnpm rewrites that to `^0.2.0`; `npm pack` keeps the workspace protocol and installing it into a profile fails with `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`):
 
@@ -185,6 +233,8 @@ Screenshots are optional: put a `screenshots.json` next to the plugin's `package
 
 ### Listing history for this project
 
+- 2026-10-11: **0.6.2 is finally on npm.** `app-packager@0.6.2` (sha1 `fad39640bd5d54c12d3eccfffae6b38320066247`, 51 files, 161.2 kB) and `dsh-app-packager@0.6.2` (sha1 `9b979dba50a76e3d64e777aabd4cc452c264a119`, 10 files, 57.3 kB) are published, `dist-tags.latest` is 0.6.2 for both, and the registry's sha1 matches the local `pnpm -r pack` output byte for byte (i.e. the same bytes as the two GitHub release assets). The same day **v0.6.1 / v0.6.2 release assets were (re)uploaded** (v0.6.1 re-packs byte-identically, sha256 matching the "cont. 2" record ⇒ packing is reproducible). Publishing used the granular-token route added to section 2: trusted publishing (OIDC) is dead for these two repositories because of GitHub's immutable `sub` (see the measured record in section 1), and **the account's 2FA is a security key with no 6-digit code**, so `--otp` was never an option. On the marketplace side PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) is still OPEN: its only red is "a first-time contributor's workflow needs one maintainer approval", already raised in a comment (`issuecomment-6104946422`); with the npm packages now live, the condition for the automated npm mapping (a published package whose `repository` points back at the listed repo) is satisfied.
+- 2026-10-11 (follow-ups): **revoke the direct-publish token** and drop the line from `~/.npmrc`; the extra trusted publisher written in immutable form on npm (`lw0129a@334367781` / `dsh-app-packager@1408157736`) does nothing and can be deleted; now that 0.6.2 is on the registry, the `desktop` profile's `file:` install and the `app-packager` `file:` override in `pnpm-workspace.yaml` can go back to `dsh plugin --profile desktop add dsh-app-packager` as planned in the 2026-10-07 entry (not touched this round, to avoid disturbing the 3.5 GB of offline SDKs and certificates in use).
 - 2026-10-07 (cont. 6): **0.6.1 is voided; 0.6.2 takes its place.** The user reported the panel "flashes and then stays blank": the cause was client-side — in `client.js` the SDK card's derived `const`s (`sdkInfo` / `sdkList` / `hb` / `sdkMark` / `sdkStateText`) were declared *below* the card that reads them while the card is evaluated immediately, so as soon as `GET state` resolved the panel threw `ReferenceError: Cannot access 'hb' before initialization` (old `client.js:688`) and React unmounted it; on the `state = null` render every card short-circuits to `null`, which is why it only "flashed". The declarations now sit above the cards (commit `aad8e0a`) and `plugin.test.mjs` renders the panel again **with a real state** — the old case only rendered `state = null`, bypassing every card, and that is how a blank 0.6.1 shipped with all tests green. Both packages are bumped to 0.6.2 (plugin depends on `workspace:^0.6.2`) and the local desktop profile is already on it, installed via the stash-`home` → `pnpm add file:<new tgz>` → restore-`home` flow: `home/.engine-version` went 0.6.1 → 0.6.2 while the 3.5 GB of offline SDKs, certificates, config and both projects survived, and `sdk urls` now prints the real HBuilderX version. npm is still under the security hold, so the launch order is now **0.6.2**.
 - 2026-10-07 (cont. 5): **0.6.1 is still not on npm** (stuck on the security hold, see "cont. 4"; it lifts by 2026-10-10 17:11 local time at the latest). This round wrote the "do not skip the version that is still owed" rule into section 2 above: `publish.yml` publishes the package version of the ref it was triggered with, so `main` must stay on 0.6.1 until it is live, and catching up means `gh workflow run publish.yml --ref v0.6.1` (the tag ships the same workflow as `main`). The sidebar entry was also confirmed restored — after the user restarted the host around 17:00 the host-side tools answer again (`app_packager_list`: engine home `~/.dsh/profiles/desktop/node_modules/dsh-app-packager/home`, engine version 0.6.1, both projects), `app_packager_check all` exits 0 with all three platforms `errors=0` for both projects, and the client code cache was rewritten at 17:05 containing `dsh-app-packager`.
 - 2026-10-07: forked `lw0129a/awesome-dsh-plugin`, branch `add-dsh-app-packager`, opened PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) with just that one entry file. **Do not delete the fork before it merges** — deleting it closes the PR.

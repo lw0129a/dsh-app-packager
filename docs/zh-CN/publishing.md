@@ -29,6 +29,16 @@ npm login
 
 `.github/workflows/publish.yml` 已经就绪：推 `v*` tag 自动发布，或在 Actions 页签手动 `gh workflow run publish.yml`。它用 `id-token: write` 让 npm 通过 OIDC 认出这个仓库，**工作流里没有任何 npm token**，因此「bypass token 不能直发」和「需要 OTP」这两个问题都不存在。
 
+> **⛔ 2026-10-11 实测：这条路在当前仓库上走不通，先不要再花时间。** 仓库建于 2026-10-07，晚于 GitHub 2026-07-15 的切换线，OIDC token 的 `sub` 被强制改成不可变格式 `repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:…`，而 npm 的换票接口仍按旧格式 `repo:<owner>/<repo>:ref:…` 匹配，于是**trusted publisher 无论怎么填都会失败**：
+>
+> - 读法：`gh api repos/lw0129a/dsh-app-packager/actions/oidc/customization/sub` → `{"use_default":true,"use_immutable_subject":true,"sub_claim_prefix":"repo:lw0129a@334367781/dsh-app-packager@1408157736"}`。
+> - 没配 trusted publisher → 换票 `404 OIDC token exchange error - package not found`（2026-10-07 空跑 run `37596831093`）。
+> - 按常规填好（Organization/user `lw0129a`、Repository `dsh-app-packager`、Workflow filename `publish.yml`、Environment 空、勾 Allow npm publish）→ 变成 **`401 {"message":"OIDC token exchange error - unauthorized"}`**（run `38108978783`、`38109042111`）。
+> - 再按不可变格式**新增**一条 binding（`lw0129a@334367781` / `dsh-app-packager@1408157736`）→ **仍然 401**（run `38109448853`）⇒ npm 不是拿字符串直接比对，填 @ID 也救不回来。
+> - GitHub 侧没有开关：`PUT /repos/{owner}/{repo}/actions/oidc/customization/sub` 传 `{"use_default":false,"include_claim_keys":["repo","ref"]}` 返回 201、`use_default` 也确实变成 false，但 `sub_claim_prefix` **照旧带 @ID**（已还原成 `use_default:true`）。[npm/cli#9969](https://github.com/npm/cli/issues/9969) 记录的就是这个不匹配；对照实验见 [aywengo/mercury#375](https://github.com/aywengo/mercury/issues/375)：拿一个**根本不存在的包名**去换票，注册表回的也是同一句 unauthorized —— 说明它在"看任何包之前"就拒了这个 token。
+> - 只有 2026-07-15 之前创建的老仓库还能走通 OIDC（例：`hraness/hra`，legacy `sub`）。`lw0129a` 名下只有 `dsh-app-packager` 与 `awesome-dsh-plugin`，都建于 2026-10-07 ⇒ **没有旧仓库可借道**。
+> - 结论：这条首选路径先搁置，等 npm 修好匹配（或 GitHub 给出退回开关）再启用；在那之前 `publish.yml` 的「预检 npm trusted publisher」步骤会一直红，**不是再去 npm 配一次能解决的**。日常发布走下面第二节的 granular token 直发。
+
 一次性配置（两个包各做一次，账号恢复后）：npmjs.com → 包 → **Settings → Trusted Publisher → GitHub Actions**，填 `Organization or user = lw0129a`、`Repository = dsh-app-packager`、`Workflow filename = publish.yml`（工作流里没声明 `environment`，这一栏就留空 —— 两边必须一致）。
 
 也可以让 npm CLI 代劳（npm ≥ 11.5.1；系统自带的 npm 10.x 没有这个子命令，用 `npx --yes npm@11` 或 Node 20 里的 npm 11）：
@@ -72,6 +82,44 @@ npm i -g --prefix /tmp/ap-npm11 npm@11
 ```
 
 ## 二、发布到 npm
+
+### 首选（2026-10-11 实测可行）：bypass-2FA granular token 直接发布
+
+npmjs.com → 右上头像 → **Access Tokens** → **Generate New Token** → **Granular Access Token**：
+
+| 字段 | 取值 |
+| --- | --- |
+| Token name | 任意，如 `app-packager-publish-2` |
+| Packages and scopes → Permissions | **Read and write (publish and stage)**。表单底部 Summary 会写 `Publish new versions directly` —— 这就是旧版 UI 里那个 `Bypass 2FA` 勾选框，新版把它并进了权限单选；选 **Read and write (stage only)** 拿到的是只能暂存的令牌（直发时报 `E_STAGE_REQUIRED`） |
+| Select packages | 只勾 `app-packager` + `dsh-app-packager`（或 All packages） |
+| Expiration | 写权限令牌默认 7 天、最长 90 天 —— 发完就 revoke |
+
+生成时要用账号的 2FA 确认一次。**本账号的 2FA 是安全密钥（WebAuthn），没有 6 位动态码**（`Account Settings → Profile` 写的是 `Enabled for authorization and publishing` + `1 security key`），因此：
+
+- 浏览器里用 Touch ID / 插入密钥确认即可，**不要等验证器、短信或邮件里的 6 位码 —— 它根本不存在**；
+- 不带 bypass 的令牌直发一定报 `npm error code EOTP / This operation requires a one-time password from your authenticator`，而 `--otp=<码>` **没有任何码可填**；
+- **不要**把 `npm_recovery_codes.txt` 里的恢复码喂给 `--otp`（会把账号打进 72 小时 security hold，见本节末尾的警告）。
+
+拿到令牌后（**别把它提交进仓库**）：
+
+```bash
+umask 077
+npm config set //registry.npmjs.org/:_authToken='npm_xxx' --location=user   # 写进 ~/.npmrc
+npm whoami                                                                 # 期望 lw0129a
+
+pnpm -r pack --pack-destination /tmp/ap-pack2                              # 打出真正的发布件
+npm publish /tmp/ap-pack2/app-packager-0.6.2.tgz
+npm publish /tmp/ap-pack2/dsh-app-packager-0.6.2.tgz
+
+npm view app-packager version        # 期望 0.6.2
+npm view dsh-app-packager version    # 期望 0.6.2
+```
+
+`npm publish <tgz>` 打印 `+ <包>@<版本>` 就算成功；紧跟的 `Your package is being processed and may take a few minutes to become available.` 表示注册表还在处理，`npm view` 可能要 1–2 分钟才看得到（最快的读法是 `curl -s -H 'Cache-Control: no-cache' https://registry.npmjs.org/<包>`）。发布完**立刻 revoke 那个令牌**，并删掉 `~/.npmrc` 里那一行。
+
+---
+
+下面是从 2026-10 之前一路用下来的老路径（暂存发布 `npm stage publish` + 浏览器批准）：直发令牌可用时用不到，留作备选。
 
 先用 `pnpm pack` 打出真正的发布件（**插件必须用 pnpm 打包**：它依赖 `app-packager` 时写的是 `workspace:^0.2.0`，只有 pnpm 会在打包时改写成 `^0.2.0`，`npm pack` 会原样保留 workspace 协议，装到 profile 里直接报 `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`）：
 
@@ -185,6 +233,8 @@ description:
 
 ### 本项目的上架记录
 
+- 2026-10-11：**0.6.2 终于上了 npm**。`app-packager@0.6.2`（sha1 `fad39640bd5d54c12d3eccfffae6b38320066247`，51 files，161.2 kB）与 `dsh-app-packager@0.6.2`（sha1 `9b979dba50a76e3d64e777aabd4cc452c264a119`，10 files，57.3 kB）已发布，`dist-tags.latest` 双双是 0.6.2；registry 上的 sha1 与本机 `pnpm -r pack` 产物逐字节一致（也就是与两个 GitHub release 资产同源）。同一天把 **v0.6.1 / v0.6.2 的 release 资产补齐**（v0.6.1 与本地重打逐字节相同、sha256 与「续2」记录的一致 ⇒ 打包可复现）。发布走的是本节新增的「bypass-2FA granular token 直发」：trusted publishing（OIDC）在这两个仓库上被 GitHub 的不可变 `sub` 彻底堵死（见第一节的实测记录），**账号的 2FA 是安全密钥、没有 6 位动态码**，所以 `--otp` 那条路本来就不存在。市场侧 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750) 仍是 OPEN：唯一的红是「首次贡献者的 workflow 需要维护者点一次 approve」，已在 PR 下留言（`issuecomment-6104946422`）；npm 包已存在，条目自动采集 npm 映射的条件（已发布包的 `repository` 指回被收录的仓库）已经满足。
+- 2026-10-11（收尾待办）：用完请 **revoke 直发令牌** 并从 `~/.npmrc` 删掉那一行；npm 上那条按不可变格式另建的 trusted publisher（`lw0129a@334367781` / `dsh-app-packager@1408157736`）没有作用，可以删掉；0.6.2 既已在 registry，`desktop` profile 的 `file:` 安装与 `pnpm-workspace.yaml` 里 `app-packager` 的 `file:` override 就可以按 2026-10-07 那条记录里的计划改回 `dsh plugin --profile desktop add dsh-app-packager`（本轮没动它，避免影响正在用的 3.5G 离线 SDK 与证书）。
 - 2026-10-07（续6）：**0.6.1 作废，改发 0.6.2**。用户报告「应用打包界面一闪而过，然后一直空白」：根因在客户端 —— `client.js` 里 SDK 卡片的派生 `const`（`sdkInfo` / `sdkList` / `hb` / `sdkMark` / `sdkStateText`）声明在卡片**之后**，卡片却是立刻求值的，于是 `GET state` 一到就抛 `ReferenceError: Cannot access 'hb' before initialization`（`client.js` 旧 :688），React 卸载整块面板；`state` 为 null 的那次渲染里所有卡片短路成 null，所以只是「闪一下」。已把声明上移到卡片之前（提交 `aad8e0a`），并在 `plugin.test.mjs` 补一条**用真实 state 再渲染一遍**的断言 —— 此前用例只渲染 `state = null`，正好绕开所有卡片，这就是 0.6.1 带着白屏 bug 全绿发布的原因。两个包版本升到 0.6.2（插件依赖 `workspace:^0.6.2`），本机 desktop profile 已按「暂存 `home/` → `pnpm add file:<新 tgz>` → 移回 `home/`」的安装流程装上 0.6.2：`home/.engine-version` 0.6.1→0.6.2，3.5G 离线 SDK、证书、配置、两个项目全保留，`sdk urls` 现在能打出真实 HBuilderX 版本。npm 侧仍在 security hold 上，上线顺序统一改成按 **0.6.2** 发。
 - 2026-10-07（续5）：**0.6.1 仍未上 npm**（卡在 security hold 上，见「续4」；最晚 2026-10-10 17:11 本地解除）。本轮把「补发不能跳过欠着的那版」写成上面第二节的规则：`publish.yml` 按触发 ref 的包版本发布，所以 0.6.1 上线前 main 的版本号必须留在 0.6.1，补发用 `gh workflow run publish.yml --ref v0.6.1`（tag 自带的 workflow 与 main 相同）。同时 ③ 可视化入口确认恢复 —— 用户约 17:00 重启宿主后，宿主侧工具正常应答（`app_packager_list`：引擎目录 `~/.dsh/profiles/desktop/node_modules/dsh-app-packager/home`、引擎版本 0.6.1、两个项目），`app_packager_check all` 退出码 0、两项目三平台全 `errors=0`，且客户端 code cache 17:05 新写入且含 `dsh-app-packager`。
 - 2026-10-07：fork `lw0129a/awesome-dsh-plugin`，分支 `add-dsh-app-packager`，提了 PR [#6750](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6750)（只加上面那一个条目文件）。**合并前别删这个 fork**，删了 PR 会被自动关闭。
