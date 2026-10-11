@@ -2,7 +2,7 @@
 
 # app-packager
 
-One-command builds of **iOS IPA / Android APK / HarmonyOS HAP** from uni-app x projects. Zero runtime dependencies — Node built-ins only.
+One-command builds of **iOS IPA / Android APK / HarmonyOS HAP** from uni-app x projects, and of **Android APK** from classic uni-app projects. Zero runtime dependencies — Node built-ins only.
 
 It does two things:
 

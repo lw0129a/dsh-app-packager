@@ -2,7 +2,7 @@
 
 # app-packager
 
-一条命令把 uni-app x 项目打成 **iOS IPA / Android APK / HarmonyOS HAP**。零运行时依赖，只用 Node 内置模块。
+一条命令把 uni-app x 项目打成 **iOS IPA / Android APK / HarmonyOS HAP**；经典 uni-app 项目也走同一条流水线打 **Android APK**。零运行时依赖，只用 Node 内置模块。
 
 它做两件事：
 

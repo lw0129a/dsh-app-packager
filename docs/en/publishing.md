@@ -208,8 +208,8 @@ url: https://github.com/lw0129a/dsh-app-packager/tree/main/packages/dsh-app-pack
 name: lw0129a/dsh-app-packager#dsh-app-packager
 category: dev
 description:
-  en: 'Packaging pipeline for uni-app x projects: drives the HBuilderX CLI to build, sign and upload iOS, Android and HarmonyOS apps from per-project config files, and exposes the engine to the agent as list / doctor / check / build tools.'
-  zh: 'uni-app x 项目打包流水线：按项目配置调用 HBuilderX CLI 打出并签名 iOS / Android / HarmonyOS 安装包，并以 list / doctor / check / build 四个工具暴露给 agent。'
+  en: 'Packaging pipeline for uni-app x projects: drives the HBuilderX CLI to build, sign and upload iOS, Android and HarmonyOS apps from per-project config files, and exposes the engine to the agent as list / doctor / check / build tools. Classic uni-app projects (uni-app + Vue) build Android APKs locally too.'
+  zh: 'uni-app x 项目打包流水线：按项目配置调用 HBuilderX CLI 打出并签名 iOS / Android / HarmonyOS 安装包，并以 list / doctor / check / build 四个工具暴露给 agent。经典 uni-app 项目（uni-app + Vue）同样支持本地打 Android 包。'
 ```
 
 | Field | Meaning |

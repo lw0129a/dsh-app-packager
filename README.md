@@ -8,7 +8,7 @@
 
 Repository: <https://github.com/lw0129a/dsh-app-packager> (MIT)
 
-A local, offline toolchain that turns uni-app x projects into **iOS IPA / Android APK / HarmonyOS HAP** builds. It keeps running the original way on macOS, and is also installable as an npm package and as a **DeepSeek Harness plugin** from the plugin market.
+A local, offline toolchain that turns uni-app x projects into **iOS IPA / Android APK / HarmonyOS HAP** builds — classic uni-app projects (uni-app + Vue) build **Android APK** locally through the same pipeline. It keeps running the original way on macOS, and is also installable as an npm package and as a **DeepSeek Harness plugin** from the plugin market.
 
 - **CLI** — `app-packager`, a dependency-free Node command line that delivers the bash packaging engine to `~/AppPackager` on your machine.
 - **Plugin** — `dsh-app-packager`, four agent tools in DeepSeek Harness for *list projects / check environment / verify a platform / build*, so nobody has to memorise the command line.
