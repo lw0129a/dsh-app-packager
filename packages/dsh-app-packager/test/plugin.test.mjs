@@ -356,10 +356,12 @@ test('downloadDestination：空目录回落到系统下载目录，~ 展开，�
   assert.equal(downloadDestination('', 'a.apk'), join(homedir(), 'Downloads', 'a.apk'));
   assert.equal(downloadDestination('  ', 'a.apk'), join(homedir(), 'Downloads', 'a.apk'));
   assert.equal(downloadDestination('~/out', 'a.apk'), join(homedir(), 'out', 'a.apk'));
-  const first = downloadDestination('/tmp/dl', 'a.apk', exists);
-  assert.equal(first, join('/tmp/dl', 'a.apk'));
+  // 用 tmpdir() 而不是写死的 /tmp：Windows 上 path.join 会把 /tmp/dl 变成 D:\tmp\dl。
+  const base = join(tmpdir(), 'ap-dl');
+  const first = downloadDestination(base, 'a.apk', exists);
+  assert.equal(first, join(base, 'a.apk'));
   seen.add(first);
-  assert.equal(downloadDestination('/tmp/dl', 'a.apk', exists), join('/tmp/dl', 'a-1.apk'));
+  assert.equal(downloadDestination(base, 'a.apk', exists), join(base, 'a-1.apk'));
 });
 
 test('下载：把已归档的安装包复制到统一配置的目录，重复下载不覆盖', async () => {
