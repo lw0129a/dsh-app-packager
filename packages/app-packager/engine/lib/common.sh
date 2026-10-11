@@ -175,6 +175,44 @@ workspace_app_file() {
   fi
 }
 
+# 经典 uni-app 与 uni-app x 的 Android 本地打包是两套：x 走 publish app-android
+# 资源（unpackage/resources/app-android）+ uniappx 模块，经典走 publish app 资源
+# （unpackage/resources/<appid>）+ app 模块的 assets/apps。用 manifest 里的
+# "uni-app-x" 键区分，经典 manifest 里没有这个键。
+project_is_uniappx() {
+  local manifest="$1"
+  [ -f "$manifest" ] || return 1
+  grep -qE '^[[:space:]]*"uni-app-x"[[:space:]]*:' "$manifest" 2>/dev/null
+}
+
+java_major_version() { # 打印当前 java 的主版本号（1.8 → 8），拿不到就什么都不打印
+  local raw
+  raw="$(java -version 2>&1 | sed -n '1s/.*version "\([0-9][0-9.]*\).*/\1/p')"
+  [ -n "$raw" ] || return 0
+  case "$raw" in
+    1.*) printf '%s\n' "$(printf '%s' "$raw" | cut -d. -f2)" ;;
+    *) printf '%s\n' "$(printf '%s' "$raw" | cut -d. -f1)" ;;
+  esac
+}
+
+# 经典 uni-app 的离线工程是 AGP 8 + Gradle 8，只支持到 JDK 23：默认 JDK 24/25 时 Gradle 8
+# 在语义分析阶段直接崩（Unsupported class file major version 69）。这里挑一个能用的 JDK。
+classic_android_java_home() {
+  local candidate="${ANDROID_CLASSIC_JAVA_HOME:-}" major
+  if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  for major in 21 17; do
+    candidate="$(/usr/libexec/java_home -v "$major" 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 project_id_from_source_dir() {
   local base
   base="$(basename "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//')"
@@ -402,6 +440,39 @@ discover_uni_app_projects() {
   done < <(project_search_roots)
 }
 
+# 已注册项目再次注册时，用源码目录重新派生 APP_ID / Bundle ID / 平台启用位。
+# 项目后来补上了 app-android/app/build.gradle 或 appid，不必删 env 重注册。
+refresh_project_env() {
+  local file="$1" app_id="$2" bundle_id="$3" android_enabled="$4" harmony_enabled="$5"
+  python3 - "$file" "$app_id" "$bundle_id" "$android_enabled" "$harmony_enabled" <<'PY_REFRESH_ENV'
+from pathlib import Path
+import shlex
+import sys
+
+path = Path(sys.argv[1])
+updates = {
+    'APP_ID': sys.argv[2],
+    'EXPECTED_BUNDLE_ID': sys.argv[3],
+    'ANDROID_ENABLED': sys.argv[4],
+    'HARMONY_ENABLED': sys.argv[5],
+}
+lines = path.read_text(encoding='utf-8').splitlines()
+seen = set()
+out = []
+for line in lines:
+    key = line.split('=', 1)[0]
+    if key in updates:
+        out.append(f'{key}={shlex.quote(updates[key])}')
+        seen.add(key)
+    else:
+        out.append(line)
+for key, value in updates.items():
+    if key not in seen:
+        out.append(f'{key}={shlex.quote(value)}')
+path.write_text('\n'.join(out) + '\n', encoding='utf-8')
+PY_REFRESH_ENV
+}
+
 register_project_path() {
   local source_dir="$1" quiet="${2:-}"
   local manifest pages project_id default_id app_name app_id bundle_id profile_file matched_profile
@@ -410,7 +481,7 @@ register_project_path() {
 
   source_dir="$(absolute_dir "$source_dir" || true)"
   if [ -z "$source_dir" ] || ! is_uni_app_project "$source_dir"; then
-    [ "$quiet" = "quiet" ] || printf '  [WARN] 项目目录无效或不是 uni-app x 项目: %s\n' "$1"
+    [ "$quiet" = "quiet" ] || printf '  [WARN] 项目目录无效或不是 uni-app 项目: %s\n' "$1"
     return 1
   fi
 
@@ -443,6 +514,7 @@ register_project_path() {
       printf '%s' "${SOURCE_DIR:-}"
     )"
     if [ "$existing_source" = "$source_dir" ]; then
+      refresh_project_env "$config_file" "$app_id" "$bundle_id" "$android_enabled" "$harmony_enabled"
       [ "$quiet" = "quiet" ] || printf '  [OK] 项目已注册: %s (%s) -> %s\n' "$project_id" "$app_name" "$source_dir"
       return 0
     fi
@@ -514,7 +586,7 @@ register_discovered_projects() {
 }
 
 # 登记用户明确指定的目录（不依赖 PROJECT_SEARCH_ROOTS）：
-# 目录本身是 uni-app x 项目就登记它，否则登记其下一层的 uni-app x 项目。
+# 目录本身是 uni-app 项目就登记它，否则登记其下一层的 uni-app 项目。
 register_paths() {
   local dir child registered=0
   for dir in "$@"; do
@@ -533,7 +605,7 @@ register_paths() {
   done
 
   if [ "$registered" -eq 0 ]; then
-    printf '  [WARN] 指定目录里没有找到 uni-app x 项目（需要 manifest.json + pages.json）\n'
+    printf '  [WARN] 指定目录里没有找到 uni-app 项目（需要 manifest.json + pages.json）\n'
     return 1
   fi
   printf '  已登记/已存在项目: %s\n' "$registered"
@@ -711,6 +783,65 @@ cleanup() {
   fi
 }
 
+# 经典 uni-app 的 manifest.json 是 JSONC（带注释），引擎里若干处 python 用严格 json.loads 读它
+# 会直接抛 JSONDecodeError：全量权限合并就是这么被静默跳过的（工作的沙箱里解析失败，构建照跑）。
+# 工作区是我们自己的副本，复制完就地把注释和尾逗号去掉，后续所有读取只面对合法 JSON。
+manifest_jsonc_to_json() {
+  local manifest="$1"
+  [ -f "$manifest" ] || return 0
+  python3 - "$manifest" <<'PY_JSONC'
+from pathlib import Path
+import json
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding='utf-8', errors='ignore')
+out = []
+i = 0
+n = len(text)
+in_string = False
+while i < n:
+    ch = text[i]
+    if in_string:
+        out.append(ch)
+        if ch == '\\' and i + 1 < n:
+            out.append(text[i + 1])
+            i += 2
+            continue
+        if ch == '"':
+            in_string = False
+        i += 1
+        continue
+    if ch == '"':
+        in_string = True
+        out.append(ch)
+        i += 1
+        continue
+    if ch == '/' and i + 1 < n and text[i + 1] == '/':
+        while i < n and text[i] != '\n':
+            i += 1
+        continue
+    if ch == '/' and i + 1 < n and text[i + 1] == '*':
+        i += 2
+        while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
+            i += 1
+        i += 2
+        continue
+    out.append(ch)
+    i += 1
+
+clean = re.sub(r',(\s*[}\]])', r'\1', ''.join(out))
+try:
+    json.loads(clean)
+except Exception:
+    raise SystemExit(0)  # 清不干净就原样留着，让下游按原样报错
+if clean != text:
+    path.write_text(clean, encoding='utf-8')
+    print('changed')
+PY_JSONC
+}
+
 prepare_workspace() {
   [ -d "$SOURCE_DIR" ] || die "项目目录不存在: $SOURCE_DIR"
   case "$WORKSPACE" in
@@ -732,6 +863,10 @@ prepare_workspace() {
 
   # 项目包含 postcss/tailwind 插件，HBuilderX 编译时需要本地 node_modules。
   # 使用复制而不是软链，避免 HBuilderX 缓存写回业务项目。
+  if [ "$(manifest_jsonc_to_json "$WORKSPACE/manifest.json" 2>/dev/null || true)" = "changed" ]; then
+    log "manifest.json 已规范化为标准 JSON（去掉 JSONC 注释与尾逗号）"
+  fi
+
   if [ -d "$SOURCE_DIR/node_modules" ]; then
     log "复制 node_modules 到隔离工作区"
     rsync -a "$SOURCE_DIR/node_modules/" "$WORKSPACE/node_modules/" >>"$LOG_FILE" 2>&1 \
@@ -1844,16 +1979,29 @@ PY_PERMISSION_BOOTSTRAP
 
 generate_android_resources() {
   patch_android_permission_bootstrap
-  log "调用 HBuilderX 编译 Android App 资源（静默模式）"
+  local manifest_path resource_command resource_dir flavor
+  manifest_path="$(workspace_manifest_path 2>/dev/null || true)"
+  if [ -n "$manifest_path" ] && project_is_uniappx "$manifest_path"; then
+    flavor="uni-app x"
+    resource_command="app-android"
+    resource_dir="$WORKSPACE/unpackage/resources/app-android"
+    ANDROID_PROJECT_FLAVOR="uniappx"
+  else
+    flavor="经典 uni-app"
+    resource_command="app"
+    resource_dir="$WORKSPACE/unpackage/resources"
+    ANDROID_PROJECT_FLAVOR="uniapp"
+  fi
+  log "调用 HBuilderX 编译 Android App 资源（${flavor}，静默模式）"
   if ! SEMAPHORE_PROGRESS=35 SEMAPHORE_WAIT_MESSAGE="等待 HBuilderX 名额" \
     SEMAPHORE_RUN_MESSAGE="HBuilderX 生成 Android 资源" \
     with_semaphore "hbuilderx" "${PARALLEL_MAX_HBULDERX_JOBS_RESOLVED:-1}" \
-    run_with_timeout 900 "$HBUILDERX_CLI" publish app-android --type appResource --project "$WORKSPACE" >>"$LOG_FILE" 2>&1; then
+    run_with_timeout 900 "$HBUILDERX_CLI" publish "$resource_command" --type appResource --project "$WORKSPACE" >>"$LOG_FILE" 2>&1; then
     tail -n 160 "$LOG_FILE" >&2 || true
-    die "HBuilderX 生成本地 Android App 资源失败"
+    die "HBuilderX 生成本地 Android App 资源失败（${flavor}）"
   fi
 
-  ANDROID_RESOURCE_DIR="$WORKSPACE/unpackage/resources/app-android"
+  ANDROID_RESOURCE_DIR="$resource_dir"
   [ -d "$ANDROID_RESOURCE_DIR" ] || die "未找到 Android 资源目录: $ANDROID_RESOURCE_DIR"
   local count uni_dir
   count="$(find "$ANDROID_RESOURCE_DIR" -mindepth 1 -maxdepth 1 -type d -name '__UNI__*' | wc -l | tr -d ' ')"
@@ -1864,6 +2012,30 @@ generate_android_resources() {
 }
 
 copy_android_resources() {
+  local module_dir="$WORKSPACE/${ANDROID_MODULE_DIR:-app-android}"
+  if [ "${ANDROID_PROJECT_FLAVOR:-uniappx}" = "uniapp" ]; then
+    # 经典 uni-app：www 资源进 app 模块的 assets/apps/<appid>，并在
+    # dcloud_control.xml 里登记 appid；没有 uniappx 的 kotlin 资源要拷。
+    local classic_assets_root="$module_dir/app/src/main/assets/apps"
+    local classic_assets_dest="$classic_assets_root/$APP_ID"
+    local dcloud_control="$module_dir/app/src/main/assets/data/dcloud_control.xml"
+    mkdir -p "$classic_assets_root"
+    find "$classic_assets_root" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    mkdir -p "$classic_assets_dest"
+    cp -R "$ANDROID_APP_RESOURCE_DIR/." "$classic_assets_dest/" >>"$LOG_FILE" 2>&1 \
+      || die "复制 Android App 资源失败"
+    mkdir -p "$(dirname "$dcloud_control")"
+    cat > "$dcloud_control" <<XML
+<hbuilder>
+<apps>
+    <app appid="$APP_ID" appver=""/>
+</apps>
+</hbuilder>
+XML
+    log "Android 资源已复制: ${APP_ID}（经典 uni-app，dcloud_control.xml 已登记）"
+    return 0
+  fi
+
   local java_src="$ANDROID_RESOURCE_DIR/uniappx/app-android/src"
   local java_dest="$WORKSPACE/${ANDROID_MODULE_DIR:-app-android}/uniappx/src/main/java"
   local assets_root="$WORKSPACE/${ANDROID_MODULE_DIR:-app-android}/uniappx/src/main/assets/apps"
@@ -1885,6 +2057,36 @@ copy_android_resources() {
 manifest_version_code() {
   local manifest="$1"
   sed -n 's/.*"versionCode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n 1
+}
+
+# 把业务项目的 AGP 版本改成 AppPackager 已验证的版本，并回报做了什么。
+# 跨 AGP 大版本时保留业务项目自带版本：AGP 9 删掉了 kotlinOptions /
+# android.defaults.buildfeatures.buildconfig，还自带 Kotlin 插件，而 DCloud 官方
+# Android 离线工程模板仍是 AGP 8 + 显式 kotlin 插件，硬改版本号必然构建失败。
+# ponytail: 只护大版本；真要跨版本迁移得人工改工程（插件声明、DSL、catalog）。
+android_agp_effective_version() {
+  local versions_file="$1" requested="$2"
+  python3 - "$versions_file" "$requested" <<'PY_AGP'
+from pathlib import Path
+import re
+import sys
+path = Path(sys.argv[1])
+version = sys.argv[2]
+text = path.read_text(encoding='utf-8')
+match = re.search(r'^agp\s*=\s*"([^"]*)"', text, flags=re.M)
+if not match:
+    raise SystemExit('AGP version setting not found')
+current = match.group(1)
+def major(value):
+    found = re.match(r'(\d+)', value or '')
+    return found.group(1) if found else ''
+if major(current) and major(version) and major(current) != major(version):
+    print('keep %s (requested %s 跨 AGP 大版本)' % (current, version))
+    raise SystemExit(0)
+text = re.sub(r'^agp\s*=\s*"[^"]*"', 'agp = "%s"' % version, text, count=1, flags=re.M)
+path.write_text(text, encoding='utf-8')
+print('set %s (was %s)' % (version, current))
+PY_AGP
 }
 
 patch_android_project() {
@@ -1918,10 +2120,36 @@ if re.search(r'^kotlin\.daemon\.jvmargs=', text, flags=re.M):
     )
 else:
     text += '\nkotlin.daemon.jvmargs=-Xmx4096m\n'
+# AGP 9 删掉了这个开关，留着 Gradle 直接报 "The option ... is deprecated ... It was removed in version 9.0"
+text = re.sub(r'^android\.defaults\.buildfeatures\.buildconfig=.*\n?', '', text, flags=re.M)
 path.write_text(text, encoding='utf-8')
 PY_GRADLE_MEMORY
     log "Android 编译内存已调整: Gradle/Kotlin 4096m"
   fi
+
+  # 引擎给 app 模块注入 buildConfigField（UTS 注册表、联盟 ID 等），
+  # 而 AGP 9 起 buildConfig 默认关闭，老工程（含 DCloud 官方离线工程模板）要显式打开。
+  python3 - "$gradle_file" <<'PY_ANDROID_BUILDCONFIG' || die "Android buildConfig 注入失败"
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding='utf-8')
+if re.search(r'\bbuildConfig\b', text):
+    raise SystemExit(0)
+text, count = re.subn(
+    r'^(android\s*\{[^\n]*\n)',
+    r'\1    buildFeatures { buildConfig = true }\n',
+    text,
+    count=1,
+    flags=re.M,
+)
+if count != 1:
+    raise SystemExit(1)
+path.write_text(text, encoding='utf-8')
+PY_ANDROID_BUILDCONFIG
+  log "Android buildConfig 已确认开启"
 
   local version_code
   version_code="$(manifest_version_code "$(workspace_manifest_path)")"
@@ -1952,24 +2180,22 @@ if application_id:
     text, n3 = re.subn(r'applicationId\s+"[^"]*"', f'applicationId "{application_id}"', text, count=1)
     if n3 != 1:
         raise SystemExit('Android applicationId not found')
+    # 经典 uni-app 的 5+ 运行时从 manifestPlaceholders 的 apk.applicationId 认包名
+    placeholder = '"apk.applicationId"     : "%s"' % application_id
+    text = re.sub(r'"apk\.applicationId"\s*:\s*"[^"]*"', placeholder, text, count=1)
 path.write_text(text, encoding='utf-8')
 PY_ANDROID
 
+  local agp_note=""
   if [ -n "${ANDROID_AGP_VERSION:-}" ]; then
     local versions_file="$WORKSPACE/${ANDROID_MODULE_DIR:-app-android}/gradle/libs.versions.toml"
     if [ -f "$versions_file" ]; then
-      python3 - "$versions_file" "$ANDROID_AGP_VERSION" <<'PY_AGP'
-from pathlib import Path
-import re
-import sys
-path = Path(sys.argv[1])
-version = sys.argv[2]
-text = path.read_text(encoding='utf-8')
-text, count = re.subn(r'^agp\s*=\s*"[^"]*"', f'agp = "{version}"', text, count=1, flags=re.M)
-if count != 1:
-    raise SystemExit('AGP version setting not found')
-path.write_text(text, encoding='utf-8')
-PY_AGP
+      agp_note="$(android_agp_effective_version "$versions_file" "$ANDROID_AGP_VERSION")" \
+        || die "Android AGP 版本处理失败"
+      case "$agp_note" in
+        keep*) warn "Android AGP: $agp_note" ;;
+        *) log "Android AGP: $agp_note" ;;
+      esac
     fi
   fi
 
@@ -1991,7 +2217,12 @@ PY_STRINGS
   sync_android_permissions
   printf 'sdk.dir=%s\n' "${ANDROID_SDK_DIR:-$HOME/Library/Android/sdk}" \
     > "$WORKSPACE/${ANDROID_MODULE_DIR:-app-android}/local.properties"
-  log "Android 版本: $MARKETING_VERSION ($version_code, AGP ${ANDROID_AGP_VERSION:-project})"
+  if [ "${ANDROID_PROJECT_FLAVOR:-uniappx}" = "uniapp" ]; then
+    # 经典离线工程模板是 AGP 8 + 自带 Gradle 8 Wrapper，缓存里的 Gradle 9 跑不动 AGP 8。
+    ANDROID_USE_PROJECT_WRAPPER="true"
+    log "经典 uni-app：使用项目自带 Gradle Wrapper（AGP 8 需要 Gradle 8）"
+  fi
+  log "Android 版本: $MARKETING_VERSION ($version_code, AGP ${agp_note:-project})"
 }
 
 apply_ios_storyboard_splash() {
@@ -2240,6 +2471,9 @@ import sys
 manifest_path, android_manifest_path = sys.argv[1:3]
 text = Path(manifest_path).read_text(encoding='utf-8', errors='ignore')
 start = text.find('"app-android"')
+if start < 0:
+    # 经典 uni-app 的权限写在 app-plus.distribute.android.permissions
+    start = text.find('"app-plus"')
 end = text.find('"app-ios"', start)
 if start < 0:
     raise SystemExit(0)
@@ -2365,6 +2599,17 @@ build_android_apk() {
     fi
     [ -n "$gradle_bin" ] && [ -x "$gradle_bin" ] || die "未找到可正常启动的 Gradle 可执行文件"
     gradle_cmd=("$gradle_bin")
+  fi
+  if [ "${ANDROID_PROJECT_FLAVOR:-uniappx}" = "uniapp" ]; then
+    local jdk_major classic_java_home
+    jdk_major="$(java_major_version)"
+    if [ -n "$jdk_major" ] && [ "$jdk_major" -gt 23 ]; then
+      classic_java_home="$(classic_android_java_home || true)"
+      [ -n "$classic_java_home" ] || die "经典 uni-app 需要 JDK 17/21（Gradle 8 不支持 JDK 24+，当前是 JDK ${jdk_major}）。请安装 JDK 21，或在 config/settings.env 里设置 ANDROID_CLASSIC_JAVA_HOME"
+      export JAVA_HOME="$classic_java_home"
+      export PATH="$JAVA_HOME/bin:$PATH"
+      log "经典 uni-app：当前 JDK $jdk_major 不被 Gradle 8 支持，改用 $JAVA_HOME"
+    fi
   fi
   export ANDROID_HOME="$sdk_dir"
   export ANDROID_SDK_ROOT="$sdk_dir"

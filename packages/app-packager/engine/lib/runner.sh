@@ -28,6 +28,7 @@ PROJECT_ID=""
 CLI_VERSION=""
 CLI_KEEP_WORK=0
 UPLOAD_SELECTED_PLATFORMS=""
+CERT_SOURCES=()
 
 usage() {
   cat <<'USAGE'
@@ -43,6 +44,8 @@ usage() {
   打包工具.command all [项目ID] [选项]
   打包工具.command list
   打包工具.command profiles
+  打包工具.command cert-status            打印证书状态 JSON（面板用）
+  打包工具.command cert-import <目录…>    把目录里认得的证书按平台归位
   打包工具.command check ios <项目ID>
   打包工具.command check android <项目ID>
   打包工具.command check harmony <项目ID>
@@ -107,6 +110,8 @@ parse_args() {
     case "$1" in
       list) ACTION="list"; shift ;;
       profiles) ACTION="profiles"; shift ;;
+      cert-status) ACTION="cert-status"; shift ;;
+      cert-import) ACTION="cert-import"; shift ;;
       check) ACTION="check"; shift ;;
       upload) ACTION="upload"; shift ;;
       ios|apple|苹果) PLATFORM="ios"; shift ;;
@@ -152,6 +157,9 @@ parse_args() {
       -h|--help) usage; exit 0 ;;
       --*) die "未知参数: $1" ;;
       *)
+        if [ "$ACTION" = "cert-import" ]; then
+          CERT_SOURCES+=("$1"); shift; continue
+        fi
         [ -z "$PROJECT_ID" ] || die "只能指定一个项目"
         PROJECT_ID="$1"; shift ;;
     esac
@@ -268,7 +276,7 @@ list_projects() {
     )
   done
   if [ "$found" -eq 0 ]; then
-    printf '未发现项目。请将 uni-app x 项目放到 %s 同级目录，或运行初始化向导。\n' "$PIPELINE_ROOT"
+    printf '未发现项目。请将 uni-app 项目放到 %s 同级目录，或运行初始化向导。\n' "$PIPELINE_ROOT"
   fi
 }
 
@@ -337,6 +345,17 @@ main() {
 
   if [ "$ACTION" = "profiles" ]; then
     profiles_json
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-status" ]; then
+    cert_status_json
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-import" ]; then
+    [ "${#CERT_SOURCES[@]}" -gt 0 ] || die "cert-import 需要一个证书目录"
+    process_certificates_root "${CERT_SOURCES[@]}"
     return 0
   fi
 
@@ -564,15 +583,24 @@ check_android_project() {
     || { printf '[FAIL] Android SDK 不存在\n'; errors=$((errors + 1)); }
 
   gradle_bin=""
-  if [ "${ANDROID_USE_PROJECT_WRAPPER:-false}" = "true" ] && [ -x "$SOURCE_DIR/${ANDROID_MODULE_DIR:-app-android}/gradlew" ]; then
-    gradle_bin="$SOURCE_DIR/${ANDROID_MODULE_DIR:-app-android}/gradlew"
+  local wrapper_dir="$SOURCE_DIR/${ANDROID_MODULE_DIR:-app-android}"
+  if [ "${ANDROID_USE_PROJECT_WRAPPER:-false}" = "true" ] && [ -x "$wrapper_dir/gradlew" ]; then
+    gradle_bin="$wrapper_dir/gradlew"
+  elif [ -f "$SOURCE_DIR/manifest.json" ] && ! project_is_uniappx "$SOURCE_DIR/manifest.json" \
+    && [ -x "$wrapper_dir/gradlew" ] && [ -f "$wrapper_dir/gradle/wrapper/gradle-wrapper.properties" ]; then
+    # 经典 uni-app 的离线工程是 AGP 8 + 自带 Gradle 8 Wrapper；构建时必须用项目 Wrapper，
+    # 这里不去跑 --version（会触发上百兆的 Wrapper 下载），只确认 Wrapper 在位。
+    printf '[OK]   Gradle: 项目自带 Wrapper（经典 uni-app，构建时使用）: %s\n' "$wrapper_dir/gradlew"
+    gradle_bin="__project_wrapper__"
   else
     gradle_bin="${ANDROID_GRADLE_BIN:-}"
     if [ -z "$gradle_bin" ] || [ ! -x "$gradle_bin" ] || ! run_with_timeout 20 "$gradle_bin" --version >/dev/null 2>&1; then
       gradle_bin="$(find_cached_gradle || true)"
     fi
   fi
-  if [ -n "$gradle_bin" ] && [ -x "$gradle_bin" ] && run_with_timeout 20 "$gradle_bin" --version >/dev/null 2>&1; then
+  if [ "$gradle_bin" = "__project_wrapper__" ]; then
+    :
+  elif [ -n "$gradle_bin" ] && [ -x "$gradle_bin" ] && run_with_timeout 20 "$gradle_bin" --version >/dev/null 2>&1; then
     printf '[OK]   Gradle: %s\n' "$gradle_bin"
   else
     printf '[FAIL] Gradle 不存在或无法启动: %s\n' "${gradle_bin:-未找到}"; errors=$((errors + 1))

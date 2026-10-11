@@ -357,7 +357,7 @@ pgyer_upload_harmony_artifact() {
     return 1
   fi
   if [ -n "$profile_distribution" ] && [ "$profile_distribution" != "internaltesting" ]; then
-    warn "蒲公英 HAP 上传失败：当前 P7B 分发类型为 $profile_distribution，必须是 internaltesting"
+    warn "蒲公英 HAP 上传失败：当前 P7B 分发类型为 ${profile_distribution}，必须是 internaltesting"
     return 1
   fi
   if [ -n "$profile_device_count" ] && [ "$profile_device_count" -eq 0 ]; then

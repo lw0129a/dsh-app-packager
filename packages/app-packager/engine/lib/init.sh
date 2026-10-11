@@ -530,6 +530,53 @@ install_sdk_source() {
   return 0
 }
 
+file_size() {
+  [ -f "$1" ] || { echo 0; return 0; }
+  wc -c <"$1" | tr -d '[:space:]'
+}
+
+human_size() {
+  awk -v n="${1:-0}" 'BEGIN{
+    split("B KB MB GB TB", unit, " ");
+    i = 1;
+    while (n >= 1024 && i < 5) { n /= 1024; i++ }
+    if (i == 1) printf "%d %s", n, unit[i]; else printf "%.1f %s", n, unit[i];
+  }'
+}
+
+# 下载并每秒打一行换行结尾的进度。面板是按行读的（engine.mjs 用 /\r?\n/ 切），
+# curl --progress-bar 的 \r 刷新根本到不了面板，所以这里自己算。
+# ponytail: 速率取累计平均、每秒一行，够用；要瞬时速率再按 tick 求差。
+download_with_progress() {
+  local url="$1" dest="$2" total pid start now bytes rate
+  total="$({ curl -sIL --max-time 20 "$url" 2>/dev/null || true; } | tr -d '\r' \
+    | awk 'tolower($1)=="content-length:" { n = $2 } END { print n + 0 }')"
+  printf '  正在下载: %s\n' "$url"
+  curl -L --fail --no-progress-meter "$url" -o "$dest" &
+  pid=$!
+  start="$(date +%s)"
+  # ponytail: 没做 INT/TERM 清理，引擎被杀时这条后台 curl 可能残留；真出问题再加 trap kill $pid。
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 1
+    kill -0 "$pid" 2>/dev/null || break
+    now=$(( $(date +%s) - start )); [ "$now" -gt 0 ] || now=1
+    bytes="$(file_size "$dest")"
+    rate=$(( bytes / now ))
+    if [ "$total" -gt 0 ]; then
+      printf '  [下载] %s%%  %s / %s  %s/s\n' "$(( bytes * 100 / total ))" \
+        "$(human_size "$bytes")" "$(human_size "$total")" "$(human_size "$rate")"
+    else
+      printf '  [下载] %s  %s/s\n' "$(human_size "$bytes")" "$(human_size "$rate")"
+    fi
+  done
+  if wait "$pid"; then
+    printf '  [下载] 完成: %s\n' "$(human_size "$(file_size "$dest")")"
+    return 0
+  fi
+  warn "下载失败: $url"
+  return 1
+}
+
 import_sdk_archive() {
   local kind="$1" input="${2:-}" version="${3:-}" archive platform_dir
   platform_dir="$DOWNLOAD_DIR"
@@ -538,8 +585,7 @@ import_sdk_archive() {
 
   if [ -n "$input" ] && [[ "$input" =~ ^https?:// ]]; then
     archive="$platform_dir/$(basename "${input%%\?*}")"
-    printf '  正在下载: %s\n' "$input"
-    curl -L --fail --progress-bar "$input" -o "$archive" || return 1
+    download_with_progress "$input" "$archive" || return 1
     input="$archive"
   fi
 
@@ -1043,11 +1089,11 @@ PY_REFRESH_PROFILE
 }
 
 register_project() {
-  step 6 "读取并注册 uni-app x 项目"
+  step 6 "读取并注册 uni-app 项目"
   local found=0 path answer project_path search_root
   search_root="$(dirname "$PIPELINE_ROOT")"
 
-  printf '  正在扫描同级目录中的 uni-app x 项目: %s\n' "$search_root"
+  printf '  正在扫描同级目录中的 uni-app 项目: %s\n' "$search_root"
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     found=$((found + 1))
@@ -1055,7 +1101,7 @@ register_project() {
   done < <(discover_uni_app_projects)
 
   if [ "$found" -gt 0 ]; then
-    ok "初始化已读取 $found 个 uni-app x 项目，配置写入 config/projects/"
+    ok "初始化已读取 $found 个 uni-app 项目，配置写入 config/projects/"
     printf '  是否继续添加同级目录之外的项目？[y/N]: '
     read -r answer || answer=""
     case "$answer" in
@@ -1063,12 +1109,12 @@ register_project() {
       *) return 0 ;;
     esac
   else
-    warn "未在 $search_root 中发现 uni-app x 项目"
+    warn "未在 $search_root 中发现 uni-app 项目"
     printf '  请将项目放在打包工具同级目录，或现在输入项目绝对路径。\n'
   fi
 
   while true; do
-    printf '  请输入 uni-app x 项目目录（可直接拖入终端），输入 q 跳过: ' >&2
+    printf '  请输入 uni-app 项目目录（可直接拖入终端），输入 q 跳过: ' >&2
     read -r project_path || return 1
     [ "$project_path" = "q" ] && return 0
     project_path="${project_path/#\~/$HOME}"

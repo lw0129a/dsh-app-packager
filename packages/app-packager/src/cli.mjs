@@ -14,7 +14,7 @@ import { runDoctor } from './doctor.mjs';
 
 const MARKS = { ok: '✓', warn: '!', fail: '✗' };
 
-const HELP = `AppPackager ${packageVersion()} — uni-app x 打包命令行
+const HELP = `AppPackager ${packageVersion()} — uni-app / uni-app x 打包命令行
 
 用法:
   app-packager <命令> [参数...]
@@ -23,7 +23,7 @@ const HELP = `AppPackager ${packageVersion()} — uni-app x 打包命令行
   init                 复制打包引擎到 APP_PACKAGER_HOME，并运行初始化向导
   doctor [--platform]  检查当前机器能构建哪些平台（默认全部）
   list                 列出已配置的项目
-  register <目录...>   登记 uni-app x 项目目录（给父目录则扫描其下一层）
+  register <目录...>   登记 uni-app 项目目录（给父目录则扫描其下一层）
   check <平台> [项目]  调用引擎检查打包环境
   build <平台> [项目]  调用引擎执行打包（平台: ios | android | harmony | all）
   upload <平台> [项目] 只上传上一次打包归档的安装包，不重新打包（--to 平台，可逗号分隔）
@@ -34,7 +34,7 @@ const HELP = `AppPackager ${packageVersion()} — uni-app x 打包命令行
 常用选项:
   --dir <路径>         指定 APP_PACKAGER_HOME（默认 ~/AppPackager，可用环境变量 APP_PACKAGER_HOME）
   --json               机器可读输出（doctor / list / env）
-  --search-roots <路径> 额外指定 uni-app x 项目扫描目录（多个用 ${path.delimiter} 分隔）
+  --search-roots <路径> 额外指定 uni-app 项目扫描目录（多个用 ${path.delimiter} 分隔）
   --upload <平台>      打包后上传，例如 --upload pgyer
   --no-upload          跳过上传
   --version <版本号>   覆盖产物版本号
@@ -115,7 +115,7 @@ function printProjects(home, projects) {
   console.log(`引擎目录: ${home}`);
   if (projects.length === 0) {
     console.log('未发现项目配置 config/projects/*.env。');
-    console.log('把 uni-app x 项目放到引擎同级目录，或运行 `app-packager register <项目目录>`。');
+    console.log('把 uni-app 项目放到引擎同级目录，或运行 `app-packager register <项目目录>`。');
     return;
   }
   for (const project of projects) {
@@ -179,7 +179,7 @@ export async function main(argv) {
       const result = materialize(home, { force: Boolean(flags.force) });
       console.log(result.upToDate ? `引擎已是最新（${result.version}）：${home}` : `引擎已就绪：${home}（${result.copied} 个文件，保留 ${result.skipped} 个本地文件）`);
       if (flags['no-wizard']) {
-        console.log('跳过初始化向导。下一步：把 uni-app x 项目放到引擎同级目录，然后运行 `app-packager init`（不加 --no-wizard）。');
+        console.log('跳过初始化向导。下一步：把 uni-app 项目放到引擎同级目录，然后运行 `app-packager init`（不加 --no-wizard）。');
         return 0;
       }
       console.log('');

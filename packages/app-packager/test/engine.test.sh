@@ -381,6 +381,120 @@ check_contains "并说清是构建信息缺 platform" "构建信息缺少 platfo
 engine 'PROJECT_ID=stale; UPLOAD_SELECTED_PLATFORMS=pgyer; run_post_build_uploads "$PIPELINE_ROOT/packages/iOS/stale-latest.json"; printf "|rc=%s" "$?"'
 check_contains "同样的跳过在打包流程里仍不影响打包" "|rc=0" "$OUT"
 
+# 证书子命令：面板的证书板块读 `cert-status`（必须是纯 JSON，否则 web.js 报
+# 「无法解析 cert-status 输出: Extra data」），导入走 `cert-import <目录…>`。
+engine 'parse_args cert-status; printf "%s" "$ACTION"'
+check "parse_args cert-status" "cert-status" "$OUT"
+
+engine 'parse_args cert-import /a /b; printf "%s|%s|%s" "$ACTION" "${#CERT_SOURCES[@]}" "${CERT_SOURCES[1]}"'
+check "parse_args cert-import 收目录、不当成项目 ID" "cert-import|2|/b" "$OUT"
+
+engine 'cert_status_json'
+check "cert_status_json 是合法 JSON" "ok" \
+  "$(printf '%s' "$OUT" | python3 -c 'import json,sys; json.load(sys.stdin); print("ok")' 2>/dev/null)"
+check "cert_status_json 新 home 三个平台都未就绪" "3" \
+  "$(printf '%s' "$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(1 for v in d["platforms"].values() if not v["ready"]))')"
+
+# 入口脚本只给 profiles 直出 JSON，cert-status 必须一起豁免收尾提示。
+check "入口脚本把 cert-status 当机器可读输出" "profiles|cert-status" \
+  "$(grep -o 'profiles|cert-status' "$REPO_ENGINE/打包工具.command")"
+
+# harmony_signing_material 找不到证书时也是退出码 0（只是没输出）：cert_harmony_ready
+# 只能看输出内容，只看退出码的话「有个项目」就等于「鸿蒙证书已就绪」。
+cat >"$TMP/config/projects/demo.env" <<ENV
+SOURCE_DIR="$TMP/src"
+ENV
+mkdir -p "$TMP/src"
+# common.sh 开了 errexit：判定函数返回 1 会直接终止片段，所以用 && / || 接住。
+engine 'cert_harmony_ready && printf "ready" || printf "rc=%s" "$?"'
+check "没有任何鸿蒙证书时 cert_harmony_ready 不误判就绪" "rc=1" "$OUT"
+rm -f "$TMP/config/projects/demo.env"
+
+# 已注册项目后来才补上 app-android：重新注册必须刷新派生字段，否则只会命中
+# 「已注册」短路，ANDROID_ENABLED 永远停在 false（面板上就是一直 Android 未启用）。
+SRC="$TMP/refresh-src"
+mkdir -p "$SRC/pages/index"
+printf '{"name":"refresh","appid":"__UNI__TEST001","versionName":"1.0.0","versionCode":"100"}\n' >"$SRC/manifest.json"
+printf '{"pages":[{"path":"pages/index/index"}]}\n' >"$SRC/pages.json"
+engine "register_project_path '$SRC' quiet"
+check "没有 Android 工程时注册 → ANDROID_ENABLED=false" "ANDROID_ENABLED=false" \
+  "$(grep -h '^ANDROID_ENABLED=' "$TMP"/config/projects/*.env | tail -1)"
+mkdir -p "$SRC/app-android/app"
+printf 'plugins { id "com.android.application" }\nandroid {\n    applicationId "com.example.refresh"\n}\n' \
+  >"$SRC/app-android/app/build.gradle"
+engine "register_project_path '$SRC' quiet"
+check "补上 app-android 后重新注册 → ANDROID_ENABLED=true" "ANDROID_ENABLED=true" \
+  "$(grep -h '^ANDROID_ENABLED=' "$TMP"/config/projects/*.env | tail -1)"
+check "重新注册同时刷新 Bundle ID" "EXPECTED_BUNDLE_ID=com.example.refresh" \
+  "$(grep -h '^EXPECTED_BUNDLE_ID=' "$TMP"/config/projects/*.env | tail -1)"
+
+# --- Android AGP 版本保护：只有同大版本才改写 ---
+AGP_TOML="$TMP/agp.toml"
+printf 'agp = "9.1.1"\n' >"$AGP_TOML"
+engine "android_agp_effective_version '$AGP_TOML' '9.3.2'"
+check "同大版本 → 改写项目 AGP" "set 9.3.2 (was 9.1.1)" "$OUT"
+check "改写已落盘" 'agp = "9.3.2"' "$(cat "$AGP_TOML")"
+engine "android_agp_effective_version '$AGP_TOML' '8.12.0'"
+check "跨大版本 → 保留项目自带 AGP" "keep 9.3.2 (requested 8.12.0 跨 AGP 大版本)" "$OUT"
+check "跨大版本不动文件" 'agp = "9.3.2"' "$(cat "$AGP_TOML")"
+
+# 经典 uni-app 的 manifest.json 是 JSONC（带注释）：不规范化的话，「全量权限合并」那步 python
+# 会 JSONDecodeError，而构建照跑（errexit 在 if 条件里的函数内失效），结果是静默少一套权限。
+JSONC="$TMP/jsonc.json"
+cat >"$JSONC" <<'JSON_EOF'
+{
+  // 行注释
+  "url": "http://example.com/a//b", /* 块注释 */
+  "list": [1, 2,],
+}
+JSON_EOF
+engine "manifest_jsonc_to_json '$JSONC'"
+check "JSONC manifest 被规范化（打印 changed）" "changed" "$OUT"
+engine "python3 -c \"import json; print(json.load(open('$JSONC'))['url'])\""
+check "字符串里的 // 不被当注释删掉" "http://example.com/a//b" "$OUT"
+engine "manifest_jsonc_to_json '$JSONC'"
+check "已规范的 manifest 二次运行不再改动" "" "$OUT"
+BAD_JSONC="$TMP/bad-manifest.json"
+printf 'not json // x\n' >"$BAD_JSONC"
+engine "manifest_jsonc_to_json '$BAD_JSONC'"
+check "清不干净的输入原样保留" "" "$OUT"
+
+# 经典 uni-app 的离线工程是 AGP 8 + Gradle 8：默认 JDK 24/25 会在语义分析阶段直接崩
+# （Unsupported class file major version 69），必须换成 17/21。
+engine 'printf "%s" "$(java_major_version)"'
+case "$OUT" in
+  '' | *[!0-9]*) JAVA_OK=bad ;;
+  *) JAVA_OK=ok ;;
+esac
+check "java_major_version 打印纯数字主版本号" "ok" "$JAVA_OK"
+
+FAKE_JDK="$TMP/fake-jdk"
+mkdir -p "$FAKE_JDK/bin"
+printf '#!/bin/sh\n' >"$FAKE_JDK/bin/java"
+chmod +x "$FAKE_JDK/bin/java"
+engine "ANDROID_CLASSIC_JAVA_HOME='$FAKE_JDK' classic_android_java_home"
+check "settings 里的 ANDROID_CLASSIC_JAVA_HOME 优先" "$FAKE_JDK" "$OUT"
+
+# bash 会把紧跟在 $var 后面的中文字符当成变量名的一部分：`"…（$flavor，静默）"` 里的变量
+# 实际叫 `flavor，`，errexit 下直接 "unbound variable" 掐死整次构建（经典 Android 首次构建
+# 就是这么失败在 common.sh:1904 的）。变量后面紧跟非 ASCII 时必须写 ${var}。
+VAR_CJK="$(python3 - "$REPO_ENGINE" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+pat = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)([^\x00-\x7F])')
+bad = []
+for f in sorted(root.rglob('*')):
+    if f.is_file() and f.suffix in ('.sh', '.command'):
+        for i, line in enumerate(f.read_text(encoding='utf-8').splitlines(), 1):
+            if line.strip().startswith('#'):
+                continue
+            if pat.search(line):
+                bad.append('%s:%s' % (f.name, i))
+print(' '.join(bad))
+PY
+)"
+check '引擎脚本里没有「$变量紧跟中文」的坑' "" "$VAR_CJK"
+
 if [ "$fails" -eq 0 ]; then
   printf '\nengine.test.sh 全部通过\n'
 else

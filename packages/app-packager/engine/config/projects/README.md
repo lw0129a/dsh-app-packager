@@ -12,12 +12,12 @@ config/projects/*.env
 
 推荐直接运行 `初始化.command`。初始化会自动扫描 AppPackager 同级目录，识别 `manifest.json + pages.json`（兼容 `src/`）并生成配置；主菜单启动时也会静默补扫描。
 
-建议将 uni-app x 项目放在与 AppPackager 同级目录。项目位于其他目录时，可在初始化向导中输入绝对路径。
+建议将 uni-app 项目（uni-app x 或经典 uni-app）放在与 AppPackager 同级目录。项目位于其他目录时，可在初始化向导中输入绝对路径。
 
 也可以手动配置：
 
 1. 复制 `project.env.example` 为 `config/projects/<项目ID>.env`。
-2. 修改 `SOURCE_DIR` 为本地 uni-app x 项目绝对路径。
+2. 修改 `SOURCE_DIR` 为本地 uni-app 项目绝对路径。
 3. 按需要修改 Bundle ID、Team ID、Profile 路径和平台开关。
 4. 重新打开 `打包工具.command`，菜单会自动读取新项目。
 
