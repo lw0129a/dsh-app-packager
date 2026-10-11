@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-11
+
 ### Added
 
 - **An installer that is already archived can be downloaded from the panel, and where it lands is one setting.** Every row of the *Upload* card (which reads exactly what `<home>/packages/<Platform>/*-latest.json` names) gains a **Download** button that posts `{platform, project, dir}` to `POST /api/app-packager/download`; the host finds that artifact with `listArtifacts(home)` and copies it with `fs.promises.copyFile`, answering `{ok, platform, project, saved, dir, size}`, and the panel prints the saved path under the row. The destination is the card's new **Download folder** row: an input pre-filled from `state.downloadDir` (the host's `DEFAULT_DOWNLOAD_DIR`, i.e. `~/Downloads`), a *Choose folder…* button that reuses `POST /api/app-packager/pick`, and a hint explaining that a blank value falls back to the default. `downloadDestination(dir, fileName)` expands a leading `~`, treats a blank value as the default, and never overwrites: an existing name gets `-1`, `-2`, … appended to its stem, so downloading the same build twice keeps both files. The folder is remembered per browser in `localStorage['ap-download-dir']` and nowhere else. `plugin.test.mjs` pins the path helper (blank / `~` / collision) and does a real copy twice to prove the second one lands as `…-1.apk` and that a missing artifact rejects.
