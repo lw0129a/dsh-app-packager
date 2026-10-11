@@ -11,11 +11,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { apply, inject, name } from '../index.js';
-import { createJobRunner, createPanel, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../web.js';
+import { createJobRunner, createPanel, downloadDestination, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../web.js';
 import { LEGACY_HOME_NAME, homeInPlugin, isNewerVersion, legacyHome, pluginRoot, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../index.mjs';
 
 /**
@@ -306,6 +306,7 @@ test('apply 在存在 webServer 时挂上面板路由，缺席时不影响工具
     [...routes.keys()].sort(),
     [
       '/api/app-packager/doctor',
+      '/api/app-packager/download',
       '/api/app-packager/init',
       '/api/app-packager/job',
       '/api/app-packager/job/clear',
@@ -345,8 +346,46 @@ test('webServer 晚到：apply 用 ctx.inject 等它，服务出现后补挂路�
     },
   };
   waits[0].callback(withServices({}, { webServer: service }));
-  assert.equal(routes.size, 11);
+  assert.equal(routes.size, 12);
   rmSync(home, { recursive: true, force: true });
+});
+
+test('downloadDestination：空目录回落到系统下载目录，~ 展开，同名逐个加序号', () => {
+  const seen = new Set();
+  const exists = (target) => seen.has(target);
+  assert.equal(downloadDestination('', 'a.apk'), join(homedir(), 'Downloads', 'a.apk'));
+  assert.equal(downloadDestination('  ', 'a.apk'), join(homedir(), 'Downloads', 'a.apk'));
+  assert.equal(downloadDestination('~/out', 'a.apk'), join(homedir(), 'out', 'a.apk'));
+  const first = downloadDestination('/tmp/dl', 'a.apk', exists);
+  assert.equal(first, join('/tmp/dl', 'a.apk'));
+  seen.add(first);
+  assert.equal(downloadDestination('/tmp/dl', 'a.apk', exists), join('/tmp/dl', 'a-1.apk'));
+});
+
+test('下载：把已归档的安装包复制到统一配置的目录，重复下载不覆盖', async () => {
+  const home = fixtureHome();
+  const dir = mkdtempSync(join(tmpdir(), 'app-packager-download-'));
+  const apk = join(home, 'packages', 'Android', 'demo-1.0.0.apk');
+  mkdirSync(join(home, 'packages', 'Android'), { recursive: true });
+  writeFileSync(apk, 'apk-bytes');
+  writeFileSync(
+    join(home, 'packages', 'Android', 'demo-latest.json'),
+    JSON.stringify({ project_id: 'demo', display_name: '演示应用', version: '1.0.0', built_at: '2026-10-11T10:00:00+0800', apk_path: apk }),
+  );
+
+  const panel = createPanel({ config: { home }, spawn: fakeSpawn([]) });
+  const first = await panel.downloadArtifact({ platform: 'android', project: 'demo', dir });
+  assert.equal(first.saved, join(dir, 'demo-1.0.0.apk'));
+  assert.equal(first.size, 'apk-bytes'.length);
+  assert.equal(readFileSync(first.saved, 'utf8'), 'apk-bytes');
+  // 同一个包再下一次：存成 -1，绝不覆盖用户已有的文件。
+  const second = await panel.downloadArtifact({ platform: 'android', project: 'demo', dir });
+  assert.equal(second.saved, join(dir, 'demo-1.0.0-1.apk'));
+  // 没归档过的产物要报错，不是静默什么都不做。
+  await assert.rejects(() => panel.downloadArtifact({ platform: 'android', project: 'nope', dir }), /没有找到/);
+
+  rmSync(home, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test('打包契约：exports/client 入口、files 与 bundle id 都指向浏览器侧', () => {
@@ -815,6 +854,7 @@ test('面板 state 带出描述文件清单、全权限默认值与引擎的覆�
   writeFileSync(join(home, 'lib', 'common.sh'), 'PACKAGE_ENV_OVERRIDE_KEYS="APP_NAME MARKETING_VERSION"\n');
   const profiles = [{ file: '/s/current/a.mobileprovision', kind: 'adhoc', bundleId: 'com.a.b', name: 'A', expired: false }];
   const spawn = (dir, args) => {
+    if (args[0] === 'cert-status') return Promise.resolve({ code: 0, signal: null, stdout: '{}\n', stderr: '' });
     assert.equal(args[0], 'profiles', 'state 只应该向引擎问一次描述文件');
     return Promise.resolve({ code: 0, signal: null, stdout: `${JSON.stringify(profiles)}\n`, stderr: '' });
   };
@@ -1272,6 +1312,16 @@ test('client half：每个板块都能折叠，且互不影响', () => {
     plugin: { root: '/tmp/plugin' }, shell: { available: true, shell: { kind: 'native', command: '/bin/bash' } },
     sdk: { sdkRoot: '/tmp/home/sdk', archives: [], incompleteDownloads: 0, hbuilderx: { found: true, version: '5.26.1', series: '5.26' }, platforms: [] },
     projects: [{ id: 'demo', appName: '演示项目', sourceDir: '/tmp/demo-src', sourceDirExists: true, enabledPlatforms: ['ios', 'android', 'harmony'] }], profiles: [], uploaders: [], artifacts: [],
+    certificatesError: '',
+    certificates: {
+      dirs: { ios: '/tmp/home/certificates/iOS', android: '/tmp/home/certificates/Android', harmony: '/tmp/home/certificates/HarmonyOS', signing: '/tmp/home/signing/current' },
+      platforms: {
+        ios: { ready: true, p12: [], profiles: [], details: [] },
+        android: { ready: false, keystores: [], properties: [] },
+        harmony: { ready: false, p12: [], cer: [], p7b: [] },
+      },
+      docs: { ios: 'https://doc.test/ios', android: 'https://doc.test/android', harmony: 'https://doc.test/harmony' },
+    },
   };
 
   const hookValues = [];
@@ -1322,7 +1372,7 @@ test('client half：每个板块都能折叠，且互不影响', () => {
     }
   };
   const collapsed = folds();
-  assert.equal(collapsed.length, 7, `引擎/环境检查/SDK/项目列表/打包选项与打包范围/上传/任务 都要能折叠，实际 ${collapsed.length}`);
+  assert.equal(collapsed.length, 8, `引擎/环境检查/SDK/证书/项目列表/打包选项与打包范围/上传/任务 都要能折叠，实际 ${collapsed.length}`);
   assert.ok(collapsed.every((node) => node.props['aria-expanded'] === 'false'), '默认全部收起');
   assert.ok(collapsed.every((node) => textOf(node).trim().length > 0), '每个开关都要带标题');
   assert.ok(collapsed.some((node) => textOf(node).includes(dict['projects'])), '项目列表整体一个开关');
@@ -1330,6 +1380,7 @@ test('client half：每个板块都能折叠，且互不影响', () => {
     collapsed.some((node) => textOf(node).includes(dict['options']) && textOf(node).includes(dict['scope'])),
     '打包选项与打包范围合成一个开关（同一件事的两半）',
   );
+  assert.ok(collapsed.some((node) => textOf(node).includes(dict['cert'])), '证书自己一个开关（与 SDK 分开）');
   assert.ok(collapsed.some((node) => textOf(node).includes(dict['upload'])), '上传自己一个开关（打包与上传分开）');
   // 收起时板块内容一点都不渲染（只有标题那一行）。
   assert.ok(!folds().some((node) => textOf(node).includes(dict['scope.hint'])), '收起时连打包范围的说明都看不到');
@@ -1437,6 +1488,44 @@ test('面板 state 带出 HBuilderX 版本、SDK 清单与下载目录', async (
   assert.equal(state.sdkError, '');
   assert.equal(state.plugin.home, home, '显式配置的引擎目录原样带出');
   assert.ok('canUpgrade' in state, '面板要能判断能不能从自己这里升级');
+  rmSync(home, { recursive: true, force: true });
+});
+
+test('证书板块：state 带出证书状态，导入任务走 cert-import', async () => {
+  const home = fixtureHome();
+  const status = {
+    dirs: { ios: '/h/certificates/iOS', android: '/h/certificates/Android', harmony: '/h/certificates/HarmonyOS', signing: '/h/signing/current' },
+    platforms: {
+      ios: { ready: true, p12: [], profiles: [], details: [] },
+      android: { ready: false, keystores: [], properties: [] },
+      harmony: { ready: false, p12: [], cer: [], p7b: [] },
+    },
+    docs: { ios: 'https://doc.test/ios', android: 'https://doc.test/android', harmony: 'https://doc.test/harmony' },
+  };
+  const record = [];
+  const spawn = (dir, args, options) =>
+    fakeSpawn(record, args[0] === 'cert-status'
+      ? { code: 0, stdout: `${JSON.stringify(status)}\n` }
+      : { code: 0 })(dir, args, options);
+  const panel = createPanel({ config: { home }, spawn });
+
+  const state = await panel.state();
+  assert.deepEqual(record.filter((entry) => entry.args[0] === 'cert-status').map((entry) => entry.args), [['cert-status']], '证书状态由引擎的 cert-status 给出');
+  assert.equal(state.certificates.platforms.ios.ready, true);
+  assert.equal(state.certificates.platforms.android.ready, false, '没有 keystore 就是没就绪，不粉饰');
+  assert.equal(state.certificatesError, '');
+
+  const job = panel.startJob({ kind: 'cert', dirs: ['/tmp/certs', '/tmp/more'] });
+  assert.equal(job.kind, 'cert');
+  assert.equal(job.platform, 'cert');
+  for (let index = 0; index < 6; index += 1) await settle();
+  assert.deepEqual(
+    record.filter((entry) => entry.args[0] === 'cert-import').map((entry) => entry.args),
+    [['cert-import', '/tmp/certs', '/tmp/more']],
+    '多个文件夹一次交给引擎（引擎自己按扩展名判平台）',
+  );
+  assert.equal(panel.jobLog(job.id).ok, true);
+  assert.throws(() => panel.startJob({ kind: 'cert' }), /cert 需要证书文件夹路径/);
   rmSync(home, { recursive: true, force: true });
 });
 

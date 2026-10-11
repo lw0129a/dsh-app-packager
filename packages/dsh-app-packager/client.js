@@ -75,6 +75,22 @@ window.__ModuleLoader__.load({
       'upgrade.run': '升级插件',
       'upgrade.unavailable': '这段代码不在 DSH 插件目录里，无法从面板升级：请在终端执行 dsh plugin --profile <profile> add dsh-app-packager@latest。',
       'upgrade.after': '插件已升级：请重启 DeepSeek Harness。别拿刷新页面代替 —— 页面里记的是启动时那份清单给的客户端模块版本号，刷新会去取一个已经不存在的版本（404），侧栏入口反而会消失。',
+      cert: '证书',
+      'cert.hint': '证书文件夹整个交给引擎：里面的 .mobileprovision / .p12 / .cer / .p7b / .keystore / keystore.properties 会按平台自动归位到 certificates/ 下，同名文件覆盖即更新（旧文件进 logs/certificate-history），来源文件夹不动。',
+      'cert.ready': '已就绪',
+      'cert.missing': '缺文件',
+      'cert.import': '选择证书文件夹…',
+      'cert.reimport': '更新证书',
+      'cert.pickPrompt': '选择存放证书的文件夹（里面的文件会自动按平台归位）',
+      'cert.imported': '上次导入的文件夹：{dir}',
+      'cert.none': '还没导入过证书。iOS 要 p12 + mobileprovision；HarmonyOS 要 p12 + cer + p7b；Android 要 keystore（不给也能出测试包，但正式包必须配）。',
+      'cert.dir': '证书目录',
+      'cert.docs': '官方文档',
+      'cert.ios.files': 'p12 {p12} 个 · 描述文件 {profiles} 个',
+      'cert.android.files': 'keystore {keys} 个 · keystore.properties {properties} 个',
+      'cert.harmony.files': 'p12 {p12} 个 · cer {cer} 个 · p7b {p7b} 个',
+      'cert.profileLine': '{name} · {kind} · {bundle} · 到期 {expiry}',
+      'cert.profileExpired': '已过期',
       doctor: '环境检查（Node）',
       'doctor.run': '开始检查',
       'doctor.ok': '结论：当前环境可以打包。',
@@ -126,6 +142,13 @@ window.__ModuleLoader__.load({
       'upload.action': '上传',
       'upload.missing': '安装包已不在',
       'upload.builtAt': '打包于 {time}',
+      'download.dir': '下载位置',
+      'download.pick': '选择文件夹…',
+      'download.pickPrompt': '选择安装包的下载目录（所有平台共用这一个文件夹）',
+      'download.placeholder': '留空 = {dir}',
+      'download.hint': '点「下载」把这个安装包复制到上面的文件夹；同一版本重复下载不会覆盖，会存成 name-1.apk。',
+      'download.action': '下载',
+      'download.done': '已保存到 {path}',
       'options.harmonyDebug': 'HarmonyOS debug 包',
       'options.keepWork': '保留构建目录',
       'options.harmonyDebug.hint': '生成可侧载的 debug HAP（签名用调试证书），发布包不要勾。',
@@ -154,6 +177,7 @@ window.__ModuleLoader__.load({
       'scope.platforms': '平台',
       'scope.projects': '项目',
       'scope.all': '全选',
+      'scope.projectOff': '该项目未启用所选平台，勾上后引擎会直接报错',
       'scope.hint': '不勾项目 = 该平台所有项目；平台与项目会组合成多次引擎调用。',
       'scope.nonePicked': '请至少勾选一个平台。',
       job: '任务',
@@ -170,6 +194,7 @@ window.__ModuleLoader__.load({
       'job.kind.upload': '上传',
       'job.kind.sdk': 'SDK 配置',
       'job.kind.upgrade': '插件升级',
+      'job.kind.cert': '证书导入',
       'job.dropped': '（日志过长，已省略前 {n} 字符）',
       'job.waiting': '等待输出…',
       'job.problems': '发现 {errors} 项错误、{warnings} 项警告：',
@@ -225,6 +250,22 @@ window.__ModuleLoader__.load({
       'upgrade.run': 'Upgrade plugin',
       'upgrade.unavailable': 'This code is not inside a DSH plugin directory, so the panel cannot upgrade it: run dsh plugin --profile <profile> add dsh-app-packager@latest.',
       'upgrade.after': 'The plugin has been upgraded: restart DeepSeek Harness. Do not reload the page instead — the page still holds the client-module revision from boot, so a reload asks for a revision that no longer exists (404) and the sidebar entry disappears.',
+      cert: 'Certificates',
+      'cert.hint': 'Hand the whole folder to the engine: the .mobileprovision / .p12 / .cer / .p7b / .keystore / keystore.properties inside are filed under certificates/ by platform, overwriting the same name means “updated” (the old file goes to logs/certificate-history) and the source folder is left alone.',
+      'cert.ready': 'Ready',
+      'cert.missing': 'Missing files',
+      'cert.import': 'Choose certificate folder…',
+      'cert.reimport': 'Update certificates',
+      'cert.pickPrompt': 'Choose the folder that holds your certificates (files are filed by platform automatically)',
+      'cert.imported': 'Last imported folder: {dir}',
+      'cert.none': 'No certificates imported yet. iOS needs p12 + mobileprovision; HarmonyOS needs p12 + cer + p7b; Android needs a keystore (test packages still build without one, release packages do not).',
+      'cert.dir': 'Certificate directory',
+      'cert.docs': 'Official docs',
+      'cert.ios.files': '{p12} p12 · {profiles} provisioning profile(s)',
+      'cert.android.files': '{keys} keystore(s) · {properties} keystore.properties',
+      'cert.harmony.files': '{p12} p12 · {cer} cer · {p7b} p7b',
+      'cert.profileLine': '{name} · {kind} · {bundle} · expires {expiry}',
+      'cert.profileExpired': 'expired',
       doctor: 'Environment check (Node)',
       'doctor.run': 'Run check',
       'doctor.ok': 'This machine can build.',
@@ -276,6 +317,13 @@ window.__ModuleLoader__.load({
       'upload.action': 'Upload',
       'upload.missing': 'installer is gone',
       'upload.builtAt': 'built {time}',
+      'download.dir': 'Download folder',
+      'download.pick': 'Choose folder…',
+      'download.pickPrompt': 'Choose where installers are saved (one folder shared by every platform)',
+      'download.placeholder': 'blank = {dir}',
+      'download.hint': 'Download copies this installer into that folder; a repeated download of the same build is kept as name-1.apk instead of overwriting.',
+      'download.action': 'Download',
+      'download.done': 'saved to {path}',
       'options.harmonyDebug': 'HarmonyOS debug HAP',
       'options.keepWork': 'Keep work dir',
       'options.harmonyDebug.hint': 'Builds a debug-signed HAP you can sideload; do not tick it for a release.',
@@ -304,6 +352,7 @@ window.__ModuleLoader__.load({
       'scope.platforms': 'Platforms',
       'scope.projects': 'Projects',
       'scope.all': 'All',
+      'scope.projectOff': 'This project does not enable the picked platform(s); the engine will refuse it',
       'scope.hint': 'No project ticked = every project of that platform; platforms × projects become several engine runs.',
       'scope.nonePicked': 'Tick at least one platform.',
       job: 'Job',
@@ -320,6 +369,7 @@ window.__ModuleLoader__.load({
       'job.kind.upload': 'Upload',
       'job.kind.sdk': 'SDK setup',
       'job.kind.upgrade': 'Plugin upgrade',
+      'job.kind.cert': 'Certificate import',
       'job.blockedByCheck': 'The pre-build environment check failed, so the build did not start. Fix the [FAIL] items above, then press “Build” again.',
       'job.dropped': '(log truncated, {n} leading characters dropped)',
       'job.waiting': 'Waiting for output…',
@@ -422,6 +472,34 @@ window.__ModuleLoader__.load({
       return payload;
     }
 
+    /** Certificate source folders the user picked last time (per browser, best effort). */
+    const CERT_DIRS_KEY = 'ap-cert-dirs';
+    const readCertDirs = () => {
+      try {
+        const value = JSON.parse(localStorage.getItem(CERT_DIRS_KEY) || '[]');
+        return Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item) : [];
+      } catch {
+        return [];
+      }
+    };
+
+    /** Download folder for archived installers (per browser, best effort). */
+    const DOWNLOAD_DIR_KEY = 'ap-download-dir';
+    const readDownloadDir = () => {
+      try {
+        return localStorage.getItem(DOWNLOAD_DIR_KEY) || '';
+      } catch {
+        return '';
+      }
+    };
+    const rememberDownloadDir = (dir) => {
+      try {
+        localStorage.setItem(DOWNLOAD_DIR_KEY, dir);
+      } catch {
+        // A private-mode browser without storage only loses the memory.
+      }
+    };
+
     function mark(status) {
       return status === 'ok' ? '✓' : status === 'warn' ? '!' : '✗';
     }
@@ -521,9 +599,22 @@ window.__ModuleLoader__.load({
       const [overrides, setOverrides] = useState('');
       const [pendingRemove, setPendingRemove] = useState('');
       const [projectDir, setProjectDir] = useState('');
+      const [certSourceDirs, setCertSourceDirs] = useState(() => readCertDirs());
+      const [downloadDir, setDownloadDir] = useState(() => readDownloadDir());
+      // 产物 key -> 已保存的绝对路径，下载成功后显示在那一行下面。
+      const [downloads, setDownloads] = useState({});
       const logRef = useRef(null);
       const rootRef = useRef(null);
       const scrollHost = useRef(null);
+
+      const rememberCertDirs = (dirs) => {
+        setCertSourceDirs(dirs);
+        try {
+          localStorage.setItem(CERT_DIRS_KEY, JSON.stringify(dirs));
+        } catch {
+          /* 记不住也不影响用：只是「更新证书」按钮要先自己再选一次 */
+        }
+      };
 
       const guard = useCallback(async (key, work) => {
         setBusy(key);
@@ -647,6 +738,7 @@ window.__ModuleLoader__.load({
       const uploaders = (state && state.uploaders) || [];
       // Installers the engine already archived (`<home>/packages/<平台>/*-latest.json`).
       const artifacts = (state && state.artifacts) || [];
+      const artifactKey = (item) => `${item.platform}-${item.projectId}`;
       const uploadTargets = () => uploaders.filter((item) => item.available && uploads[item.id] !== false).map((item) => item.id).join(',');
       const uploaderNote = (item) => {
         if (!item.enabled) return t('options.uploader.disabled');
@@ -742,7 +834,18 @@ window.__ModuleLoader__.load({
         const next = batchPlatforms.filter((item) => item !== 'all');
         setBatchPlatforms(next.includes(key) ? next.filter((item) => item !== key) : next.concat(key));
       };
-      const pickedProjects = () => projects.filter((project) => batchProjects[project.id] !== false).map((project) => project.id);
+      // 勾选框只对「所选平台启用」的项目生效：没启用的项目交给引擎只会被
+      // `未启用 X 打包` 拒掉，一次批量里死一个项目会连带整批都打不了包。
+      const projectEnabled = (project) => {
+        const enabled = (project.enabledPlatforms || []).filter((key) => key !== 'all');
+        return effectivePlatforms.some((key) => (key === 'all' ? enabled.length > 0 : enabled.includes(key)));
+      };
+      // 默认勾选跟着平台走（不启用的项目默认不打勾，免得一个项目拖死整批），
+      // 但用户显式勾上的照发：缺工程时由引擎如实报错，面板不替用户做决定。
+      const projectPicked = (project) => (batchProjects[project.id] === undefined
+        ? projectEnabled(project)
+        : batchProjects[project.id] === true);
+      const pickedProjects = () => projects.filter(projectPicked).map((project) => project.id);
       const setAllProjects = (on) => setBatchProjects(Object.fromEntries(projects.map((project) => [project.id, on])));
       const runBatch = (kind) => startJob(kind, { platforms: effectivePlatforms, projects: pickedProjects() });
 
@@ -792,6 +895,29 @@ window.__ModuleLoader__.load({
         setJob(await call('job', { method: 'POST', body: { kind: 'upgrade' } }));
       });
 
+      // Certificate import rides the same job route: the whole folder goes to the
+      // engine's cert-import, which tells platforms apart by file extension, so the
+      // panel never sorts files itself. The last folder is remembered so “update
+      // certificates” is one click after a renewal.
+      const pickCertDirs = () => guard('cert', async () => {
+        const picked = await call('pick', { method: 'POST', body: { prompt: t('cert.pickPrompt') } });
+        const paths = (picked && (picked.paths || (picked.path ? [picked.path] : []))) || [];
+        if (paths.length === 0) {
+          if (picked && !picked.cancelled) setError(`${t('projects.pickManual')}\n${picked.error || ''}`.trim());
+          return;
+        }
+        rememberCertDirs(paths);
+        setJob(await call('job', { method: 'POST', body: { kind: 'cert', dirs: paths } }));
+        refresh();
+      });
+      const updateCertificates = () => {
+        const dirs = certSourceDirs;
+        return guard('cert', async () => {
+          setJob(await call('job', { method: 'POST', body: { kind: 'cert', dirs } }));
+          refresh();
+        });
+      };
+
       // The host opens the OS folder dialog; a plain cancel is not an error, but a
       // missing picker falls back to typing the path by hand. Several folders are
       // joined into the one field (the engine splits on comma), so a folder holding
@@ -801,6 +927,24 @@ window.__ModuleLoader__.load({
         const paths = (picked && (picked.paths || (picked.path ? [picked.path] : []))) || [];
         if (paths.length > 0) setProjectDir(paths.join(', '));
         else if (picked && !picked.cancelled) setError(`${t('projects.pickManual')}\n${picked.error || ''}`.trim());
+      });
+
+      // 已打完的包直接复制到统一配置的下载目录：浏览器写不了任意路径，所以拷贝
+      // 在宿主做，面板只发「哪个产物 + 哪个目录」。同一个包重复下载不覆盖。
+      const downloadArtifact = (item) => guard('download', async () => {
+        const result = await call('download', {
+          method: 'POST',
+          body: { platform: item.platform, project: item.projectId, dir: downloadDir.trim() },
+        });
+        setDownloads({ ...downloads, [artifactKey(item)]: result.saved });
+      });
+      const pickDownloadDir = () => guard('download', async () => {
+        const picked = await call('pick', { method: 'POST', body: { prompt: t('download.pickPrompt') } });
+        const paths = (picked && (picked.paths || (picked.path ? [picked.path] : []))) || [];
+        if (paths.length > 0) {
+          setDownloadDir(paths[0]);
+          rememberDownloadDir(paths[0]);
+        } else if (picked && !picked.cancelled) setError(`${t('projects.pickManual')}\n${picked.error || ''}`.trim());
       });
 
       const addProject = () => guard('project', async () => {
@@ -1030,6 +1174,73 @@ window.__ModuleLoader__.load({
         h('div', { className: 'ap-note' }, state.canUpgrade ? t('upgrade.hint') : t('upgrade.unavailable')),
       );
 
+      // 证书板块：三平台状态直接来自引擎 cert-status（与打包前 check 用的是同一批
+      // 判定函数），所以面板不会出现「面板说就绪、打包却报缺证书」。
+      const certs = (state && state.certificates) || null;
+      const certPlatforms = certs ? certs.platforms : null;
+      const certDirs = certs ? certs.dirs : null;
+      const certNames = { ios: 'iOS', android: 'Android', harmony: 'HarmonyOS' };
+      const certCounts = (id, value) => (id === 'ios'
+        ? tf('cert.ios.files', { p12: value.p12.length, profiles: value.profiles.length })
+        : id === 'android'
+          ? tf('cert.android.files', { keys: value.keystores.length, properties: value.properties.length })
+          : tf('cert.harmony.files', { p12: value.p12.length, cer: value.cer.length, p7b: value.p7b.length }));
+      const certCard = !state ? null : h(
+        Section,
+        {
+          t,
+          title: t('cert'),
+          actions: h(
+            'div',
+            { style: styles.actions },
+            button(t('cert.import'), pickCertDirs, { disabled: Boolean(busy) || jobRunning }),
+            button(t('cert.reimport'), updateCertificates, { disabled: Boolean(busy) || jobRunning || certSourceDirs.length === 0 }),
+          ),
+        },
+        state.certificatesError ? h('div', { className: 'ap-box-error' }, state.certificatesError) : null,
+        h('div', { className: 'ap-note' }, t('cert.hint')),
+        certPlatforms
+          ? [ 'ios', 'android', 'harmony' ].map((id) => {
+            const value = certPlatforms[id];
+            return h(
+              'div',
+              { key: id, className: 'ap-sdk' },
+              h(
+                'div',
+                { className: 'ap-sdk-head' },
+                h('span', { className: 'ap-mark', style: { color: markColor(value.ready ? 'ok' : 'fail') } }, mark(value.ready ? 'ok' : 'fail')),
+                h('span', { className: 'ap-sdk-name' }, certNames[id]),
+                h('span', { className: `ap-tag ${value.ready ? 'ok' : 'fail'}` }, value.ready ? t('cert.ready') : t('cert.missing')),
+                h('a', { href: certs.docs[id], target: '_blank', rel: 'noreferrer', className: 'ap-link' }, t('cert.docs')),
+              ),
+              h(
+                'div',
+                { className: 'ap-sdk-detail' },
+                h('div', { className: 'ap-kv' }, certCounts(id, value)),
+                // iOS 的描述文件把 bundle id 与到期日摆出来：这两个值决定能不能对上项目，
+                // 也是证书过期时唯一看得见的信号（引擎 profiles 子命令解析出来的）。
+                id === 'ios'
+                  ? value.details.map((profile) => h(
+                    'div',
+                    { key: profile.file, className: 'ap-kv' },
+                    `${tf('cert.profileLine', {
+                      name: profile.name || profile.file,
+                      kind: profile.kind,
+                      bundle: profile.bundleId,
+                      expiry: profile.expiry,
+                    })}${profile.expired ? ` · ${t('cert.profileExpired')}` : ''}`,
+                  ))
+                  : null,
+              ),
+            );
+          })
+          : null,
+        certDirs ? row(t('cert.dir'), certDirs.ios.replace(/[\\/][^\\/]*$/, ''), { mono: true }) : null,
+        certSourceDirs.length
+          ? h('div', { className: 'ap-note' }, tf('cert.imported', { dir: certSourceDirs.join(', ') }))
+          : h('div', { className: 'ap-note' }, t('cert.none')),
+      );
+
       const projects = (state && state.projects) || [];
       const profiles = (state && state.profiles) || [];
       const profilesNote = (state && state.profilesError) || (profiles.length ? t('options.profile.auto') : t('options.profiles.none'));
@@ -1224,8 +1435,9 @@ window.__ModuleLoader__.load({
             button(t('scope.all'), () => setAllProjects(true), { disabled: Boolean(busy) }),
             projects.map((project) => checkbox(
               project.appName || project.id,
-              batchProjects[project.id] !== false,
+              projectPicked(project),
               (on) => setBatchProjects({ ...batchProjects, [project.id]: on }),
+              projectEnabled(project) ? {} : { title: t('scope.projectOff') },
             )),
           ),
           h(
@@ -1246,7 +1458,7 @@ window.__ModuleLoader__.load({
         : `${Math.max(1, Math.round(bytes / 1024))} KB`);
       const uploadCard = h(
         Section,
-        { t, title: t('upload'), actions: h('span', { style: styles.muted }, t('upload.hint')) },
+        { t, title: `${t('upload')} · ${t('download.action')}`, actions: h('span', { style: styles.muted }, t('upload.hint')) },
         artifacts.length === 0
           ? h('div', { className: 'ap-note' }, t('upload.empty'))
           : h(
@@ -1267,6 +1479,10 @@ window.__ModuleLoader__.load({
                       ? h('span', { className: 'ap-muted' }, fileSize(item.artifactSize))
                       : h('span', { className: 'ap-tag warn' }, t('upload.missing')),
                     item.builtAt ? h('span', { className: 'ap-muted' }, tf('upload.builtAt', { time: item.builtAt })) : null,
+                    button(t('download.action'), () => downloadArtifact(item), {
+                      small: true,
+                      disabled: Boolean(busy) || jobRunning || !item.artifactExists,
+                    }),
                     button(t('upload.action'), () => startUpload(item), {
                       primary: true,
                       small: true,
@@ -1274,9 +1490,29 @@ window.__ModuleLoader__.load({
                     }),
                   ),
                   h('div', { className: 'ap-note' }, item.artifactPath),
+                  downloads[artifactKey(item)]
+                    ? h('div', { className: 'ap-note' }, tf('download.done', { path: downloads[artifactKey(item)] }))
+                    : null,
                 ),
               )),
             ),
+        h(
+          'div',
+          { style: styles.actions },
+          h('span', { style: styles.muted }, t('download.dir')),
+          h('input', {
+            className: 'ap-input',
+            style: { flex: '1', minWidth: '220px' },
+            placeholder: tf('download.placeholder', { dir: (state && state.downloadDir) || '' }),
+            value: downloadDir,
+            onChange: (event) => {
+              setDownloadDir(event.target.value);
+              rememberDownloadDir(event.target.value);
+            },
+          }),
+          button(t('download.pick'), pickDownloadDir, { disabled: Boolean(busy) }),
+        ),
+        h('div', { className: 'ap-note' }, t('download.hint')),
         uploaderPicker('upload.target'),
         uploaders.filter((item) => item.apiKeyVar).map((item) => credentialRow(item, 'apiKey')),
         uploaders.filter((item) => item.userKeyVar).map((item) => credentialRow(item, 'userKey')),
@@ -1321,6 +1557,7 @@ window.__ModuleLoader__.load({
         engineCard,
         doctorCard,
         sdkCard,
+        certCard,
         projectsCard,
         optionsCard,
         uploadCard,

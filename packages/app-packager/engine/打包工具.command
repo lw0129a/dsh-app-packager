@@ -770,10 +770,10 @@ if [ "$#" -gt 0 ]; then
   else
     status=$?
   fi
-  # profiles 是给上层（面板/脚本）读的机器可读输出，不能混入收尾提示。
-  if [ "${1:-}" = "profiles" ]; then
-    exit "$status"
-  fi
+  # profiles / cert-status 是给上层（面板/脚本）读的机器可读输出，不能混入收尾提示。
+  case "${1:-}" in
+    profiles|cert-status) exit "$status" ;;
+  esac
   printf '\n打包结束，退出码: %s\n' "$status"
   printf '按回车退出...'
   read -r _ || true

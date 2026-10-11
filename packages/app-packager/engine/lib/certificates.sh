@@ -67,16 +67,18 @@ cert_harmony_ready() {
     fi
   done < <(find "$dir" -maxdepth 3 -type f -iname '*.p7b' -exec dirname {} \; 2>/dev/null | sort -u)
 
+  # harmony_signing_material 找不到证书时也是退出码 0（只是没有输出），所以这里必须
+  # 看输出内容——只看退出码的话，只要项目目录里有一个项目就会误判「鸿蒙证书已就绪」。
+  local material
   for project_file in "$PIPELINE_ROOT"/config/projects/*.env; do
     [ -f "$project_file" ] || continue
-    if (
+    material="$(
       set +u
       # shellcheck source=/dev/null
       source "$project_file" >/dev/null 2>&1 || exit 1
-      WORKSPACE="${SOURCE_DIR:-}" harmony_signing_material >/dev/null 2>&1
-    ); then
-      return 0
-    fi
+      WORKSPACE="${SOURCE_DIR:-}" harmony_signing_material 2>/dev/null
+    )"
+    [ -n "$material" ] && return 0
   done
 
   return 1
@@ -453,4 +455,77 @@ process_certificates_root() {
   printf '  iOS:      https://ask.dcloud.net.cn/article/152\n'
   printf '  Android:  https://ask.dcloud.net.cn/article/35777\n'
   printf '  HarmonyOS: https://doc.dcloud.net.cn/uni-app-x/tutorial/runbuild.html#signing-configs\n'
+}
+
+# 面板用的机器可读证书状态（stdout 只有 JSON）。就绪判定必须复用 cert_*_ready：
+# 那是 check/build 用的同一条规则，面板自己判会得出「面板说就绪、打包却报缺文件」。
+cert_status_json() {
+  local ios_ready=false android_ready=false harmony_ready=false profiles='[]'
+  cert_ios_ready && ios_ready=true
+  cert_android_ready && android_ready=true
+  cert_harmony_ready && harmony_ready=true
+  profiles="$(profiles_json 2>/dev/null || printf '[]')"
+
+  python3 - "$(cert_ios_dir)" "$(cert_android_dir)" "$(cert_harmony_dir)" \
+    "$PIPELINE_ROOT/signing/current" \
+    "$ios_ready" "$android_ready" "$harmony_ready" "$profiles" <<'PY_CERT_STATUS'
+import json
+import sys
+from pathlib import Path
+
+ios_dir, android_dir, harmony_dir, signing_dir, ios_ready, android_ready, harmony_ready, profiles = sys.argv[1:9]
+
+
+def files(root, extensions):
+    base = Path(root)
+    if not base.is_dir():
+        return []
+    rows = []
+    for path in sorted(base.rglob('*')):
+        if path.is_file() and path.suffix.lower() in extensions:
+            try:
+                mtime = int(path.stat().st_mtime)
+            except OSError:
+                mtime = 0
+            rows.append({'path': str(path), 'name': path.name, 'mtime': mtime})
+    return rows
+
+
+def properties(root):
+    return [row for row in files(root, {'.properties'}) if row['name'] == 'keystore.properties']
+
+
+try:
+    profile_rows = json.loads(profiles)
+except ValueError:
+    profile_rows = []
+
+print(json.dumps({
+    'dirs': {'ios': ios_dir, 'android': android_dir, 'harmony': harmony_dir, 'signing': signing_dir},
+    'platforms': {
+        'ios': {
+            'ready': ios_ready == 'true',
+            'p12': files(ios_dir, {'.p12', '.pfx'}) + files(signing_dir, {'.p12', '.pfx'}),
+            'profiles': files(ios_dir, {'.mobileprovision'}) + files(signing_dir, {'.mobileprovision'}),
+            'details': profile_rows,
+        },
+        'android': {
+            'ready': android_ready == 'true',
+            'keystores': files(android_dir, {'.keystore', '.jks'}),
+            'properties': properties(android_dir),
+        },
+        'harmony': {
+            'ready': harmony_ready == 'true',
+            'p12': files(harmony_dir, {'.p12', '.pfx'}),
+            'cer': files(harmony_dir, {'.cer'}),
+            'p7b': files(harmony_dir, {'.p7b'}),
+        },
+    },
+    'docs': {
+        'ios': 'https://ask.dcloud.net.cn/article/152',
+        'android': 'https://ask.dcloud.net.cn/article/35777',
+        'harmony': 'https://doc.dcloud.net.cn/uni-app-x/tutorial/runbuild.html#signing-configs',
+    },
+}, ensure_ascii=False))
+PY_CERT_STATUS
 }

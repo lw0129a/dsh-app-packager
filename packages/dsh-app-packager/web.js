@@ -14,6 +14,7 @@
  */
 import { execFile as execFileCallback, spawn as spawnProcess } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import {
@@ -151,8 +152,18 @@ function isOn(value, fallback) {
 }
 /** Directory mtime as a cheap change stamp; a missing directory is just "never". */
 function dirStamp(dir) {
+  // 目录自身的 mtime 在「同名文件被覆盖」时不变（续期的描述文件就是这种），所以连里面
+  // 一层文件的 mtime 一起算：面板不会拿着旧的到期日不放。
   try {
-    return String(fs.statSync(dir).mtimeMs);
+    let newest = fs.statSync(dir).mtimeMs;
+    for (const entry of fs.readdirSync(dir)) {
+      try {
+        newest = Math.max(newest, fs.statSync(path.join(dir, entry)).mtimeMs);
+      } catch {
+        /* 断掉的软链之类：忽略 */
+      }
+    }
+    return String(newest);
   } catch {
     return '-';
   }
@@ -234,6 +245,31 @@ export function engineCommandsFor(args = {}, { check = false } = {}) {
 }
 
 const FOLDER_PROMPT = '选择 uni-app x 项目目录';
+
+/** Where downloads land when the panel's one download-folder field is blank. */
+export const DEFAULT_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
+
+/**
+ * Target path of a downloaded installer: the configured folder with `~`
+ * expanded, or the OS download folder when blank. One folder serves every
+ * platform and project (the panel keeps exactly one setting), and an existing
+ * file is never overwritten — downloading the same build twice lands as
+ * `name-1.apk` rather than silently replacing it.
+ *
+ * @param {string} [dir] configured download folder.
+ * @param {string} fileName installer file name.
+ * @param {(target: string) => boolean} [exists] injectable for tests.
+ * @returns {string} absolute destination path.
+ */
+export function downloadDestination(dir, fileName, exists = fs.existsSync) {
+  const raw = String(dir || '').trim();
+  const base = path.resolve(raw.replace(/^~(?=[/\\]|$)/, os.homedir()) || DEFAULT_DOWNLOAD_DIR);
+  const ext = path.extname(fileName);
+  const stem = path.basename(fileName, ext) || fileName;
+  let target = path.join(base, fileName);
+  for (let i = 1; exists(target); i += 1) target = path.join(base, `${stem}-${i}${ext}`);
+  return target;
+}
 
 /**
  * Ask the host OS for one or more folders. The browser half cannot read the
@@ -677,6 +713,41 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
     }
   }
 
+  /**
+   * Per-platform certificate readiness, straight from the engine's `cert-status`:
+   * the same bash predicates (`cert_*_ready`) the pre-build `check` uses, so the
+   * panel never claims a platform is ready that the build will then fail on.
+   *
+   * Cached by the mtime of the certificate directories — importing writes into
+   * them, and a bash spawn per panel refresh would be wasted work.
+   */
+  let certCache = null;
+  async function certStatusOf(home) {
+    const stamp = [ 'certificates', 'certificates/iOS', 'certificates/Android', 'certificates/HarmonyOS', 'signing/current' ]
+      .map((rel) => dirStamp(path.join(home, rel)))
+      .join('|');
+    if (certCache && certCache.home === home && certCache.stamp === stamp) return certCache.value;
+
+    const shell = shellAvailable();
+    if (!shell.available) return { error: `当前系统上无法运行 bash 引擎：${shell.error}` };
+    let result;
+    try {
+      result = await spawn(home, ['cert-status'], { stdio: 'pipe', timeoutMs: 60_000, searchRoots: config.searchRoots, shell: shell.shell });
+    } catch (error) {
+      return { error: `无法读取证书状态：${String(error?.message || error)}` };
+    }
+    if (result.code !== 0) {
+      return { error: String(result.stderr || result.stdout || `cert-status 退出码 ${result.code}`).trim() };
+    }
+    try {
+      const value = JSON.parse(String(result.stdout || '').trim() || '{}');
+      certCache = { home, stamp, value };
+      return value;
+    } catch (error) {
+      return { error: `无法解析 cert-status 输出：${String(error?.message || error)}` };
+    }
+  }
+
   /** Defaults the panel mirrors from config/settings.env (the engine still owns them). */
   function optionsOf(home) {
     let env = {};
@@ -715,6 +786,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       const artifacts = listArtifacts(home);
       const profiles = await profilesOf(home);
       const sdk = await sdkStatusOf(home);
+      const certificates = await certStatusOf(home);
       const root = pluginRoot(moduleUrl, env);
       const list = Array.isArray(projects) ? projects : [];
       // The home holds a copy of the engine: report the version actually on
@@ -737,12 +809,17 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
         uploaders: Array.isArray(uploaders) ? uploaders : [],
         uploadersError: Array.isArray(uploaders) ? '' : uploaders.error,
         artifacts,
+        // Host-side default for the download card, so a blank field can show the
+        // real folder instead of a made-up placeholder.
+        downloadDir: DEFAULT_DOWNLOAD_DIR,
         profiles: Array.isArray(profiles) ? profiles : [],
         profilesError: Array.isArray(profiles) ? '' : profiles.error,
         options: optionsOf(home),
         overrideKeys: await overrideKeysOf(home),
         sdk: sdk && !sdk.error ? sdk : null,
         sdkError: sdk && sdk.error ? sdk.error : '',
+        certificates: certificates && !certificates.error ? certificates : null,
+        certificatesError: certificates && certificates.error ? certificates.error : '',
         // The pgyer CLI is installed lazily inside the engine home; report
         // whether it is already there so the panel can say so instead of
         // promising an install on every upload.
@@ -802,6 +879,25 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
           home,
           commands,
           timeoutMs: config.sdkTimeoutMs || 3_600_000,
+          searchRoots: config.searchRoots,
+          shell: shell.shell,
+        });
+      }
+
+      // 证书导入：把用户选的文件夹整个交给引擎（process_certificates_root），
+      // 它自己按扩展名判平台并归位到 certificates/<平台>/，覆盖即更新、旧文件进
+      // logs/certificate-history；输出照常流进任务卡，导入完面板刷新状态。
+      if (spec.kind === 'cert') {
+        const dirs = (Array.isArray(spec.dirs) ? spec.dirs : [ spec.dir ])
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+        if (dirs.length === 0) throw new Error('cert 需要证书文件夹路径');
+        return runner.start({
+          kind: 'cert',
+          platform: 'cert',
+          home,
+          commands: [ [ 'cert-import', ...dirs ] ],
+          timeoutMs: config.certTimeoutMs || 600_000,
           searchRoots: config.searchRoots,
           shell: shell.shell,
         });
@@ -935,6 +1031,32 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
     },
 
     /**
+     * Copy one archived installer into the configured download folder. The
+     * browser cannot write to a path of its own choosing, so the host does the
+     * copy; the folder is a single setting shared by every platform and project,
+     * and a repeated download never overwrites (`name-1.apk`).
+     */
+    async downloadArtifact({ platform, project, dir } = {}) {
+      const home = homeOf();
+      const wanted = String(platform || '').trim();
+      const id = String(project || '').trim();
+      const artifact = listArtifacts(home).find((item) => item.platform === wanted && item.projectId === id);
+      if (!artifact) throw new Error(`没有找到 ${wanted} · ${id} 的安装包`);
+      if (!artifact.artifactExists) throw new Error(`安装包已不在：${artifact.artifactPath}`);
+      const target = downloadDestination(dir, path.basename(artifact.artifactPath));
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
+      await fs.promises.copyFile(artifact.artifactPath, target);
+      return {
+        ok: true,
+        platform: artifact.platform,
+        project: artifact.projectId,
+        saved: target,
+        dir: path.dirname(target),
+        size: artifact.artifactSize,
+      };
+    },
+
+    /**
      * Save uploader credentials into `config/upload.local.env`, which the engine
      * sources after `upload.env`: the API key, the optional User Key (`uKey`),
      * or both. Only the fields actually present are written, so a blank submit
@@ -1021,7 +1143,7 @@ export function mountWebPanel(ctx, config = {}) {
     { path: `${ROUTE_BASE}/state`, run: () => panel.state() },
     { path: `${ROUTE_BASE}/init`, run: (_body, _query) => panel.init(_body) },
     { path: `${ROUTE_BASE}/doctor`, run: (_body) => panel.doctor(_body) },
-    { path: `${ROUTE_BASE}/pick`, run: () => panel.pickFolder() },
+    { path: `${ROUTE_BASE}/pick`, run: (body) => panel.pickFolder(body) },
     { path: `${ROUTE_BASE}/project`, run: (body) => panel.addProject(body) },
     { path: `${ROUTE_BASE}/project/remove`, run: (body) => panel.removeProject(body) },
     { path: `${ROUTE_BASE}/job`, run: (_body) => panel.startJob(_body) },
@@ -1029,6 +1151,7 @@ export function mountWebPanel(ctx, config = {}) {
     { path: `${ROUTE_BASE}/job/kill`, run: (_body, query) => panel.killJob(query.id) },
     { path: `${ROUTE_BASE}/job/clear`, run: () => panel.clearJobs() },
     { path: `${ROUTE_BASE}/upload/credential`, run: (body) => panel.saveUploadCredential(body) },
+    { path: `${ROUTE_BASE}/download`, run: (body) => panel.downloadArtifact(body) },
   ];
 
   const disposers = [];

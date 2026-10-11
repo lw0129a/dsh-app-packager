@@ -59,11 +59,12 @@
 - **推荐 SDK 的逻辑只有引擎一份**：HBuilderX 版本 → SDK 系列 → 官方下载入口 → 下载/解压/归位，全在 `engine/lib/sdk.sh`（`sdk status|urls|install|process`）。面板不自己拼 URL：iOS 的直链模板由系列推出来，Android 的文件名带构建号只能从官方页解析，HarmonyOS 走 ohpm 装 runtime，`--file` 用来接本地下好的包。
 - **`check` 与 `build` 是两个子命令**：引擎 argv 由 `web.js` 的 `engineArgsFor` 拼装，因为在 `lib/runner.sh` 里裸平台参数意味着**打包**。检查某平台永远是 `打包工具.command check <平台> [项目]`。
 - **打包选项只有一份出处**：`--full-permission` / `--no-full-permission`、`--package-kind`、`--profile`、`--set KEY=VALUE` 都由 `engineArgsFor` 生成，**`check` 与 `build` 共用同一组**（check 就是同一套接线的预演：描述文件缺失或类型不符、权限开关写错都会先报出来）。`--package-kind` 是 iOS 概念，非 iOS 平台不传。面板描述文件清单不自己解析 `.mobileprovision`，而是调用引擎的 `profiles` 子命令（按 `signing/current`、`signing/apple`、`certificates/iOS` 的 mtime 缓存）；`--set` 允许的键从引擎 `lib/common.sh` 的 `PACKAGE_ENV_OVERRIDE_KEYS` 读出后随 `state` 下发，面板据此过滤项目预设，避免与引擎各维护一份白名单。
+- **证书归位也只有引擎一份**：面板不按扩展名分拣文件，只把用户选的文件夹整个交给 `cert-import`（`lib/certificates.sh` 的 `process_certificates_root`：判平台 → 原子复制到 `certificates/<平台>/` → 同名即更新、旧文件进 `logs/certificate-history` → 打印状态与官方文档链接，来源文件夹不动）；证书板块的三平台状态来自 `cert-status`（纯 JSON），用的是打包前 `check` 同一批 `cert_*_ready` 判定，所以面板不会说「就绪」而打包报缺证书。判定必须看输出而不是退出码：`harmony_signing_material` 找不到证书时退出码同样是 0。
 - **物化出的引擎目录会写一份 `.gitignore`**（`HOME_GITIGNORE`），保护 `config/projects/*.env`、`certificates/*`、`*.p12`、`*.mobileprovision`、`*.ipa`、`*.apk`、`*.hap`。
 
 ## 测试与 CI
 
-`node --test`，不引框架：`packages/app-packager/test/packager.test.mjs`（env 解析、项目发现、物化、doctor）、`packages/app-packager/test/engine.test.sh`（`parse_args` 选项、打包参数白名单、`profiles` 与 `sdk status` 的 JSON、`harmony_sdk_ready` —— 在临时 `PIPELINE_ROOT` 里跑，`lib/` 是复制的所以临时根真的生效）与 `packages/dsh-app-packager/test/plugin.test.mjs`（工具注册、schema、渲染、参数校验、用假 req/res 驱动宿主路由、任务执行器，以及用 stub React 加载 `client.js` 并断言面板注册进 `sidebar.panellist` + `main` 的冒烟测试）。CI 在 `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22 上跑这两组，外加 CLI 冒烟与 `pnpm -r pack` 的 tarball 校验。bash 引擎本身未被 CI 覆盖——真机 Android/HarmonyOS 出包需要装了 HBuilderX 的机器。
+`node --test`，不引框架：`packages/app-packager/test/packager.test.mjs`（env 解析、项目发现、物化、doctor）、`packages/app-packager/test/engine.test.sh`（`parse_args` 选项、打包参数白名单、`profiles`、`sdk status` 与 `cert_status_json` 的 JSON、`cert_harmony_ready`、`harmony_sdk_ready` —— 在临时 `PIPELINE_ROOT` 里跑，`lib/` 是复制的所以临时根真的生效）与 `packages/dsh-app-packager/test/plugin.test.mjs`（工具注册、schema、渲染、参数校验、用假 req/res 驱动宿主路由、任务执行器，以及用 stub React 加载 `client.js` 并断言面板注册进 `sidebar.panellist` + `main` 的冒烟测试）。CI 在 `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22 上跑这两组，外加 CLI 冒烟与 `pnpm -r pack` 的 tarball 校验。bash 引擎本身未被 CI 覆盖——真机 Android/HarmonyOS 出包需要装了 HBuilderX 的机器。
 
 ## 怎么扩展
 
