@@ -11,6 +11,7 @@ import { ENGINE_WIZARD, engineEntryPath, isMaterialized, materialize, packageVer
 import { runEngine, shellAvailable } from './engine.mjs';
 import { listProjects, PLATFORMS } from './projects.mjs';
 import { runDoctor } from './doctor.mjs';
+import { parseRemoteTarget, pullArtifacts, runRemote } from './remote.mjs';
 
 const MARKS = { ok: '✓', warn: '!', fail: '✗' };
 
@@ -38,6 +39,10 @@ const HELP = `AppPackager ${packageVersion()} — uni-app / uni-app x 打包命�
   --upload <平台>      打包后上传，例如 --upload pgyer
   --no-upload          跳过上传
   --version <版本号>   覆盖产物版本号
+  --remote <目标>      在另一台 macOS 上执行（user@host[:端口]，可带 ssh:// 前缀）
+  --remote-key <路径>  --remote 用的私钥
+  --remote-home <路径> 远程引擎目录（默认 ~/AppPackager）
+  --no-pull            远程打包成功后不把产物拉回本地
   --harmony-debug      生成 HarmonyOS debug 侧载包
   --force              与 init 连用：强制刷新引擎脚本
   --no-wizard          与 init 连用：只复制引擎，不进入初始化向导
@@ -48,12 +53,13 @@ const HELP = `AppPackager ${packageVersion()} — uni-app / uni-app x 打包命�
   app-packager list
   app-packager build android my-project --upload pgyer
   app-packager build ios --all
+  app-packager build ios my-project --remote user@192.168.1.20
 `;
 
 // 带值的开关（`--json`、`--all` 这种布尔开关不在里面）。
-const FLAGS_WITH_VALUE = new Set(['--dir', '--platform', '--search-roots', '--upload', '--version']);
+const FLAGS_WITH_VALUE = new Set(['--dir', '--platform', '--search-roots', '--upload', '--version', '--remote', '--remote-key', '--remote-home']);
 // 插件自己的参数：它们决定引擎目录、项目搜索根和输出格式，引擎不认识。
-const PLUGIN_ONLY_FLAGS = new Set(['--dir', '--search-roots', '--json']);
+const PLUGIN_ONLY_FLAGS = new Set(['--dir', '--search-roots', '--json', '--remote', '--remote-key', '--remote-home']);
 
 // 把插件专属参数从要交给引擎的 argv 里摘掉：`app-packager --dir X upload ios p`
 // 以前会把 `--dir X` 一起传下去，引擎于是回「未知参数: --dir」。
@@ -125,6 +131,25 @@ function printProjects(home, projects) {
     console.log(`  平台: ${project.enabledPlatforms.join(', ') || '(全部关闭)'}`);
     if (project.bundleId) console.log(`  Bundle ID: ${project.bundleId}`);
   }
+}
+
+async function withRemote(home, args, flags, platform) {
+  const target = parseRemoteTarget(flags.remote);
+  const remoteHome = flags['remote-home'] || '~/AppPackager';
+  console.log(`远程执行：${target.spec} · 引擎目录 ${remoteHome}`);
+  const code = await runRemote({
+    target,
+    key: flags['remote-key'],
+    home: remoteHome,
+    args: engineArgv(args),
+  });
+  if (code !== 0) {
+    console.error(`远程命令失败（退出码 ${code}），未拉取产物。`);
+    return code;
+  }
+  if (flags['no-pull'] || !platform) return 0;
+  console.log(`拉取产物：${target.spec}:${remoteHome}/packages → ${home}/packages`);
+  return pullArtifacts({ target, key: flags['remote-key'], remoteHome, localHome: home, platform });
 }
 
 async function withEngine(home, args, flags, { stdio = 'inherit', timeoutMs, script, stdin = 'ignore' } = {}) {
@@ -218,7 +243,7 @@ export async function main(argv) {
       }
       const args = ['check', platform];
       if (flags._[2]) args.push(flags._[2]);
-      return withEngine(home, args, flags);
+      return flags.remote ? withRemote(home, args, flags, null) : withEngine(home, args, flags);
     }
     case 'build': {
       const platform = flags._[1];
@@ -235,7 +260,7 @@ export async function main(argv) {
         if (typeof flags[key] === 'string') args.push(flags[key]);
       }
       if (typeof flags.version === 'string') args.push('--version', flags.version);
-      return withEngine(home, args, flags);
+      return flags.remote ? withRemote(home, args, flags, platform) : withEngine(home, args, flags);
     }
     case 'run': {
       return withEngine(home, flags._.slice(1), flags);

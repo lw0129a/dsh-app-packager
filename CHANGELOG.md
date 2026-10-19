@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- **`build` / `check` 可以转发到另一台 macOS 执行，产物自动拉回。** Windows 上打不了 iOS，买第二台 Mac 或上云又不划算，所以新增 `--remote user@host[:端口]`：命令经 `ssh` 在远端引擎目录里跑 `打包工具.command`，成功后用 `scp` 把 `packages/<平台>` 拉回本地，配 `--remote-key` / `--remote-home` / `--no-pull` 三个开关。远程命令的每个参数都做 POSIX 单引号转义，`~` 交给远端展开，默认 `BatchMode=yes`，密钥没配好会立刻失败而不是挂住。`src/remote.mjs` 是纯函数 + 两个 spawn，测试用一个假 `ssh` 断言 argv（Windows 上跳过）。配套文档 [Windows 上用 macOS 虚拟机打 iOS 包](docs/zh-CN/windows-ios-vm.md) / [English](docs/en/windows-ios-vm.md) 写了 VMware + macOS 的下载地址、安装步骤、SSH 打通与常见坑。
+
 ## [0.6.5] - 2026-10-19
 
 ### Fixed

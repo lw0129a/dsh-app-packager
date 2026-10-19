@@ -4,13 +4,14 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import path, { join, resolve } from 'node:path';
 import { listProjects, parseEnvText } from '../src/projects.mjs';
 import { listArtifacts, listUploaders, pgyerCliStatus, selectableUploaders, writeUploaderCredential } from '../src/uploaders.mjs';
 import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
 import { runDoctor } from '../src/doctor.mjs';
+import { parseRemoteTarget, remoteEngineCommand, sshArgv, runRemote } from '../src/remote.mjs';
 
 function tempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -337,4 +338,50 @@ test('pgyerCliStatus 报告插件目录里的官方 CLI 安装状态', () => {
   assert.equal(installed.package, '@pgyer/cli');
   assert.equal(installed.version, '0.1.9', '版本取实际装到的那份，而不是 upload.env 里声明的');
   rmSync(home, { recursive: true, force: true });
+});
+
+test('parseRemoteTarget 解析 user@host、端口与 ssh:// 前缀', () => {
+  assert.deepEqual(parseRemoteTarget('me@192.168.1.20'), { user: 'me', host: '192.168.1.20', port: undefined, spec: 'me@192.168.1.20' });
+  assert.deepEqual(parseRemoteTarget('me@192.168.1.20:2222'), { user: 'me', host: '192.168.1.20', port: 2222, spec: 'me@192.168.1.20' });
+  assert.equal(parseRemoteTarget('ssh://me@vm.local:22').port, 22);
+  assert.deepEqual(parseRemoteTarget('vm.local'), { user: '', host: 'vm.local', port: undefined, spec: 'vm.local' });
+  assert.throws(() => parseRemoteTarget(''), /不能为空/);
+});
+
+test('remoteEngineCommand 引号安全，~ 交给远端展开', () => {
+  const command = remoteEngineCommand('~/AppPackager', ['ios', 'my app', "it's"]);
+  assert.equal(command, `cd "$HOME/AppPackager" && exec bash '打包工具.command' 'ios' 'my app' 'it'\\''s'`);
+  assert.equal(remoteEngineCommand('/opt/app', []), `cd '/opt/app' && exec bash '打包工具.command'`);
+});
+
+test('sshArgv / scpArgv 带端口与私钥，默认不弹密码', () => {
+  const target = parseRemoteTarget('me@vm:2222');
+  assert.deepEqual(sshArgv(target, 'true', { key: '/k/id' }), ['-p', '2222', '-i', '/k/id', '-o', 'ConnectTimeout=8', '-o', 'BatchMode=yes', 'me@vm', 'true']);
+  assert.deepEqual(sshArgv(parseRemoteTarget('vm'), 'true'), ['-o', 'ConnectTimeout=8', '-o', 'BatchMode=yes', 'vm', 'true']);
+});
+
+// 假 ssh 是 POSIX 脚本，Windows 上跳过（真实 ssh 会去连 vm 并失败）。
+test('runRemote 通过 ssh 执行引擎命令（用假 ssh 验证 argv）', { skip: process.platform === 'win32' }, async () => {
+  const dir = tempDir('app-packager-ssh-');
+  const log = join(dir, 'argv.log');
+  writeFileSync(join(dir, 'ssh'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$SSH_ARGV_LOG"\nexit 0\n');
+  chmodSync(join(dir, 'ssh'), 0o755);
+  const home = tempDir('app-packager-remote-home-');
+  try {
+    const code = await runRemote({
+      target: parseRemoteTarget('me@vm:2222'),
+      home: '~/AppPackager',
+      args: ['ios', 'demo'],
+      stdio: 'ignore',
+      env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH}`, SSH_ARGV_LOG: log },
+    });
+    assert.equal(code, 0);
+    const argv = readFileSync(log, 'utf8');
+    assert.match(argv, /^-p\n2222\n/m);
+    assert.match(argv, /me@vm\n/);
+    assert.match(argv, /cd "\$HOME\/AppPackager" && exec bash '打包工具\.command' 'ios' 'demo'/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
 });

@@ -79,6 +79,8 @@ app-packager doctor --platform android
 
 想在 Windows 上出 IPA，现实做法是起一台 macOS 构建机（或在 macOS 上跑 `app-packager build ios`），Windows 只做 Android / HarmonyOS。
 
+手头只有一台 Windows 时，可以本机起一台 macOS 虚拟机，再把命令转发过去：完整步骤、下载地址和验收清单见 [Windows 上用 macOS 虚拟机打 iOS 包](windows-ios-vm.md)。
+
 ## 换行与编码
 
 - 引擎脚本是 LF 换行；如果你用编辑器改 `engine/` 下的文件，别把它存成 CRLF，否则 Git Bash 下会出现 `bad interpreter` 一类错误。

@@ -79,6 +79,8 @@ System bash is used directly (`kind: 'native'`). Android / HarmonyOS checks are 
 
 To ship an IPA from Windows, run a macOS build machine (or `app-packager build ios` on macOS) and keep Windows for Android / HarmonyOS.
 
+With a single Windows box, run a local macOS VM and forward the build to it: full steps, download links and an acceptance checklist are in [Building iOS from Windows with a macOS virtual machine](windows-ios-vm.md).
+
 ## Line endings and encoding
 
 - Engine scripts are LF. If you edit files under `engine/`, do not save them as CRLF, or Git Bash will fail with `bad interpreter`.
