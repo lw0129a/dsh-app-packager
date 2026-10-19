@@ -156,6 +156,22 @@ test('runDoctor 报告检查项且失败数与状态一致', () => {
   rmSync(home, { recursive: true, force: true });
 });
 
+test('runDoctor 只在 HarmonyOS 签名目录真的存在时报 ok', () => {
+  const home = tempDir('app-packager-doctor-');
+  materialize(home);
+  const certDir = join(home, 'certificates', 'HarmonyOS');
+  writeFileSync(join(home, 'config', 'settings.env'), `HARMONY_SIGNING_CERT_DIR=${certDir}\n`);
+  const missing = runDoctor({ home, platform: 'harmony' }).checks.find((check) => check.id === 'harmony.signing');
+  assert.equal(missing.status, 'warn');
+  assert.match(missing.detail, /不存在/);
+  assert.ok(missing.hint);
+  mkdirSync(certDir, { recursive: true });
+  const present = runDoctor({ home, platform: 'harmony' }).checks.find((check) => check.id === 'harmony.signing');
+  assert.equal(present.status, 'ok');
+  assert.equal(present.detail, certDir);
+  rmSync(home, { recursive: true, force: true });
+});
+
 test('listUploaders 按 config/upload.env 判定可勾选的上传平台', () => {
   const home = tempDir('app-packager-upload-');
   mkdirSync(join(home, 'config'), { recursive: true });

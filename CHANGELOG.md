@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-10-19
+
+### Fixed
+
+- **`doctor` 不再给不存在的 HarmonyOS 签名目录打 ✓。** `harmony.signing` 这一行原先只判断 `HARMONY_SIGNING_CERT_DIR` 有没有值，有值就把该路径当 `ok` 打出来——全新物化的引擎 home、或在 `init` 建目录之前，路径并不存在，报告却是一片绿，等到真要打包才在签名阶段失败。现在和旁边的 `android.sdk` / `ios.hbuilderx` 一样先 `fs.existsSync`：目录缺失报 `warn` + `… 不存在` + 放置证书或改配置的提示，目录存在才报 `ok`。`packager.test.mjs` 补一例（先缺失后 `mkdir`，断言 `warn` → `ok`）。
+
 ## [0.6.4] - 2026-10-11
 
 **The engine no longer dies printing Chinese on a Windows console.** `engine/lib/common.sh` exports `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` for every engine process. Windows `python3` encodes stdout with the local code page (cp1252 / cp936) unless told otherwise, so any engine step that printed Chinese raised `UnicodeEncodeError` mid-run — CI's Windows legs caught it in `android_agp_effective_version` (the `keep 9.3.2 (requested 8.12.0 跨 AGP 大版本)` line). macOS and Linux were already UTF-8, so the export is a no-op there.
@@ -196,7 +202,8 @@ First public release of both packages, extracted from the original macOS-only `�
 - GitHub Actions CI: unit tests plus CLI smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, and a packaging job validating the published tarballs.
 - The original bash engine, unchanged, including its authoritative Chinese specification `packages/app-packager/engine/项目介绍.md`.
 
-[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.6.2...main
+[Unreleased]: https://github.com/lw0129a/dsh-app-packager/compare/v0.6.5...main
+[0.6.5]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.5
 [0.6.2]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.2
 [0.6.1]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.1
 [0.6.0]: https://github.com/lw0129a/dsh-app-packager/releases/tag/v0.6.0

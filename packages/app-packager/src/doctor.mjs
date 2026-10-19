@@ -107,10 +107,13 @@ export function runDoctor({ home, platform = 'all' } = {}) {
         ? check('harmony.toolchain', 'HarmonyOS 工具链', 'ok', deveco || hvigor)
         : check('harmony.toolchain', 'HarmonyOS 工具链', 'warn', '未发现 DevEco Studio 或 hvigorw', '安装 DevEco Studio；引擎也会从业务项目的 hvigorw 兜底'),
     );
-    if (!settings.HARMONY_SIGNING_CERT_DIR) {
+    const harmonyCertDir = settings.HARMONY_SIGNING_CERT_DIR;
+    if (!harmonyCertDir) {
       checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'warn', '尚未初始化', '运行 `app-packager init` 后重试'));
+    } else if (!fs.existsSync(harmonyCertDir)) {
+      checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'warn', `${harmonyCertDir} 不存在`, '把 HarmonyOS 签名证书放进该目录（引擎初始化会创建它），或在 config/settings.local.env 覆盖 HARMONY_SIGNING_CERT_DIR'));
     } else {
-      checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'ok', settings.HARMONY_SIGNING_CERT_DIR));
+      checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'ok', harmonyCertDir));
     }
   }
 
