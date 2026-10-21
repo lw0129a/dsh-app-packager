@@ -27,7 +27,7 @@ window.__ModuleLoader__.load({
     const PANEL_ID = 'app-packager';
     const PANEL_ORDER = 60;
     const ROUTE = 'api/app-packager';
-    const PLATFORMS = ['all', 'ios', 'android', 'harmony'];
+    const PLATFORMS = ['all', 'ios', 'android', 'harmony', 'mp-weixin'];
     const NOTICE_LINES = 20;
 
     const zh = {
@@ -204,6 +204,7 @@ window.__ModuleLoader__.load({
       error: '出错了',
       loading: '加载中…',
       'platform.all': '全部',
+      'platform.mpWeixin': '微信小程序',
     };
     const en = {
       'entry.label': 'App packaging',
@@ -379,6 +380,7 @@ window.__ModuleLoader__.load({
       error: 'Something went wrong',
       loading: 'Loading…',
       'platform.all': 'All',
+      'platform.mpWeixin': 'WeChat mini program',
     };
 
     // Colours come from the host's theme tokens, each with the plain-grey fallback we
@@ -992,7 +994,7 @@ window.__ModuleLoader__.load({
         label,
       );
 
-      const onePlatform = (key) => (key === 'all' ? t('platform.all') : key === 'harmony' ? 'HarmonyOS' : key === 'ios' ? 'iOS' : key === 'android' ? 'Android' : key);
+      const onePlatform = (key) => (key === 'all' ? t('platform.all') : key === 'harmony' ? 'HarmonyOS' : key === 'ios' ? 'iOS' : key === 'android' ? 'Android' : key === 'mp-weixin' ? t('platform.mpWeixin') : key);
 
       const platformLabel = (key) => String(key || '').split(',').filter(Boolean).map(onePlatform).join(' + ');
 
@@ -1422,7 +1424,7 @@ window.__ModuleLoader__.load({
             'div',
             { style: styles.actions },
             h('span', { style: styles.muted }, t('scope.platforms')),
-            ['all', 'ios', 'android', 'harmony'].map((key) => checkbox(
+            ['all', 'ios', 'android', 'harmony', 'mp-weixin'].map((key) => checkbox(
               onePlatform(key),
               batchPlatforms.includes(key),
               () => toggleBatchPlatform(key),

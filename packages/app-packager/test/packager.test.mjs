@@ -41,7 +41,7 @@ test('parseEnvText 处理引号、行内空白与变量展开', () => {
   assert.equal(parsed.TEAM_ID, 'ABC123');
 });
 
-test('listProjects 套用引擎的平台默认值（iOS/HarmonyOS 开，Android 关）', () => {
+test('listProjects 套用引擎的平台默认值（iOS/HarmonyOS/微信小程序 开，Android 关）', () => {
   const home = tempDir('app-packager-home-');
   const source = join(home, 'projects', 'demo');
   mkdirSync(source, { recursive: true });
@@ -54,7 +54,7 @@ test('listProjects 套用引擎的平台默认值（iOS/HarmonyOS 开，Android 
   const projects = listProjects(home);
   assert.deepEqual(projects.map((project) => project.id), ['broken', 'demo']);
   const demo = projects.find((project) => project.id === 'demo');
-  assert.deepEqual(demo.enabledPlatforms, ['ios', 'android', 'harmony']);
+  assert.deepEqual(demo.enabledPlatforms, ['ios', 'android', 'harmony', 'mp-weixin']);
   assert.equal(demo.sourceDirExists, true);
   assert.equal(demo.appName, '演示');
   const broken = projects.find((project) => project.id === 'broken');

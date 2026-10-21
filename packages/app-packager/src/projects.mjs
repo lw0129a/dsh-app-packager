@@ -130,6 +130,7 @@ export function listProjects(home) {
         ios: enabled(config.IOS_ENABLED, true),
         android: enabled(config.ANDROID_ENABLED, false),
         harmony: enabled(config.HARMONY_ENABLED, true),
+        'mp-weixin': enabled(config.MP_WEIXIN_ENABLED, true),
       };
       return {
         id: config.PROJECT_ID || name.replace(/\.env$/, ''),
@@ -152,4 +153,4 @@ export function findProject(home, id) {
 }
 
 /** Platform tokens accepted by the engine CLI. */
-export const PLATFORMS = ['ios', 'android', 'harmony', 'all'];
+export const PLATFORMS = ['ios', 'android', 'harmony', 'mp-weixin', 'all'];

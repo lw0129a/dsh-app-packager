@@ -228,7 +228,7 @@ test('app_packager_list 物化引擎并读出项目', async () => {
   assert.equal(value.projects.length, 1);
   assert.equal(value.projects[0].id, 'demo');
   assert.equal(value.projects[0].sourceDirExists, true);
-  assert.deepEqual(value.projects[0].enabledPlatforms, ['ios', 'android']);
+  assert.deepEqual(value.projects[0].enabledPlatforms, ['ios', 'android', 'mp-weixin']);
 
   const [rendered] = definition.output.render({}, value);
   assert.equal(rendered.type, 'text');

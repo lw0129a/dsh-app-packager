@@ -8,7 +8,7 @@
 
 仓库：<https://github.com/lw0129a/dsh-app-packager>（MIT 开源）
 
-把 uni-app x 项目一键打成 **iOS IPA / Android APK / HarmonyOS HAP** 的本地离线工具链：既能按原来的方式在 macOS 上直接运行，也能作为 npm 包安装、作为 **DeepSeek Harness 插件**在插件市场安装使用。
+把 uni-app x 项目一键打成 **iOS IPA / Android APK / HarmonyOS HAP** 以及**微信小程序**（`build mp-weixin` 一条命令编译并上传微信公众平台，不需要微信开发者工具、不需要扫码）的本地离线工具链：既能按原来的方式在 macOS 上直接运行，也能作为 npm 包安装、作为 **DeepSeek Harness 插件**在插件市场安装使用。
 
 - CLI：`app-packager` —— 一个零运行时依赖的 Node 命令行，把打包引擎（bash）交付到你机器上的 `~/AppPackager`。
 - 插件：`dsh-app-packager` —— 在 DeepSeek Harness 里用四个工具完成「看项目 / 查环境 / 检查 / 打包」，无需记命令。
@@ -38,6 +38,7 @@ app-packager build ios --all
 ```bash
 npx app-packager doctor
 npx app-packager build harmony my-project
+npx app-packager build mp-weixin my-project   # 编译并上传微信公众平台
 ```
 
 引擎目录默认 `~/AppPackager`，可用 `APP_PACKAGER_HOME` 环境变量或 `--dir <路径>` 指定。初始化向导会把同级目录下的 uni-app x 项目自动登记到 `config/projects/`；也可以用 `--search-roots` 追加扫描目录，或用 `app-packager register <路径>`（面板里的「选择目录…」按钮）登记磁盘上任意位置的项目。
@@ -59,7 +60,7 @@ dsh plugin --profile desktop add dsh-app-packager
 | `app_packager_list` | 列出已配置项目、启用平台、源码目录是否有效 |
 | `app_packager_doctor` | 检查 Node / shell 桥接 / Xcode / HBuilderX / JDK / Android SDK / DevEco Studio / 项目配置 |
 | `app_packager_check` | 调用引擎对某平台做打包环境检查（证书、SDK、CLI） |
-| `app_packager_build` | 执行打包（`ios` / `android` / `harmony` / `all`）；不给项目即该平台全部已启用项目，上传可给多个平台（`pgyer,huawei`），可覆盖版本号 |
+| `app_packager_build` | 执行打包（`ios` / `android` / `harmony` / `mp-weixin` / `all`）；不给项目即该平台全部已启用项目，上传可给多个平台（`pgyer,huawei`），可覆盖版本号 |
 
 首次调用会自动把引擎物化到 `<插件目录>/home`（首次解析时会把已有的 `~/AppPackager` 改名搬进去，SDK 与已登记项目都跟着走）；`app_packager_doctor` 在 Windows 上同样可用。
 

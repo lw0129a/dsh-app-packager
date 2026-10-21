@@ -5,6 +5,7 @@
  * now. Checks that cannot be established are warnings with a hint, never silent
  * passes — a false "ok" costs a failed build hours later.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +14,25 @@ import { materializedVersion, packageVersion, isMaterialized } from './home.mjs'
 import { listProjects } from './projects.mjs';
 import { parseEnvFile } from './projects.mjs';
 
-const PLATFORM_LABELS = { ios: 'iOS (IPA)', android: 'Android (APK)', harmony: 'HarmonyOS (HAP)' };
+const PLATFORM_LABELS = {
+  ios: 'iOS (IPA)',
+  android: 'Android (APK)',
+  harmony: 'HarmonyOS (HAP)',
+  'mp-weixin': '微信小程序 (MP-WEIXIN)',
+};
+
+/** uni-app x 从 HBuilderX 4.41 起支持发行微信小程序。 */
+const MP_WEIXIN_MIN_SERIES = 4.41;
+
+function hbuilderxSeries(cli) {
+  try {
+    const out = execFileSync(cli, ['--help'], { encoding: 'utf8', timeout: 20000 });
+    const match = out.match(/HBuilderX\(v?([0-9]+\.[0-9]+)/);
+    return match ? match[1] : '';
+  } catch {
+    return '';
+  }
+}
 
 function check(id, label, status, detail, hint) {
   return { id, label, status, detail: detail || '', hint: hint || '' };
@@ -114,6 +133,39 @@ export function runDoctor({ home, platform = 'all' } = {}) {
       checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'warn', `${harmonyCertDir} 不存在`, '把 HarmonyOS 签名证书放进该目录（引擎初始化会创建它），或在 config/settings.local.env 覆盖 HARMONY_SIGNING_CERT_DIR'));
     } else {
       checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'ok', harmonyCertDir));
+    }
+  }
+
+  if (wantPlatform('mp-weixin')) {
+    const hb = settings.HBUILDERX_CLI;
+    if (!hb) {
+      checks.push(check('mp-weixin.hbuilderx', 'HBuilderX CLI', 'warn', '尚未初始化，无法读取 HBUILDERX_CLI', '运行 `app-packager init` 后重试'));
+    } else if (!fs.existsSync(hb)) {
+      checks.push(check('mp-weixin.hbuilderx', 'HBuilderX CLI', 'fail', `${hb} 不存在`, '安装 HBuilderX，或在 config/settings.local.env 覆盖 HBUILDERX_CLI'));
+    } else {
+      const series = hbuilderxSeries(hb);
+      if (!series) {
+        checks.push(check('mp-weixin.hbuilderx', 'HBuilderX 版本', 'warn', '无法读取 HBuilderX 版本', '打开一次 HBuilderX 后重试；发行微信小程序需要 4.41+'));
+      } else if (Number(series) < MP_WEIXIN_MIN_SERIES) {
+        checks.push(check('mp-weixin.hbuilderx', 'HBuilderX 版本', 'fail', `${series} 过低`, '升级 HBuilderX 到 4.41+（uni-app x 从 4.41 起支持发行微信小程序）'));
+      } else {
+        checks.push(check('mp-weixin.hbuilderx', 'HBuilderX 版本', 'ok', `${series}（≥4.41）`));
+      }
+    }
+    const certDir = settings.MP_WEIXIN_CERT_DIR || path.join(home, 'certificates', 'WeChatMP');
+    let keyCount = 0;
+    try {
+      keyCount = fs.readdirSync(certDir).filter((name) => name.endsWith('.key')).length;
+    } catch {
+      keyCount = 0;
+    }
+    if (String(settings.MP_WEIXIN_UPLOAD ?? '').toLowerCase() === 'false') {
+      checks.push(check('mp-weixin.upload', '代码上传密钥', 'ok', 'MP_WEIXIN_UPLOAD=false：只编译不上传'));
+    } else if (keyCount > 0) {
+      checks.push(check('mp-weixin.upload', '代码上传密钥', 'ok', `${certDir}（${keyCount} 个 .key）`));
+      checks.push(check('mp-weixin.ip', '微信公众平台 IP 白名单', 'warn', '上传前需把本机出口 IP 加入白名单', 'mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 → IP 白名单；不加会报 200002'));
+    } else {
+      checks.push(check('mp-weixin.upload', '代码上传密钥', 'warn', `${certDir} 里没有 .key`, 'mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 → 下载代码上传密钥放到该目录，或设 MP_WEIXIN_UPLOAD=false 只编译'));
     }
   }
 

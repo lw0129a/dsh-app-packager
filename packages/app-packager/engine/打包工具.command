@@ -74,6 +74,7 @@ packable_project_ids() {
     ios) ios_project_ids ;;
     android) android_project_ids ;;
     harmony) harmony_project_ids ;;
+    mp-weixin|mpweixin|微信小程序) mp_weixin_project_ids ;;
     all) project_ids ;;
     *) return 1 ;;
   esac
@@ -88,6 +89,7 @@ platform_label() {
     ios) printf 'iOS' ;;
     android) printf 'Android' ;;
     harmony) printf 'HarmonyOS' ;;
+    mp-weixin) printf '微信小程序' ;;
     all) printf 'iOS + Android + HarmonyOS' ;;
     *) printf '%s' "$1" ;;
   esac
@@ -109,7 +111,7 @@ project_platforms() {
   [ -f "$file" ] || return 1
   (
     local platforms=""
-    unset IOS_ENABLED ANDROID_ENABLED HARMONY_ENABLED
+    unset IOS_ENABLED ANDROID_ENABLED HARMONY_ENABLED MP_WEIXIN_ENABLED
     # shellcheck disable=SC1090
     source "$file" >/dev/null 2>&1 || exit 1
     [ "${IOS_ENABLED:-true}" = "true" ] && platforms="iOS"
@@ -125,6 +127,13 @@ project_platforms() {
         platforms="$platforms + HarmonyOS"
       else
         platforms="HarmonyOS"
+      fi
+    fi
+    if [ "${MP_WEIXIN_ENABLED:-true}" = "true" ]; then
+      if [ -n "$platforms" ]; then
+        platforms="$platforms + 微信小程序"
+      else
+        platforms="微信小程序"
       fi
     fi
     [ -n "$platforms" ] || platforms="未启用"
@@ -398,6 +407,8 @@ show_menu() {
   printf '  8. 全部项目 - HarmonyOS\n'
   printf '  9. 全部项目 - iOS + Android + HarmonyOS\n'
   printf '\n----------------------------------------\n\n'
+  printf ' 17. 打包指定项目 - 微信小程序（上传内联，不进“全部平台”）\n'
+  printf '\n----------------------------------------\n\n'
   printf ' 10. 检查全部环境\n'
   printf ' 11. 查看项目和产物状态\n'
   printf ' 12. 生成本地诊断报告\n'
@@ -585,6 +596,36 @@ preflight_harmony_environment() {
   return "$status"
 }
 
+preflight_mp_weixin_environment() {
+  local status=0 cert_dir
+  printf '\n[微信小程序 打包前环境检查]\n'
+  preflight_hbuilderx || status=1
+  if [ "$status" -eq 0 ]; then
+    if mp_weixin_hbuilderx_ok; then
+      printf '  [正常] HBuilderX %s 支持发行微信小程序（≥4.41）\n' "$(hbuilderx_version)"
+    else
+      printf '  [失败] HBuilderX 版本低于 4.41 或无法读取: %s\n' "$(hbuilderx_version)"
+      status=1
+    fi
+  fi
+  cert_dir="$(mp_weixin_cert_dir)"
+  if [ "${MP_WEIXIN_UPLOAD:-true}" = "false" ]; then
+    printf '  [提示] MP_WEIXIN_UPLOAD=false：只编译，不上传。\n'
+  elif [ -n "$(mp_weixin_private_key)" ]; then
+    printf '  [正常] 代码上传密钥: %s\n' "$(mp_weixin_private_key)"
+    printf '  [提示] 上传前确认本机出口 IP 已加入微信公众平台 IP 白名单，否则报 200002。\n'
+  else
+    printf '  [失败] 未找到代码上传密钥（%s/*.key 或 MP_WEIXIN_PRIVATE_KEY）\n' "$cert_dir"
+    status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    printf '  微信小程序打包环境检查通过。\n'
+    return 0
+  fi
+  printf '\n环境未就绪，已取消本次打包并返回菜单。\n'
+  return 1
+}
+
 preflight_for_choice() {
   local choice="$1" status=0
 
@@ -598,6 +639,7 @@ preflight_for_choice() {
       preflight_ios_environment || status=1
       preflight_android_environment || status=1
       ;;
+    17) preflight_mp_weixin_environment || status=1 ;;
     5|9)
       preflight_ios_environment || status=1
       preflight_android_environment || status=1
@@ -703,6 +745,11 @@ execute_selection() {
       preflight_for_choice 9 || return 0
       prompt_upload_platforms "ios android harmony"
       build_all_platforms
+      ;;
+    17)
+      project="$(select_project mp-weixin)" || { status=$?; [ "$status" -eq 1 ] && return 0; return "$status"; }
+      preflight_for_choice 17 || return 0
+      run_build_tasks "mp-weixin"$'\t'"${project}"
       ;;
     10) check_all_platforms ;;
     11) run_action list_projects ;;

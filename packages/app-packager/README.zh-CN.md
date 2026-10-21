@@ -2,7 +2,7 @@
 
 # app-packager
 
-一条命令把 uni-app x 项目打成 **iOS IPA / Android APK / HarmonyOS HAP**；经典 uni-app 项目也走同一条流水线打 **Android APK**。零运行时依赖，只用 Node 内置模块。
+一条命令把 uni-app x 项目打成 **iOS IPA / Android APK / HarmonyOS HAP**，以及**微信小程序**（`build mp-weixin` 编译并上传微信公众平台，不需要微信开发者工具和扫码）；经典 uni-app 项目也走同一条流水线打 **Android APK**。零运行时依赖，只用 Node 内置模块。
 
 它做两件事：
 
@@ -40,6 +40,7 @@ app-packager check android shop   # 打包前检查某平台
 app-packager build android shop   # 打包
 app-packager build ios --all      # 打所有启用 iOS 的项目
 app-packager build harmony shop --harmony-debug
+app-packager build mp-weixin shop   # 编译并上传；只编译加 --no-upload
 app-packager build android shop --upload pgyer --version 1.2.0
 
 app-packager upload ios shop             # 只上传「上一次打包」归档的安装包，不重新打包

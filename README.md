@@ -8,7 +8,7 @@
 
 Repository: <https://github.com/lw0129a/dsh-app-packager> (MIT)
 
-A local, offline toolchain that turns uni-app x projects into **iOS IPA / Android APK / HarmonyOS HAP** builds — classic uni-app projects (uni-app + Vue) build **Android APK** locally through the same pipeline. It keeps running the original way on macOS, and is also installable as an npm package and as a **DeepSeek Harness plugin** from the plugin market.
+A local, offline toolchain that turns uni-app x projects into **iOS IPA / Android APK / HarmonyOS HAP** builds, plus **WeChat mini program** publishes (`build mp-weixin`: compile and upload in one HBuilderX `publish`, no DevTools and no QR scan) — classic uni-app projects (uni-app + Vue) build **Android APK** locally through the same pipeline. It keeps running the original way on macOS, and is also installable as an npm package and as a **DeepSeek Harness plugin** from the plugin market.
 
 - **CLI** — `app-packager`, a dependency-free Node command line that delivers the bash packaging engine to `~/AppPackager` on your machine.
 - **Plugin** — `dsh-app-packager`, four agent tools in DeepSeek Harness for *list projects / check environment / verify a platform / build*, so nobody has to memorise the command line.
@@ -38,6 +38,7 @@ Without installing anything:
 ```bash
 npx app-packager doctor
 npx app-packager build harmony my-project
+npx app-packager build mp-weixin my-project   # compile + upload to the WeChat MP platform
 ```
 
 The engine directory defaults to `~/AppPackager`; override it with the `APP_PACKAGER_HOME` environment variable or `--dir <path>`. The wizard registers uni-app x projects found next to it into `config/projects/`; `--search-roots` adds more directories to scan, and `app-packager register <path>` (or the panel's **Choose folder…** button) registers a project anywhere on disk.
@@ -59,7 +60,7 @@ Once installed the agent can call four tools:
 | `app_packager_list` | Lists configured projects, enabled platforms and whether each source directory exists |
 | `app_packager_doctor` | Checks Node / shell bridge / Xcode / HBuilderX / JDK / Android SDK / DevEco Studio / project config |
 | `app_packager_check` | Runs the engine's pre-build check for one platform (certificates, SDK, CLI) |
-| `app_packager_build` | Builds (`ios` / `android` / `harmony` / `all`); no project means every enabled project of that platform, upload takes one or more targets (`pgyer,huawei`), version override |
+| `app_packager_build` | Builds (`ios` / `android` / `harmony` / `mp-weixin` / `all`); no project means every enabled project of that platform, upload takes one or more targets (`pgyer,huawei`), version override |
 
 The first call materialises the engine into `<plugin>/home` (an existing `~/AppPackager` is renamed there on first use, keeping your SDKs and registered projects); `app_packager_doctor` works on Windows too.
 

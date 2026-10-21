@@ -237,8 +237,8 @@ export async function main(argv) {
     }
     case 'check': {
       const platform = flags._[1];
-      if (!platform || !['all', 'ios', 'android', 'harmony'].includes(platform)) {
-        console.error('用法: app-packager check <ios|android|harmony|all> [项目ID]');
+      if (!platform || !['all', 'ios', 'android', 'harmony', 'mp-weixin'].includes(platform)) {
+        console.error('用法: app-packager check <ios|android|harmony|mp-weixin|all> [项目ID]');
         return 1;
       }
       const args = ['check', platform];
@@ -247,8 +247,8 @@ export async function main(argv) {
     }
     case 'build': {
       const platform = flags._[1];
-      if (!platform || !['all', 'ios', 'android', 'harmony'].includes(platform)) {
-        console.error('用法: app-packager build <ios|android|harmony|all> [项目ID|--all] [选项]');
+      if (!platform || !['all', 'ios', 'android', 'harmony', 'mp-weixin'].includes(platform)) {
+        console.error('用法: app-packager build <ios|android|harmony|mp-weixin|all> [项目ID|--all] [选项]');
         return 1;
       }
       const args = [platform];
@@ -270,7 +270,7 @@ export async function main(argv) {
       // so `app-packager ios my-project` keeps working like the .command file.
       // `upload` is the same kind of engine action — it ships an already
       // archived installer instead of building one.
-      if (['ios', 'android', 'harmony', 'all', 'upload'].includes(command)) {
+      if (['ios', 'android', 'harmony', 'mp-weixin', 'all', 'upload'].includes(command)) {
         return withEngine(home, argv, flags);
       }
       console.error(`未知命令：${command}`);

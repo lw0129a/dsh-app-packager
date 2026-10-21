@@ -102,6 +102,10 @@ usage() {
   打包工具.command upload ios <项目ID> --to pgyer
   打包工具.command upload all --all
   打包工具.command all
+
+  打包工具.command check mp-weixin
+  打包工具.command build mp-weixin <项目ID>
+  打包工具.command mp-weixin
 USAGE
 }
 
@@ -117,6 +121,7 @@ parse_args() {
       ios|apple|苹果) PLATFORM="ios"; shift ;;
       android|安卓) PLATFORM="android"; shift ;;
       harmony|harmonyos|鸿蒙) PLATFORM="harmony"; shift ;;
+      mp-weixin|mpweixin|miniprogram|wechat|微信小程序|小程序) PLATFORM="mp-weixin"; shift ;;
       all) PLATFORM="all"; shift ;;
       --all) PROJECT_ID="__ALL__"; shift ;;
       --version)
@@ -202,6 +207,18 @@ harmony_project_ids() {
   done
 }
 
+mp_weixin_project_ids() {
+  local id file
+  for id in $(project_ids); do
+    file="$PIPELINE_ROOT/config/projects/$id.env"
+    (
+      # shellcheck source=/dev/null
+      source "$file"
+      [ "${MP_WEIXIN_ENABLED:-true}" = "true" ] && printf '%s\n' "${PROJECT_ID:-$id}"
+    )
+  done
+}
+
 project_platform_enabled() {
   local id="$1" platform="$2" candidate
   case "$platform" in
@@ -220,6 +237,11 @@ project_platform_enabled() {
         [ "$candidate" = "$id" ] && return 0
       done < <(harmony_project_ids)
       ;;
+    mp-weixin)
+      while IFS= read -r candidate; do
+        [ "$candidate" = "$id" ] && return 0
+      done < <(mp_weixin_project_ids)
+      ;;
     *)
       return 1
       ;;
@@ -234,6 +256,7 @@ selected_projects() {
       ios) ios_project_ids ;;
       android) android_project_ids ;;
       harmony) harmony_project_ids ;;
+      mp-weixin) mp_weixin_project_ids ;;
       *) die "未知平台: $platform" ;;
     esac
   else
@@ -264,15 +287,23 @@ run_harmony() {
   ( build_harmony_project "$id" )
 }
 
+run_mp_weixin() {
+  local id="$1"
+  project_platform_enabled "$id" mp-weixin || die "项目 $id 未启用微信小程序打包（$PIPELINE_ROOT/config/projects/$id.env 里 MP_WEIXIN_ENABLED=false）"
+  [ -x "$HBUILDERX_CLI" ] || die "未找到 HBuilderX CLI: $HBUILDERX_CLI"
+  mp_weixin_hbuilderx_ok || die "HBuilderX 版本过低（当前 $(sdk_series)）：uni-app x 发行微信小程序需要 HBuilderX 4.41 或更高"
+  ( build_mp_weixin_project "$id" )
+}
+
 list_projects() {
-  printf '%-12s %-22s %-6s %-8s %-10s %s\n' 'ID' '名称' 'iOS' 'Android' 'Harmony' '源码目录'
+  printf '%-12s %-22s %-6s %-8s %-10s %-10s %s\n' 'ID' '名称' 'iOS' 'Android' 'Harmony' 'MP' '源码目录'
   local id found=0
   for id in $(project_ids); do
     found=$((found + 1))
     (
       load_project "$id"
-      printf '%-12s %-22s %-6s %-8s %-10s %s\n' \
-        "$PROJECT_ID" "$DISPLAY_NAME" "${IOS_ENABLED:-true}" "${ANDROID_ENABLED:-false}" "${HARMONY_ENABLED:-true}" "$SOURCE_DIR"
+      printf '%-12s %-22s %-6s %-8s %-10s %-10s %s\n' \
+        "$PROJECT_ID" "$DISPLAY_NAME" "${IOS_ENABLED:-true}" "${ANDROID_ENABLED:-false}" "${HARMONY_ENABLED:-true}" "${MP_WEIXIN_ENABLED:-true}" "$SOURCE_DIR"
     )
   done
   if [ "$found" -eq 0 ]; then
@@ -366,6 +397,7 @@ main() {
         ios) run_check_runner check_ios_project < <(selected_projects ios); return $? ;;
         android) run_check_runner check_android_project < <(selected_projects android); return $? ;;
         harmony) run_check_runner check_harmony_project < <(selected_projects harmony); return $? ;;
+        mp-weixin) run_check_runner check_mp_weixin_project < <(selected_projects mp-weixin); return $? ;;
         all)
           local run_status=0
           run_status=0
@@ -377,8 +409,11 @@ main() {
           run_status=0
           run_check_runner check_harmony_project < <(harmony_project_ids) || run_status=$?
           if [ "$run_status" -ne 0 ] && [ "$status" -eq 0 ]; then status="$run_status"; fi
+          run_status=0
+          run_check_runner check_mp_weixin_project < <(mp_weixin_project_ids) || run_status=$?
+          if [ "$run_status" -ne 0 ] && [ "$status" -eq 0 ]; then status="$run_status"; fi
           return "$status" ;;
-        *) die "check 需要指定 ios、android、harmony 或 all" ;;
+        *) die "check 需要指定 ios、android、harmony、mp-weixin 或 all" ;;
       esac
       ;;
     build)
@@ -386,6 +421,7 @@ main() {
         ios) run_build_platform_projects ios < <(selected_projects ios); return $? ;;
         android) run_build_platform_projects android < <(selected_projects android); return $? ;;
         harmony) run_build_platform_projects harmony < <(selected_projects harmony); return $? ;;
+        mp-weixin) run_build_platform_projects mp-weixin < <(selected_projects mp-weixin); return $? ;;
         all)
           if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "__ALL__" ]; then
             run_all_enabled_build_tasks
@@ -394,7 +430,7 @@ main() {
             run_project_build_tasks "$PROJECT_ID"
           fi
           ;;
-        *) die "请指定平台: ios、android、harmony 或 all" ;;
+        *) die "请指定平台: ios、android、harmony、mp-weixin 或 all" ;;
       esac
       return 0 ;;
     upload)
@@ -422,7 +458,8 @@ main() {
             done < <(selected_projects "$upload_platform")
           done
           ;;
-        *) die "upload 需要指定 ios、android、harmony 或 all" ;;
+        mp-weixin) die "微信小程序没有独立上传步骤：上传在构建时由 HBuilderX 完成，用 build mp-weixin（MP_WEIXIN_UPLOAD=false 可只编译不上传）" ;;
+        *) die "upload 需要指定 ios、android、harmony、mp-weixin 或 all" ;;
       esac
       return "$upload_status" ;;
   esac
@@ -777,4 +814,128 @@ build_android_project() {
   run_upload_stage "$BUILD_INFO_FILE" || true
   task_progress 100 "已完成"
   prune_android_outputs
+}
+
+check_mp_weixin_project() {
+  load_project "$1"
+  local errors=0 warnings=0 version appid key
+  printf '\n========== MP-WEIXIN CHECK: %s ==========\n' "$PROJECT_ID"
+
+  [ "${MP_WEIXIN_ENABLED:-true}" = "true" ] && printf '[OK]   微信小程序已启用\n' || { printf '[FAIL] 微信小程序未启用（MP_WEIXIN_ENABLED）\n'; errors=$((errors + 1)); }
+  [ -d "$SOURCE_DIR" ] && printf '[OK]   源码目录: %s\n' "$SOURCE_DIR" || { printf '[FAIL] 源码目录不存在: %s\n' "$SOURCE_DIR"; errors=$((errors + 1)); }
+  [ -x "$HBUILDERX_CLI" ] && printf '[OK]   HBuilderX CLI: %s\n' "$HBUILDERX_CLI" || { printf '[FAIL] HBuilderX CLI 不存在\n'; errors=$((errors + 1)); }
+
+  version="$(sdk_series)"
+  if mp_weixin_hbuilderx_ok; then
+    printf '[OK]   HBuilderX 版本: %s（≥4.41，支持发行 mp-weixin）\n' "$version"
+  else
+    printf '[FAIL] HBuilderX 版本过低: %s（need ≥4.41）\n' "$version"; errors=$((errors + 1))
+  fi
+
+  appid="$(mp_weixin_appid "$SOURCE_DIR/manifest.json" 2>/dev/null || true)"
+  if [ -n "$appid" ]; then
+    printf '[OK]   微信小程序 AppID: %s\n' "$appid"
+  else
+    printf '[FAIL] 未找到微信小程序 AppID：在 HBuilderX 的 manifest.json 可视化界面填写，或设置 MP_WEIXIN_APPID\n'
+    errors=$((errors + 1))
+  fi
+
+  if [ "${MP_WEIXIN_UPLOAD:-true}" = "true" ]; then
+    key="$(mp_weixin_private_key)"
+    if [ -n "$key" ] && [ -s "$key" ]; then
+      printf '[OK]   代码上传密钥: %s\n' "$key"
+    else
+      printf '[FAIL] 缺少小程序代码上传密钥：mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 → 下载密钥，放到 %s/*.key\n' \
+        "$(mp_weixin_cert_dir)"
+      printf '         不需要上传时设 MP_WEIXIN_UPLOAD=false\n'
+      errors=$((errors + 1))
+    fi
+    printf '[WARN] 微信公众平台 IP 白名单需包含本机出口 IP，否则上传报 200002\n' && warnings=$((warnings + 1))
+  else
+    printf '[OK]   仅编译不上传（MP_WEIXIN_UPLOAD=false）\n'
+  fi
+
+  printf '结果: errors=%s warnings=%s\n' "$errors" "$warnings"
+  [ "$errors" -eq 0 ]
+}
+
+build_mp_weixin_project() {
+  load_project "$1"
+  [ "${MP_WEIXIN_ENABLED:-true}" = "true" ] || die "项目 $PROJECT_ID 尚未启用微信小程序打包"
+  init_run
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
+  exec > >(tee -a "$LOG_FILE") 2>&1
+
+  printf '\n'
+  printf '========================================\n'
+  printf ' MP-WEIXIN PROJECT=%s (%s)\n' "$PROJECT_ID" "$DISPLAY_NAME"
+  printf ' RUN_ID=%s\n' "$RUN_ID"
+  printf ' LOG=%s\n' "$LOG_FILE"
+  printf '========================================\n'
+  task_progress 5 "初始化构建环境"
+
+  require_cmd rsync
+  require_cmd node
+  require_cmd shasum
+
+  if [ -n "$CLI_VERSION" ]; then
+    MARKETING_VERSION="$CLI_VERSION"
+  else
+    local manifest_path=""
+    manifest_path="$(project_manifest_path "$SOURCE_DIR" 2>/dev/null || true)"
+    if [ -n "$manifest_path" ]; then
+      MARKETING_VERSION="$(manifest_version "$manifest_path" || true)"
+    fi
+  fi
+  [ -n "${MARKETING_VERSION:-}" ] || MARKETING_VERSION="1.0.0"
+
+  MP_WEIXIN_APPID_VALUE="$(mp_weixin_appid "$SOURCE_DIR/manifest.json" 2>/dev/null || true)"
+  [ -n "$MP_WEIXIN_APPID_VALUE" ] || die "未找到微信小程序 AppID：在 HBuilderX 的 manifest.json 里填写 mp-weixin.appid，或设置 MP_WEIXIN_APPID"
+
+  local do_upload="${MP_WEIXIN_UPLOAD:-true}" private_key="" description="${MP_WEIXIN_DESCRIPTION:-}"
+  if [ "$do_upload" = "true" ]; then
+    private_key="$(mp_weixin_private_key)"
+    [ -n "$private_key" ] && [ -s "$private_key" ] || die "缺少小程序代码上传密钥：从 mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 下载后放到 $(mp_weixin_cert_dir)/*.key，或设置 MP_WEIXIN_PRIVATE_KEY"
+  fi
+  [ -n "$description" ] || description="$PROJECT_ID $MARKETING_VERSION"
+
+  SEMAPHORE_PROGRESS=15 SEMAPHORE_WAIT_MESSAGE="等待工作区准备名额" SEMAPHORE_RUN_MESSAGE="复制隔离工作区" \
+    with_semaphore "workspace-prepare" "${PARALLEL_MAX_PREPARE_JOBS_RESOLVED:-2}" prepare_workspace
+  ensure_hbuilderx
+
+  local -a publish_args=(publish --platform mp-weixin --project "$WORKSPACE")
+  if [ "$do_upload" = "true" ]; then
+    publish_args+=(--upload true --appid "$MP_WEIXIN_APPID_VALUE" --privatekey "$private_key"
+      --version "$MARKETING_VERSION" --description "$description")
+    [ -n "${MP_WEIXIN_ROBOT:-}" ] && publish_args+=(--robot "$MP_WEIXIN_ROBOT")
+  else
+    publish_args+=(--upload false)
+  fi
+
+  task_progress 30 "HBuilderX 编译微信小程序"
+  if ! SEMAPHORE_PROGRESS=30 SEMAPHORE_WAIT_MESSAGE="等待 HBuilderX 名额" \
+    SEMAPHORE_RUN_MESSAGE="HBuilderX 编译微信小程序" \
+    with_semaphore "hbuilderx" "${PARALLEL_MAX_HBULDERX_JOBS_RESOLVED:-1}" \
+    run_with_timeout "${MP_WEIXIN_TIMEOUT:-1800}" "$HBUILDERX_CLI" "${publish_args[@]}" >>"$LOG_FILE" 2>&1; then
+    tail -n 100 "$LOG_FILE" >&2 || true
+    die "HBuilderX 发行微信小程序失败（完整日志: ${LOG_FILE}）。常见原因：HBuilderX 未登录、未安装微信小程序上传 CI 插件、AppID 与上传密钥不匹配、公众平台 IP 白名单未放行本机出口 IP"
+  fi
+  MP_WEIXIN_UPLOADED="$do_upload"
+
+  local build_root=""
+  if [ -d "$WORKSPACE/unpackage/dist/build/mp-weixin" ]; then
+    build_root="$WORKSPACE/unpackage/dist/build/mp-weixin"
+  elif [ -d "$WORKSPACE/dist/build/mp-weixin" ]; then
+    build_root="$WORKSPACE/dist/build/mp-weixin"
+  fi
+  [ -n "$build_root" ] || die "HBuilderX 编译完成但未找到小程序产物目录（unpackage/dist/build/mp-weixin）"
+
+  task_progress 75 "归档小程序产物"
+  collect_mp_weixin_artifact "$build_root" "$MP_WEIXIN_APPID_VALUE" "$MP_WEIXIN_UPLOADED" "$description"
+  task_artifact_path "$MP_WEIXIN_DIST"
+  print_mp_weixin_result
+  BUILD_SUCCEEDED=1
+  task_progress 100 "已完成"
+  prune_mp_weixin_outputs
 }

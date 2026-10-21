@@ -2,7 +2,7 @@
 
 # app-packager
 
-One-command builds of **iOS IPA / Android APK / HarmonyOS HAP** from uni-app x projects, and of **Android APK** from classic uni-app projects. Zero runtime dependencies — Node built-ins only.
+One-command builds of **iOS IPA / Android APK / HarmonyOS HAP** from uni-app x projects, of **Android APK** from classic uni-app projects, and of **WeChat mini programs** (`build mp-weixin` compiles and uploads to the WeChat MP platform in one `publish`; see [docs/en/mp-weixin.md](../../docs/en/mp-weixin.md)). Zero runtime dependencies — Node built-ins only.
 
 It does two things:
 
@@ -40,6 +40,7 @@ app-packager check android shop   # pre-build check for one platform
 app-packager build android shop   # build
 app-packager build ios --all      # every project with iOS enabled
 app-packager build harmony shop --harmony-debug
+app-packager build mp-weixin shop   # compile + upload; add --no-upload to compile only
 app-packager build android shop --upload pgyer --version 1.2.0
 
 app-packager upload ios shop             # ship the installer the last build archived (no rebuild)

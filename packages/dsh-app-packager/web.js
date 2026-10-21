@@ -36,7 +36,7 @@ import {
 import { pluginRoot, resolvePluginHome } from './index.mjs';
 
 export const ROUTE_BASE = '/api/app-packager';
-export const PLATFORM_VALUES = ['ios', 'android', 'harmony', 'all'];
+export const PLATFORM_VALUES = ['ios', 'android', 'harmony', 'mp-weixin', 'all'];
 export const SDK_PLATFORM_VALUES = ['ios', 'android', 'harmony'];
 
 const JOB_LIMIT = 6;

@@ -252,6 +252,8 @@ parallel_run_build_task() {
     ios) run_ios "$project_id" ;;
     android) run_android "$project_id" ;;
     harmony) run_harmony "$project_id" ;;
+    # HBuilderX 编译位只有 1 个，并行小程序任务只是在等它；平台限流沿用默认 1。
+    mp-weixin) run_mp_weixin "$project_id" ;;
     *) die "未知构建平台: $platform" ;;
   esac
 }

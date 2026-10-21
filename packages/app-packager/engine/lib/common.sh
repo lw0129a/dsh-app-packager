@@ -678,6 +678,9 @@ load_project() {
         ANDROID_KEY_ALIAS ANDROID_STORE_PASSWORD_SERVICE ANDROID_KEY_PASSWORD_SERVICE \
         ANDROID_SIGNING_MODE ANDROID_SIGNING_FINGERPRINT ANDROID_KEYSTORE_STORE_PASSWORD \
         ANDROID_KEYSTORE_KEY_PASSWORD HARMONY_ENABLED HARMONY_BUNDLE_NAME \
+        MP_WEIXIN_ENABLED MP_WEIXIN_APPID MP_WEIXIN_PRIVATE_KEY MP_WEIXIN_UPLOAD \
+        MP_WEIXIN_DESCRIPTION MP_WEIXIN_ROBOT MP_WEIXIN_TIMEOUT MP_WEIXIN_CERT_DIR \
+        MP_WEIXIN_APPID_VALUE MP_WEIXIN_UPLOADED MP_WEIXIN_DIST \
         HARMONY_APP_RESOURCE_DIR HAP_SRC HAP_FINAL HARMONY_SIGNED HARMONY_UNSIGNED_HAP \
         BUNDLE_ID TEAM_ID PROFILE_NAME PROFILE_UUID PROFILE_EXPIRY PROFILE_KIND \
         SIGNING_CERTIFICATE P12_PASSWORD TMP_KEYCHAIN KEYCHAIN_PASSWORD
@@ -749,7 +752,7 @@ acquire_build_lock() {
 
 init_run() {
   mkdir -p "$PIPELINE_ROOT/.tmp" "$RUN_DIR" "$PACKAGE_IOS_DIR" \
-    "$PACKAGE_ANDROID_DIR" "$PACKAGE_HARMONY_DIR" "$(dirname "$WORKSPACE")"
+    "$PACKAGE_ANDROID_DIR" "$PACKAGE_HARMONY_DIR" "$PACKAGE_MP_WEIXIN_DIR" "$(dirname "$WORKSPACE")"
   acquire_build_lock
   TMP_DIR="$(mktemp -d "$PIPELINE_ROOT/.tmp/build.XXXXXX")"
   BUILD_STARTED_AT="$(date '+%Y-%m-%d %H:%M:%S %z')"
@@ -3309,6 +3312,137 @@ print_harmony_result() {
     printf 'WARN=当前为 unsigned HAP，请配置 HarmonyOS p12 密码后重新签名/打包\n'
   fi
   printf 'TIP=需要局域网下载时运行: %s/serve-packages.sh\n' "$PIPELINE_ROOT"
+}
+
+# ---------------------------------------------------------------------------
+# 微信小程序（mp-weixin）
+#
+# 微信小程序没有可安装的本地包：HBuilderX CLI 的 publish 一步完成编译，带上传参数时
+# 同时把代码提交到微信公众平台。产物是编译目录，复制归档到 packages/MPWeixin/。
+# 上传凭证是「小程序代码上传密钥」，不需要微信开发者工具，也不需要扫码。
+# ---------------------------------------------------------------------------
+
+mp_weixin_cert_dir() {
+  printf '%s\n' "${MP_WEIXIN_CERT_DIR:-$PIPELINE_ROOT/certificates/WeChatMP}"
+}
+
+mp_weixin_appid() {
+  local manifest="${1:-$WORKSPACE/manifest.json}"
+  if [ -n "${MP_WEIXIN_APPID:-}" ]; then
+    printf '%s\n' "$MP_WEIXIN_APPID"
+    return 0
+  fi
+  [ -f "$manifest" ] || return 0
+  node -e '
+    const fs = require("fs");
+    try {
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      process.stdout.write(String((manifest["mp-weixin"] || {}).appid || ""));
+    } catch (_) {}
+  ' "$manifest"
+}
+
+mp_weixin_private_key() {
+  local dir key
+  if [ -n "${MP_WEIXIN_PRIVATE_KEY:-}" ]; then
+    printf '%s\n' "$MP_WEIXIN_PRIVATE_KEY"
+    return 0
+  fi
+  dir="$(mp_weixin_cert_dir)"
+  for key in "$dir"/*.key; do
+    [ -f "$key" ] || continue
+    printf '%s\n' "$key"
+    return 0
+  done
+}
+
+# uni-app x 从 HBuilderX 4.41 起支持发行微信小程序。
+mp_weixin_hbuilderx_ok() {
+  local version major minor
+  version="$(sdk_series)"
+  version="$(hbuilderx_version)"
+  [ -n "$version" ] || return 1
+  major="${version%%.*}"
+  minor="${version#*.}"
+  minor="${minor%%.*}"
+  [ "${major:-0}" -gt 4 ] && return 0
+  [ "${major:-0}" -eq 4 ] && [ "${minor:-0}" -ge 41 ] && return 0
+  return 1
+}
+
+collect_mp_weixin_artifact() {
+  local dist="$1" appid="$2" uploaded="$3" description="$4"
+  local stamp version folder_name info_file dist_sha
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  version="${MARKETING_VERSION:-1.0.0}"
+  folder_name="${PROJECT_ID}-${APP_ID}-${version}-${stamp}"
+  BUILD_DIR="$PACKAGE_MP_WEIXIN_DIR/$folder_name"
+  MP_WEIXIN_DIST="$BUILD_DIR/mp-weixin"
+  mkdir -p "$BUILD_DIR"
+  cp -R "$dist" "$MP_WEIXIN_DIST"
+  info_file="$BUILD_DIR/build-info.json"
+
+  ln -sfn "$folder_name" "$PACKAGE_MP_WEIXIN_DIR/${PROJECT_ID}-latest"
+  ln -sfn "$folder_name/build-info.json" "$PACKAGE_MP_WEIXIN_DIR/${PROJECT_ID}-latest.json"
+  printf '%s\n' "$MP_WEIXIN_DIST" > "$PACKAGE_MP_WEIXIN_DIR/${PROJECT_ID}-latest.path"
+
+  node -e '
+    const fs = require("fs");
+    const [out, projectId, displayName, appId, version, appid, uploaded,
+      description, robot, dist, builtAt] = process.argv.slice(1);
+    fs.writeFileSync(out, JSON.stringify({
+      platform: "mp-weixin",
+      project_id: projectId,
+      display_name: displayName,
+      app_id: appId,
+      mp_weixin_appid: appid,
+      version: version,
+      uploaded: uploaded === "true",
+      upload_description: description,
+      upload_robot: robot,
+      mp_weixin_dist_path: dist,
+      built_at: builtAt
+    }, null, 2) + "\n");
+  ' "$info_file" "$PROJECT_ID" "$DISPLAY_NAME" "$APP_ID" "$version" "$appid" \
+    "$uploaded" "$description" "${MP_WEIXIN_ROBOT:-}" "$MP_WEIXIN_DIST" "$BUILD_STARTED_AT"
+
+  BUILD_INFO_FILE="$info_file"
+  prune_mp_weixin_build_dirs
+}
+
+prune_mp_weixin_build_dirs() {
+  [ -d "$PACKAGE_MP_WEIXIN_DIR" ] || return 0
+  local count=0 dir
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    count=$((count + 1))
+    if [ "$count" -gt "${KEEP_BUILD_COUNT:-5}" ]; then
+      rm -rf "$dir"
+    fi
+  done < <(find "$PACKAGE_MP_WEIXIN_DIR" -mindepth 1 -maxdepth 1 -type d \
+    -name "${PROJECT_ID}-*" -print0 | xargs -0 ls -dt 2>/dev/null)
+}
+
+prune_mp_weixin_outputs() {
+  if [ -n "${BUILD_DIR:-}" ] && [ -d "$BUILD_DIR" ] && [ -f "$LOG_FILE" ]; then
+    cp -f "$LOG_FILE" "$BUILD_DIR/build.log"
+  fi
+  prune_logs
+}
+
+print_mp_weixin_result() {
+  printf '\n'
+  printf '========== MP-WEIXIN READY ==========\n'
+  printf 'PROJECT=%s\n' "$PROJECT_ID"
+  printf 'DISPLAY_NAME=%s\n' "$DISPLAY_NAME"
+  printf 'APPID=%s\n' "${MP_WEIXIN_APPID_VALUE:-}"
+  printf 'VERSION=%s\n' "${MARKETING_VERSION:-unknown}"
+  printf 'UPLOADED=%s\n' "${MP_WEIXIN_UPLOADED:-false}"
+  printf 'DIST_PATH=%s\n' "${MP_WEIXIN_DIST:-}"
+  printf 'LATEST_BUILD=%s\n' "$PACKAGE_MP_WEIXIN_DIR/${PROJECT_ID}-latest"
+  printf 'BUILD_INFO=%s\n' "${BUILD_INFO_FILE:-}"
+  printf 'LOG=%s\n' "$LOG_FILE"
+  printf 'TIP=小程序上传后去微信公众平台「版本管理」提交审核并发布；本地预览用微信开发者工具导入 DIST_PATH\n'
 }
 
 collect_android_artifact() {
