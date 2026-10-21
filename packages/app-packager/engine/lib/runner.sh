@@ -26,6 +26,8 @@ ACTION="build"
 PLATFORM=""
 PROJECT_ID=""
 CLI_VERSION=""
+# 微信小程序上传开关的显式 CLI 覆盖（true/false）；空表示跟随 settings.env / 项目 env。
+CLI_MP_WEIXIN_UPLOAD=""
 CLI_KEEP_WORK=0
 UPLOAD_SELECTED_PLATFORMS=""
 CERT_SOURCES=()
@@ -81,7 +83,8 @@ usage() {
   --profile <路径>    本次构建使用指定描述文件（按类型自动校验）
   --set KEY=VALUE     覆盖本次构建的打包参数，可重复；可用键见 config/settings.env 说明
   --upload <平台>     打包成功后上传；当前支持 pgyer，可逗号分隔多个平台
-  --no-upload         显式跳过上传
+  --no-upload         显式跳过上传（微信小程序一并只编译不上传）
+  --mp-weixin-upload  微信小程序构建后是否自动上传：true | false
   --to <平台>         upload 动作的分发平台，逗号分隔；默认用 config/upload.env 里已启用的平台
   --all               当前平台的所有已启用项目
   -h, --help          查看帮助
@@ -129,6 +132,13 @@ parse_args() {
         CLI_VERSION="$2"; shift 2 ;;
       --keep-work) CLI_KEEP_WORK=1; shift ;;
       --harmony-debug) export HARMONY_PACKAGE_KIND="debug"; shift ;;
+      --mp-weixin-upload)
+        [ "$#" -ge 2 ] || die "--mp-weixin-upload 缺少参数（true|false）"
+        case "$2" in
+          true|false) CLI_MP_WEIXIN_UPLOAD="$2" ;;
+          *) die "--mp-weixin-upload 只接受 true 或 false，收到: $2" ;;
+        esac
+        shift 2 ;;
       --full-permission) export APP_PACKAGER_FULL_PERMISSION="true"; shift ;;
       --no-full-permission) export APP_PACKAGER_FULL_PERMISSION="false"; shift ;;
       --package-kind)
@@ -158,6 +168,8 @@ parse_args() {
       --no-upload)
         UPLOAD_SELECTED_PLATFORMS=""
         export UPLOAD_SELECTED_PLATFORMS
+        # 微信小程序的上传内联在构建里，--no-upload 也必须把它一起关掉。
+        CLI_MP_WEIXIN_UPLOAD="false"
         shift ;;
       -h|--help) usage; exit 0 ;;
       --*) die "未知参数: $1" ;;
@@ -840,7 +852,7 @@ check_mp_weixin_project() {
     errors=$((errors + 1))
   fi
 
-  if [ "${MP_WEIXIN_UPLOAD:-true}" = "true" ]; then
+  if [ "${CLI_MP_WEIXIN_UPLOAD:-${MP_WEIXIN_UPLOAD:-true}}" = "true" ]; then
     key="$(mp_weixin_private_key)"
     if [ -n "$key" ] && [ -s "$key" ]; then
       printf '[OK]   代码上传密钥: %s\n' "$key"
@@ -893,7 +905,8 @@ build_mp_weixin_project() {
   MP_WEIXIN_APPID_VALUE="$(mp_weixin_appid "$SOURCE_DIR/manifest.json" 2>/dev/null || true)"
   [ -n "$MP_WEIXIN_APPID_VALUE" ] || die "未找到微信小程序 AppID：在 HBuilderX 的 manifest.json 里填写 mp-weixin.appid，或设置 MP_WEIXIN_APPID"
 
-  local do_upload="${MP_WEIXIN_UPLOAD:-true}" private_key="" description="${MP_WEIXIN_DESCRIPTION:-}"
+  # CLI 覆盖优先于 settings.env / 项目 env（与 CLI_VERSION、--harmony-debug 同一套路）。
+  local do_upload="${CLI_MP_WEIXIN_UPLOAD:-${MP_WEIXIN_UPLOAD:-true}}" private_key="" description="${MP_WEIXIN_DESCRIPTION:-}"
   if [ "$do_upload" = "true" ]; then
     private_key="$(mp_weixin_private_key)"
     [ -n "$private_key" ] && [ -s "$private_key" ] || die "缺少小程序代码上传密钥：从 mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 下载后放到 $(mp_weixin_cert_dir)/*.key，或设置 MP_WEIXIN_PRIVATE_KEY"

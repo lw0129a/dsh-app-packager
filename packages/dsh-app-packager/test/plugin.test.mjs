@@ -295,6 +295,17 @@ test('engineArgsFor：check 是引擎子命令，必须排在平台前面', () =
   assert.deepEqual(engineArgsFor({ platform: 'android', project: 'demo' }, { check: true }), ['check', 'android', 'demo']);
   assert.deepEqual(engineArgsFor({ platform: 'all' }, { check: true }), ['check', 'all']);
   assert.deepEqual(engineArgsFor({ platform: 'ios', project: 'demo', noUpload: true }), ['ios', 'demo', '--no-upload']);
+  // 小程序的「构建后上传」是独立开关，check 也要带，否则预检会误判缺密钥。
+  assert.deepEqual(engineArgsFor({ platform: 'mp-weixin', project: 'demo', mpWeixinUpload: false }), [
+    'mp-weixin', 'demo', '--mp-weixin-upload', 'false',
+  ]);
+  assert.deepEqual(engineArgsFor({ platform: 'mp-weixin', project: 'demo', mpWeixinUpload: true }, { check: true }), [
+    'check', 'mp-weixin', 'demo', '--mp-weixin-upload', 'true',
+  ]);
+  assert.deepEqual(engineArgsFor({ platform: 'mp-weixin', project: 'demo' }), ['mp-weixin', 'demo'], '不传就跟随引擎默认');
+  // 它排在 --no-upload 后面：面板的勾选要能赢过「没选分发平台」的默认。
+  const both = engineArgsFor({ platform: 'mp-weixin', project: 'demo', noUpload: true, mpWeixinUpload: true });
+  assert.ok(both.indexOf('--mp-weixin-upload') > both.indexOf('--no-upload'));
   assert.throws(() => engineArgsFor({ platform: 'windows' }), /platform 必须是/);
 });
 

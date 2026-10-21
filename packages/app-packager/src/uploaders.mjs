@@ -168,7 +168,9 @@ export function pgyerCliStatus(home) {
  */
 export function listArtifacts(home) {
   /** Folder name per platform — the folder, not the JSON, says which platform it is. */
-  const folders = [['ios', 'iOS'], ['android', 'Android'], ['harmony', 'HarmonyOS']];
+  // 微信小程序的产物是一个目录（不压缩），归档结构与三个安装包平台一致：
+  // packages/MPWeixin/<项目>-latest.json，所以同一张列表就能展示它。
+  const folders = [['ios', 'iOS'], ['android', 'Android'], ['harmony', 'HarmonyOS'], ['mp-weixin', 'MPWeixin']];
   const out = [];
   for (const [platform, folder] of folders) {
     const dir = path.join(home, 'packages', folder);
@@ -188,11 +190,18 @@ export function listArtifacts(home) {
         continue; // half-written or hand-edited: not worth a row
       }
       const projectId = String(info.project_id || name.replace(/-latest\.json$/, ''));
-      const artifactPath = String(info.ipa_path || info.apk_path || info.hap_path || '');
+      const isDirectory = platform === 'mp-weixin';
+      const artifactPath = String(
+        info.ipa_path || info.apk_path || info.hap_path || info.mp_weixin_dist_path || '',
+      );
       let artifactSize = 0;
+      let artifactExists = false;
       try {
-        artifactSize = fs.statSync(artifactPath).size;
+        const stat = fs.statSync(artifactPath);
+        artifactExists = isDirectory ? stat.isDirectory() : stat.isFile();
+        artifactSize = isDirectory ? 0 : stat.size;
       } catch {
+        artifactExists = false;
         artifactSize = 0;
       }
       out.push({
@@ -202,8 +211,11 @@ export function listArtifacts(home) {
         version: String(info.version || ''),
         builtAt: String(info.built_at || ''),
         artifactPath,
-        artifactExists: artifactSize > 0,
+        artifactExists,
         artifactSize,
+        isDirectory,
+        // 只有小程序有「构建时已上传」这个状态；其余平台上传是独立动作。
+        uploaded: info.uploaded === true,
         infoFile,
       });
     }

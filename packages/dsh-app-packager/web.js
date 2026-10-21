@@ -59,7 +59,7 @@ const execFileAsync = promisify(execFileCallback);
  * `config/settings.env` and the wired profile in charge.
  *
  * @param {{platform?: string, project?: string, upload?: string, noUpload?: boolean,
- *   version?: string, harmonyDebug?: boolean, keepWork?: boolean, fullPermission?: boolean,
+ *   version?: string, harmonyDebug?: boolean, keepWork?: boolean, mpWeixinUpload?: boolean, fullPermission?: boolean,
  *   packageKind?: string, profile?: string, set?: string|string[]}} args
  * @param {{check?: boolean}} [options]
  * @returns {string[]}
@@ -88,6 +88,12 @@ export function engineArgsFor(args = {}, { check = false } = {}) {
     if (args.harmonyDebug) out.push('--harmony-debug');
     if (args.keepWork) out.push('--keep-work');
   }
+  // 小程序的上传内联在构建里，所以「只编译」「不自动上传」走自己的开关，
+  // 而不是分发平台列表（那个列表对 mp-weixin 没有意义）。显式传 true/false
+  // 并排在 --no-upload 之后，所以面板的勾选总能赢过「没选分发平台」的默认；
+  // 命令行用户仍然可以用 --no-upload 一把关掉。check 也带上：预检要按同一开关
+  // 判断要不要强制要求上传密钥。
+  if (typeof args.mpWeixinUpload === 'boolean') out.push('--mp-weixin-upload', args.mpWeixinUpload ? 'true' : 'false');
   // The rest is also carried by `check`: that run is the dry run of exactly
   // these options, and the engine validates the profile and permission switch
   // the same way before it builds anything.
@@ -1043,6 +1049,9 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       const artifact = listArtifacts(home).find((item) => item.platform === wanted && item.projectId === id);
       if (!artifact) throw new Error(`没有找到 ${wanted} · ${id} 的安装包`);
       if (!artifact.artifactExists) throw new Error(`安装包已不在：${artifact.artifactPath}`);
+      if (artifact.isDirectory) {
+        throw new Error('微信小程序的产物是一整个目录，无法当单个文件下载；需要时直接在 packages/MPWeixin/ 打开。');
+      }
       const target = downloadDestination(dir, path.basename(artifact.artifactPath));
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
       await fs.promises.copyFile(artifact.artifactPath, target);

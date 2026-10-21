@@ -35,6 +35,7 @@ The key directory defaults to `certificates/WeChatMP/`; set `MP_WEIXIN_CERT_DIR`
 | `MP_WEIXIN_ROBOT` | Robot number (1–30) when several machines upload in parallel |
 | `MP_WEIXIN_UPLOAD=false` | Same as `--no-upload` every time |
 | `MP_WEIXIN_TIMEOUT` | HBuilderX publish timeout in seconds, default 1800 |
+| `--mp-weixin-upload true\|false` | Explicitly overrides "upload after build"; wins over `settings.env` / the project env and is applied after `--no-upload`. The panel's "Upload to WeChat after build" checkbox maps to it |
 
 ## Where the output goes
 
@@ -43,6 +44,8 @@ packages/MPWeixin/<project-id>-<appid>-<version>-<timestamp>/mp-weixin/   # the 
 packages/MPWeixin/<project-id>-<appid>-<version>-<timestamp>/build-info.json
 packages/MPWeixin/<project-id>-latest/                                    # symlink to the newest build
 ```
+
+In the plugin panel, ticking the `WeChat mini program` platform adds an "Upload to WeChat after build" checkbox to the build card (on by default). The build then shows up in the artifact list; its status comes from `uploaded` in `build-info.json`. Because the output is a directory there is no Download button — open the folder above instead.
 
 The directory is not zipped: the upload wants the directory itself and compression only adds an unzip step. `build-info.json` records the version, AppID, whether it was uploaded, and the compile directory, so automation can read it directly.
 

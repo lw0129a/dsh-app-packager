@@ -141,6 +141,9 @@ window.__ModuleLoader__.load({
       'upload.target.none': '没有已启用的上传平台，先去 config/upload.env 打开一个。',
       'upload.action': '上传',
       'upload.missing': '安装包已不在',
+      'upload.mpUploaded': '已上传微信后台',
+      'upload.mpCompiled': '仅编译（未上传）',
+      'upload.mpDir': '目录产物，直接在 packages/MPWeixin/ 里查看',
       'upload.builtAt': '打包于 {time}',
       'download.dir': '下载位置',
       'download.pick': '选择文件夹…',
@@ -149,6 +152,8 @@ window.__ModuleLoader__.load({
       'download.hint': '点「下载」把这个安装包复制到上面的文件夹；同一版本重复下载不会覆盖，会存成 name-1.apk。',
       'download.action': '下载',
       'download.done': '已保存到 {path}',
+      'options.mpWeixinUpload': '构建后上传微信公众平台',
+      'options.mpWeixinUpload.hint': '同一次 HBuilderX 发布里编译并上传（需要证书目录里的 .key 与后台 IP 白名单）；不勾只编译，产物留在 packages/MPWeixin/。',
       'options.harmonyDebug': 'HarmonyOS debug 包',
       'options.keepWork': '保留构建目录',
       'options.harmonyDebug.hint': '生成可侧载的 debug HAP（签名用调试证书），发布包不要勾。',
@@ -317,6 +322,9 @@ window.__ModuleLoader__.load({
       'upload.target.none': 'No uploader is enabled — turn one on in config/upload.env.',
       'upload.action': 'Upload',
       'upload.missing': 'installer is gone',
+      'upload.mpUploaded': 'uploaded to WeChat',
+      'upload.mpCompiled': 'compiled only',
+      'upload.mpDir': 'a directory — look inside packages/MPWeixin/',
       'upload.builtAt': 'built {time}',
       'download.dir': 'Download folder',
       'download.pick': 'Choose folder…',
@@ -325,6 +333,8 @@ window.__ModuleLoader__.load({
       'download.hint': 'Download copies this installer into that folder; a repeated download of the same build is kept as name-1.apk instead of overwriting.',
       'download.action': 'Download',
       'download.done': 'saved to {path}',
+      'options.mpWeixinUpload': 'Upload to WeChat after build',
+      'options.mpWeixinUpload.hint': 'One HBuilderX publish call compiles and uploads (needs a .key in the certificate folder and the IP whitelist); unticked only compiles into packages/MPWeixin/.',
       'options.harmonyDebug': 'HarmonyOS debug HAP',
       'options.keepWork': 'Keep work dir',
       'options.harmonyDebug.hint': 'Builds a debug-signed HAP you can sideload; do not tick it for a release.',
@@ -597,6 +607,8 @@ window.__ModuleLoader__.load({
       const [keepWork, setKeepWork] = useState(false);
       const [fullPermission, setFullPermission] = useState(null);
       const [packageKind, setPackageKind] = useState('');
+      // 微信小程序的上传内联在构建里：勾选才上传，取消只编译。
+      const [mpWeixinUpload, setMpWeixinUpload] = useState(true);
       const [profileFile, setProfileFile] = useState('');
       const [overrides, setOverrides] = useState('');
       const [pendingRemove, setPendingRemove] = useState('');
@@ -870,6 +882,7 @@ window.__ModuleLoader__.load({
           body.keepWork = keepWork;
           body.fullPermission = fullPermission;
           body.packageKind = packageKind;
+          body.mpWeixinUpload = mpWeixinUpload;
           body.profile = profileFile || undefined;
           body.set = overrides;
         }
@@ -1375,6 +1388,10 @@ window.__ModuleLoader__.load({
             profiles.map((profile) => h('option', { key: profile.file, value: profile.file }, profileLabel(profile))),
           ),
           checkbox(t('options.fullPermission'), fullPermissionOn, setFullPermission, { title: t('options.fullPermission.hint') }),
+          // 小程序上传内联在构建里，只有选中 mp-weixin 时才出现这个开关。
+          batchPlatforms.includes('mp-weixin')
+            ? checkbox(t('options.mpWeixinUpload'), mpWeixinUpload, setMpWeixinUpload, { title: t('options.mpWeixinUpload.hint') })
+            : null,
           h(
             'details',
             { style: styles.advanced },
@@ -1477,21 +1494,32 @@ window.__ModuleLoader__.load({
                     'div',
                     { style: styles.actions },
                     h('span', { className: 'ap-project-name' }, `${item.displayName}${item.version ? ` ${item.version}` : ''}`),
-                    item.artifactExists
-                      ? h('span', { className: 'ap-muted' }, fileSize(item.artifactSize))
-                      : h('span', { className: 'ap-tag warn' }, t('upload.missing')),
+                    item.isDirectory && !item.artifactExists
+                      ? h('span', { className: 'ap-tag warn' }, t('upload.missing'))
+                      : item.isDirectory
+                        ? h('span', { className: 'ap-tag' }, item.uploaded ? t('upload.mpUploaded') : t('upload.mpCompiled'))
+                      : item.artifactExists
+                        ? h('span', { className: 'ap-muted' }, fileSize(item.artifactSize))
+                        : h('span', { className: 'ap-tag warn' }, t('upload.missing')),
                     item.builtAt ? h('span', { className: 'ap-muted' }, tf('upload.builtAt', { time: item.builtAt })) : null,
-                    button(t('download.action'), () => downloadArtifact(item), {
-                      small: true,
-                      disabled: Boolean(busy) || jobRunning || !item.artifactExists,
-                    }),
-                    button(t('upload.action'), () => startUpload(item), {
-                      primary: true,
-                      small: true,
-                      disabled: Boolean(busy) || jobRunning || !item.artifactExists || uploadTargets() === '',
-                    }),
+                    // 小程序是目录、也没有独立的上传器：上传已在构建里完成，
+                    // 这两个按钮对它没有意义，所以只展示状态和路径。
+                    item.isDirectory
+                      ? null
+                      : button(t('download.action'), () => downloadArtifact(item), {
+                          small: true,
+                          disabled: Boolean(busy) || jobRunning || !item.artifactExists,
+                        }),
+                    item.isDirectory
+                      ? null
+                      : button(t('upload.action'), () => startUpload(item), {
+                          primary: true,
+                          small: true,
+                          disabled: Boolean(busy) || jobRunning || !item.artifactExists || uploadTargets() === '',
+                        }),
                   ),
                   h('div', { className: 'ap-note' }, item.artifactPath),
+                  item.isDirectory ? h('div', { className: 'ap-note' }, t('upload.mpDir')) : null,
                   downloads[artifactKey(item)]
                     ? h('div', { className: 'ap-note' }, tf('download.done', { path: downloads[artifactKey(item)] }))
                     : null,

@@ -35,6 +35,7 @@ app-packager check mp-weixin <项目ID>             # 打包前环境检查
 | `MP_WEIXIN_ROBOT` | 机器人编号（1–30），多台机器并行上传时各用一个号 |
 | `MP_WEIXIN_UPLOAD=false` | 等同于每次 `--no-upload` |
 | `MP_WEIXIN_TIMEOUT` | HBuilderX publish 的超时秒数，默认 1800 |
+| `--mp-weixin-upload true\|false` | 显式覆盖「构建后是否上传」，优先于 `settings.env` / 项目 env；排在 `--no-upload` 之后生效。面板的「构建后上传微信公众平台」勾选就映射到它 |
 
 ## 产物在哪
 
@@ -43,6 +44,8 @@ packages/MPWeixin/<项目ID>-<AppID>-<版本>-<时间戳>/mp-weixin/   # 小程�
 packages/MPWeixin/<项目ID>-<AppID>-<版本>-<时间戳>/build-info.json
 packages/MPWeixin/<项目ID>-latest/                              # 指向最近一次的软链
 ```
+
+插件面板里，勾选平台 `微信小程序` 后打包卡片会多出「构建后上传微信公众平台」复选（默认勾上）；产物会出现在产物列表，“上传”状态直接读 `build-info.json` 的 `uploaded` 字段，因为小程序是目录，不提供「下载」按钮——要拿文件直接打开上面的目录。
 
 目录不打包成 zip：小程序上传要的就是目录本身，压缩只会多一步解压。`build-info.json` 记了版本、AppID、是否上传、编译目录，`upload` 之外的自动化可以直接读它。
 

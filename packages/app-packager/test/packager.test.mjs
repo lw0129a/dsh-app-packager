@@ -303,10 +303,30 @@ test('listArtifacts 列出各平台已归档的安装包，缺文件的也如实
   }));
   // 半截 JSON 不是产物，直接跳过。
   writeFileSync(join(android, 'broken-latest.json'), '{');
+  // 微信小程序的产物是一整个目录，build-info.json 用 mp_weixin_dist_path 指过去。
+  const mpDir = join(home, 'packages', 'MPWeixin', 'shop-1.0.0', 'mp-weixin');
+  mkdirSync(mpDir, { recursive: true });
+  writeFileSync(join(mpDir, 'app.json'), '{}');
+  writeFileSync(join(home, 'packages', 'MPWeixin', 'shop-latest.json'), JSON.stringify({
+    project_id: 'shop',
+    display_name: '商城',
+    version: '3.1.0',
+    built_at: '2026-10-19T10:00:00+08:00',
+    uploaded: true,
+    mp_weixin_dist_path: mpDir,
+  }));
 
   const artifacts = listArtifacts(home);
-  assert.deepEqual(artifacts.map((item) => `${item.platform}:${item.projectId}`), ['android:other', 'ios:demo'], '按打包时间倒序');
-  const [other, demo] = artifacts;
+  assert.deepEqual(
+    artifacts.map((item) => `${item.platform}:${item.projectId}`),
+    ['mp-weixin:shop', 'android:other', 'ios:demo'],
+    '按打包时间倒序',
+  );
+  const [mp, other, demo] = artifacts;
+  assert.equal(mp.isDirectory, true, '小程序的产物要标成目录，面板据此换成状态展示');
+  assert.equal(mp.artifactExists, true);
+  assert.equal(mp.uploaded, true);
+  assert.equal(mp.artifactPath, mpDir);
   assert.equal(other.artifactExists, false, 'apk 不在就要如实说');
   assert.equal(other.artifactSize, 0);
   assert.equal(other.displayName, 'other', '没有 display_name 时退回项目 ID');
