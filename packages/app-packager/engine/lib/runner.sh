@@ -49,6 +49,7 @@ usage() {
   打包工具.command cert-status            打印证书状态 JSON（面板用）
   打包工具.command cert-import <目录…>    把目录里认得的证书按平台归位
   打包工具.command cert-clear ios|android|harmony  把该平台证书移到历史归档
+  打包工具.command cert-remove <平台> <文件名>      把单个证书文件移到历史归档
   打包工具.command check ios <项目ID>
   打包工具.command check android <项目ID>
   打包工具.command check harmony <项目ID>
@@ -121,6 +122,7 @@ parse_args() {
       cert-status) ACTION="cert-status"; shift ;;
       cert-import) ACTION="cert-import"; shift ;;
       cert-clear) ACTION="cert-clear"; shift ;;
+      cert-remove) ACTION="cert-remove"; shift ;;
       check) ACTION="check"; shift ;;
       upload) ACTION="upload"; shift ;;
       ios|apple|苹果) PLATFORM="ios"; shift ;;
@@ -176,7 +178,7 @@ parse_args() {
       -h|--help) usage; exit 0 ;;
       --*) die "未知参数: $1" ;;
       *)
-        if [ "$ACTION" = "cert-import" ]; then
+        if [ "$ACTION" = "cert-import" ] || [ "$ACTION" = "cert-remove" ]; then
           CERT_SOURCES+=("$1"); shift; continue
         fi
         [ -z "$PROJECT_ID" ] || die "只能指定一个项目"
@@ -401,6 +403,12 @@ main() {
   if [ "$ACTION" = "cert-import" ]; then
     [ "${#CERT_SOURCES[@]}" -gt 0 ] || die "cert-import 需要一个证书目录"
     process_certificates_root "${CERT_SOURCES[@]}"
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-remove" ]; then
+    [ "${#CERT_SOURCES[@]}" -gt 0 ] || die "cert-remove 需要平台和文件名：cert-remove ios dev.p12"
+    remove_certificate_file "$PLATFORM" "${CERT_SOURCES[0]}"
     return 0
   fi
 

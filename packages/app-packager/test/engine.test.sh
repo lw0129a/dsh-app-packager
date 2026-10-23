@@ -414,6 +414,22 @@ engine 'clear_certificate_platform ios >/dev/null; printf "%s|%s" \
   "$(ls "$PIPELINE_ROOT"/logs/certificate-history/*/iOS/dev.p12 2>/dev/null | wc -l | tr -d " ")"'
 check "cert-clear 把文件挪进历史归档" "0|1" "$OUT"
 
+# 单文件删除：只挪指定的那个，其余留着；名字不许跳出平台目录。
+engine 'parse_args cert-remove ios dev.p12; printf "%s|%s|%s" "$ACTION" "$PLATFORM" "${CERT_SOURCES[0]}"'
+check "parse_args cert-remove 收平台和文件名" "cert-remove|ios|dev.p12" "$OUT"
+
+mkdir -p "$TMP/certificates/iOS"
+: >"$TMP/certificates/iOS/keep.p12"
+: >"$TMP/certificates/iOS/drop.p12"
+engine 'remove_certificate_file ios drop.p12 >/dev/null; printf "%s|%s|%s" \
+  "$(ls "$PIPELINE_ROOT/certificates/iOS" | tr "\n" ",")" \
+  "$(ls "$PIPELINE_ROOT"/logs/certificate-history/*/iOS/drop.p12 2>/dev/null | wc -l | tr -d " ")" \
+  "$(ls "$PIPELINE_ROOT"/logs/certificate-history/*/iOS/keep.p12 2>/dev/null | wc -l | tr -d " ")"'
+check "cert-remove 只挪走指定文件" "keep.p12,|1|0" "$OUT"
+
+engine 'remove_certificate_file ios ../escape.p12'
+check "cert-remove 拒绝跳出平台目录" "1" "$STATUS"
+
 # harmony_signing_material 找不到证书时也是退出码 0（只是没输出）：cert_harmony_ready
 # 只能看输出内容，只看退出码的话「有个项目」就等于「鸿蒙证书已就绪」。
 cat >"$TMP/config/projects/demo.env" <<ENV

@@ -894,8 +894,24 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       // 它自己按扩展名判平台并归位到 certificates/<平台>/，覆盖即更新、旧文件进
       // logs/certificate-history；输出照常流进任务卡，导入完面板刷新状态。
       if (spec.kind === 'cert') {
-        // 清理走 cert-clear <平台>：引擎只把该平台证书挪进 logs/certificate-history，
-        // 所以面板按钮写「清理」而不是「删除」，导错了还能挪回来。
+        // 清理走 cert-clear <平台> / cert-remove <平台> <文件>：引擎只把证书挪进
+        // logs/certificate-history，所以面板按钮写「清理」而不是「删除」，导错了还能挪回来。
+        const removeFile = String(spec.remove || '').trim();
+        if (removeFile) {
+          const removePlatform = String(spec.platform || '').trim();
+          if (![ 'ios', 'android', 'harmony' ].includes(removePlatform)) {
+            throw new Error(`cert 删除文件只支持 ios / android / harmony，收到: ${removePlatform}`);
+          }
+          return runner.start({
+            kind: 'cert',
+            platform: 'cert',
+            home,
+            commands: [ [ 'cert-remove', removePlatform, removeFile ] ],
+            timeoutMs: config.certTimeoutMs || 600_000,
+            searchRoots: config.searchRoots,
+            shell: shell.shell,
+          });
+        }
         const clearPlatform = String(spec.clear || '').trim();
         if (clearPlatform) {
           if (![ 'ios', 'android', 'harmony' ].includes(clearPlatform)) {

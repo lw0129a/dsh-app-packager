@@ -85,6 +85,9 @@ window.__ModuleLoader__.load({
       'cert.clear.confirm': '确认清理',
       'cert.clear.cancel': '取消',
       'cert.clear.hint': '不会真删：文件挪进 logs/certificate-history/<时间戳>/，需要时手动挪回即可。',
+      'cert.file.remove': '删除这个文件',
+      'cert.file.confirm': '确认删除',
+      'cert.file.cancel': '取消',
       'cert.pickPrompt': '选择存放证书的文件夹（里面的文件会自动按平台归位）',
       'cert.imported': '上次导入的文件夹：{dir}',
       'cert.none': '还没导入过证书。iOS 要 p12 + mobileprovision；HarmonyOS 要 p12 + cer + p7b；Android 要 keystore（不给也能出测试包，但正式包必须配）。',
@@ -270,6 +273,9 @@ window.__ModuleLoader__.load({
       'cert.clear.confirm': 'Confirm clear',
       'cert.clear.cancel': 'Cancel',
       'cert.clear.hint': 'Nothing is deleted: files move to logs/certificate-history/<timestamp>/ and can be moved back.',
+      'cert.file.remove': 'Delete this file',
+      'cert.file.confirm': 'Confirm delete',
+      'cert.file.cancel': 'Cancel',
       'cert.pickPrompt': 'Choose the folder that holds your certificates (files are filed by platform automatically)',
       'cert.imported': 'Last imported folder: {dir}',
       'cert.none': 'No certificates imported yet. iOS needs p12 + mobileprovision; HarmonyOS needs p12 + cer + p7b; Android needs a keystore (test packages still build without one, release packages do not).',
@@ -621,6 +627,7 @@ window.__ModuleLoader__.load({
       const [overrides, setOverrides] = useState('');
       const [pendingRemove, setPendingRemove] = useState('');
       const [pendingCertClear, setPendingCertClear] = useState('');
+      const [pendingCertFile, setPendingCertFile] = useState('');
       const [projectDir, setProjectDir] = useState('');
       const [certSourceDirs, setCertSourceDirs] = useState(() => readCertDirs());
       const [downloadDir, setDownloadDir] = useState(() => readDownloadDir());
@@ -948,6 +955,39 @@ window.__ModuleLoader__.load({
         refresh();
       });
 
+      // 平台下的每个证书文件一行，删除走引擎 cert-remove（归档到 certificate-history）。
+      const certFileRows = (platform, value, pending, setPending, remove, disabled) => {
+        const groups = [ value.p12, value.profiles, value.keystores, value.properties, value.cer, value.p7b ];
+        const files = [];
+        for (const group of groups) {
+          for (const entry of group || []) {
+            if (entry && entry.rel && !files.some((item) => item.rel === entry.rel)) files.push(entry);
+          }
+        }
+        if (files.length === 0) return null;
+        return files.map((entry) => {
+          const key = `${platform}:${entry.rel}`;
+          return h(
+            'div',
+            { key, className: 'ap-kv', style: { display: 'flex', gap: '8px', alignItems: 'baseline' } },
+            h('span', { style: { flex: '1', wordBreak: 'break-all' } }, entry.rel),
+            pending === key
+              ? [
+                button(t('cert.file.confirm'), () => remove(platform, entry.rel), { disabled }),
+                button(t('cert.file.cancel'), () => setPending(''), { disabled: Boolean(busy) }),
+              ]
+              : button(t('cert.file.remove'), () => setPending(key), { disabled }),
+          );
+        });
+      };
+
+      // 单文件删除和整平台清理走同一套归档规则，区别只在范围。
+      const removeCertificateFile = (platform, rel) => guard('cert', async () => {
+        setPendingCertFile('');
+        setJob(await call('job', { method: 'POST', body: { kind: 'cert', platform, remove: rel } }));
+        refresh();
+      });
+
       // The host opens the OS folder dialog; a plain cancel is not an error, but a
       // missing picker falls back to typing the path by hand. Several folders are
       // joined into the one field (the engine splits on comma), so a folder holding
@@ -1234,7 +1274,7 @@ window.__ModuleLoader__.load({
         },
         state.certificatesError ? h('div', { className: 'ap-box-error' }, state.certificatesError) : null,
         h('div', { className: 'ap-note' }, t('cert.hint')),
-        pendingCertClear ? h('div', { className: 'ap-note' }, t('cert.clear.hint')) : null,
+        pendingCertClear || pendingCertFile ? h('div', { className: 'ap-note' }, t('cert.clear.hint')) : null,
         certPlatforms
           ? [ 'ios', 'android', 'harmony' ].map((id) => {
             const value = certPlatforms[id];
@@ -1265,6 +1305,7 @@ window.__ModuleLoader__.load({
                 'div',
                 { className: 'ap-sdk-detail' },
                 h('div', { className: 'ap-kv' }, certCounts(id, value)),
+                certFileRows(id, value, pendingCertFile, (key) => setPendingCertFile(key), removeCertificateFile, Boolean(busy) || jobRunning),
                 // iOS 的描述文件把 bundle id 与到期日摆出来：这两个值决定能不能对上项目，
                 // 也是证书过期时唯一看得见的信号（引擎 profiles 子命令解析出来的）。
                 id === 'ios'

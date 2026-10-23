@@ -512,6 +512,29 @@ clear_certificate_platform() {
   printf '需要撤回就把文件挪回 %s\n' "$dir"
 }
 
+# 删单个证书文件：和整平台清理同一套归档规则，只是范围是一个文件。
+# 只允许删 certificates/<平台>/ 里的文件，名字不许带 .. 或绝对路径。
+remove_certificate_file() {
+  local platform="$1" rel="$2" name dir source history target
+  name="$(certificate_platform_name "$platform")" || die "cert-remove 只支持 ios / android / harmony"
+  dir="$(certificate_platform_dir "$platform")" || die "cert-remove 只支持 ios / android / harmony"
+  case "$rel" in
+    ''|/*|*..*) die "cert-remove 的文件名必须是平台证书目录内的相对路径：$rel" ;;
+  esac
+  source="$dir/$rel"
+  [ -f "$source" ] || die "找不到证书文件：$source"
+  history="$LOG_ROOT/certificate-history/$(date '+%Y%m%d-%H%M%S')/$name"
+  mkdir -p "$history/$(dirname "$rel")"
+  target="$history/$rel"
+  if [ -e "$target" ]; then
+    target="$history/$(date '+%Y%m%d%H%M%S')-$(basename "$rel")"
+  fi
+  mv -f "$source" "$target"
+  printf '已把 %s 的 %s 移到历史归档：\n' "$name" "$rel"
+  printf '  %s\n' "$target"
+  printf '需要撤回就把它挪回 %s\n' "$dir"
+}
+
 # 面板用的机器可读证书状态（stdout 只有 JSON）。就绪判定必须复用 cert_*_ready：
 # 那是 check/build 用的同一条规则，面板自己判会得出「面板说就绪、打包却报缺文件」。
 cert_status_json() {
@@ -542,7 +565,8 @@ def files(root, extensions):
                 mtime = int(path.stat().st_mtime)
             except OSError:
                 mtime = 0
-            rows.append({'path': str(path), 'name': path.name, 'mtime': mtime})
+            rows.append({'path': str(path), 'name': path.name,
+                         'rel': str(path.relative_to(base)), 'mtime': mtime})
     return rows
 
 
