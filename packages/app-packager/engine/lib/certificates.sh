@@ -33,6 +33,15 @@ cert_ios_dir() { printf '%s\n' "$PIPELINE_ROOT/certificates/iOS"; }
 cert_android_dir() { printf '%s\n' "$PIPELINE_ROOT/certificates/Android"; }
 cert_harmony_dir() { printf '%s\n' "$PIPELINE_ROOT/certificates/HarmonyOS"; }
 
+certificate_platform_dir() {
+  case "$1" in
+    ios) cert_ios_dir ;;
+    android) cert_android_dir ;;
+    harmony) cert_harmony_dir ;;
+    *) return 1 ;;
+  esac
+}
+
 cert_ios_ready() {
   local dir="${1:-}" p12 profile
   dir="${dir:-$(cert_ios_dir)}"
@@ -455,6 +464,52 @@ process_certificates_root() {
   printf '  iOS:      https://ask.dcloud.net.cn/article/152\n'
   printf '  Android:  https://ask.dcloud.net.cn/article/35777\n'
   printf '  HarmonyOS: https://doc.dcloud.net.cn/uni-app-x/tutorial/runbuild.html#signing-configs\n'
+}
+
+# 清理某个平台的证书：不是 rm，而是把文件挪进 logs/certificate-history/<时间戳>/<平台>，
+# 和导入时同名覆盖的归档放一起，随时能手动挪回。iOS 还要带走 signing/current 里的
+# p12/mobileprovision，否则 cert_ios_ready 仍会判「已就绪」。
+clear_certificate_platform() {
+  local platform="$1" name dir history moved=0 file
+  name="$(certificate_platform_name "$platform")" || die "cert-clear 只支持 ios / android / harmony"
+  dir="$(certificate_platform_dir "$platform")" || die "cert-clear 只支持 ios / android / harmony"
+  history="$LOG_ROOT/certificate-history/$(date '+%Y%m%d-%H%M%S')/$name"
+  mkdir -p "$history"
+
+  move_into_history() {
+    local source="$1" target
+    target="$history/$(basename "$source")"
+    if [ -e "$target" ]; then
+      target="$history/$(date '+%Y%m%d%H%M%S')-$(basename "$source")"
+    fi
+    mv -f "$source" "$target" && moved=$((moved + 1))
+  }
+
+  if [ -d "$dir" ]; then
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      move_into_history "$file"
+    done < <(find "$dir" -mindepth 1 -type f 2>/dev/null)
+    find "$dir" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+  fi
+
+  if [ "$platform" = "ios" ]; then
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      move_into_history "$file"
+    done < <(find "$PIPELINE_ROOT/signing/current" -maxdepth 4 -type f \
+      \( -iname '*.p12' -o -iname '*.pfx' -o -iname '*.mobileprovision' \) 2>/dev/null)
+  fi
+
+  if [ "$moved" -eq 0 ]; then
+    printf '%s 没有可清理的证书文件：%s\n' "$name" "$dir"
+    cd "$LOG_ROOT" && find certificate-history -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null || true
+    return 0
+  fi
+
+  printf '已把 %s 的 %d 个证书文件移到历史归档：\n' "$name" "$moved"
+  printf '  %s\n' "$history"
+  printf '需要撤回就把文件挪回 %s\n' "$dir"
 }
 
 # 面板用的机器可读证书状态（stdout 只有 JSON）。就绪判定必须复用 cert_*_ready：

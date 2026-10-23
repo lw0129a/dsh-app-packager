@@ -81,6 +81,10 @@ window.__ModuleLoader__.load({
       'cert.missing': '缺文件',
       'cert.import': '选择证书文件夹…',
       'cert.reimport': '更新证书',
+      'cert.clear': '清理',
+      'cert.clear.confirm': '确认清理',
+      'cert.clear.cancel': '取消',
+      'cert.clear.hint': '不会真删：文件挪进 logs/certificate-history/<时间戳>/，需要时手动挪回即可。',
       'cert.pickPrompt': '选择存放证书的文件夹（里面的文件会自动按平台归位）',
       'cert.imported': '上次导入的文件夹：{dir}',
       'cert.none': '还没导入过证书。iOS 要 p12 + mobileprovision；HarmonyOS 要 p12 + cer + p7b；Android 要 keystore（不给也能出测试包，但正式包必须配）。',
@@ -262,6 +266,10 @@ window.__ModuleLoader__.load({
       'cert.missing': 'Missing files',
       'cert.import': 'Choose certificate folder…',
       'cert.reimport': 'Update certificates',
+      'cert.clear': 'Clear',
+      'cert.clear.confirm': 'Confirm clear',
+      'cert.clear.cancel': 'Cancel',
+      'cert.clear.hint': 'Nothing is deleted: files move to logs/certificate-history/<timestamp>/ and can be moved back.',
       'cert.pickPrompt': 'Choose the folder that holds your certificates (files are filed by platform automatically)',
       'cert.imported': 'Last imported folder: {dir}',
       'cert.none': 'No certificates imported yet. iOS needs p12 + mobileprovision; HarmonyOS needs p12 + cer + p7b; Android needs a keystore (test packages still build without one, release packages do not).',
@@ -612,6 +620,7 @@ window.__ModuleLoader__.load({
       const [profileFile, setProfileFile] = useState('');
       const [overrides, setOverrides] = useState('');
       const [pendingRemove, setPendingRemove] = useState('');
+      const [pendingCertClear, setPendingCertClear] = useState('');
       const [projectDir, setProjectDir] = useState('');
       const [certSourceDirs, setCertSourceDirs] = useState(() => readCertDirs());
       const [downloadDir, setDownloadDir] = useState(() => readDownloadDir());
@@ -933,6 +942,12 @@ window.__ModuleLoader__.load({
         });
       };
 
+      const clearCertificates = (platform) => guard('cert', async () => {
+        setPendingCertClear('');
+        setJob(await call('job', { method: 'POST', body: { kind: 'cert', clear: platform } }));
+        refresh();
+      });
+
       // The host opens the OS folder dialog; a plain cancel is not an error, but a
       // missing picker falls back to typing the path by hand. Several folders are
       // joined into the one field (the engine splits on comma), so a folder holding
@@ -1200,6 +1215,11 @@ window.__ModuleLoader__.load({
         : id === 'android'
           ? tf('cert.android.files', { keys: value.keystores.length, properties: value.properties.length })
           : tf('cert.harmony.files', { p12: value.p12.length, cer: value.cer.length, p7b: value.p7b.length }));
+      const certHasFiles = (id, value) => (id === 'ios'
+        ? value.p12.length + value.profiles.length > 0
+        : id === 'android'
+          ? value.keystores.length + value.properties.length > 0
+          : value.p12.length + value.cer.length + value.p7b.length > 0);
       const certCard = !state ? null : h(
         Section,
         {
@@ -1214,6 +1234,7 @@ window.__ModuleLoader__.load({
         },
         state.certificatesError ? h('div', { className: 'ap-box-error' }, state.certificatesError) : null,
         h('div', { className: 'ap-note' }, t('cert.hint')),
+        pendingCertClear ? h('div', { className: 'ap-note' }, t('cert.clear.hint')) : null,
         certPlatforms
           ? [ 'ios', 'android', 'harmony' ].map((id) => {
             const value = certPlatforms[id];
@@ -1227,6 +1248,18 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'ap-sdk-name' }, certNames[id]),
                 h('span', { className: `ap-tag ${value.ready ? 'ok' : 'fail'}` }, value.ready ? t('cert.ready') : t('cert.missing')),
                 h('a', { href: certs.docs[id], target: '_blank', rel: 'noreferrer', className: 'ap-link' }, t('cert.docs')),
+                certHasFiles(id, value)
+                  ? h(
+                    'span',
+                    { style: { marginLeft: 'auto', display: 'inline-flex', gap: '6px' } },
+                    pendingCertClear === id
+                      ? [
+                        button(t('cert.clear.confirm'), () => clearCertificates(id), { disabled: Boolean(busy) || jobRunning }),
+                        button(t('cert.clear.cancel'), () => setPendingCertClear(''), { disabled: Boolean(busy) }),
+                      ]
+                      : button(t('cert.clear'), () => setPendingCertClear(id), { disabled: Boolean(busy) || jobRunning }),
+                  )
+                  : null,
               ),
               h(
                 'div',

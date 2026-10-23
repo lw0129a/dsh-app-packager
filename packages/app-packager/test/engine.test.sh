@@ -399,6 +399,21 @@ check "cert_status_json 新 home 三个平台都未就绪" "3" \
 check "入口脚本把 cert-status 当机器可读输出" "profiles|cert-status" \
   "$(grep -o 'profiles|cert-status' "$REPO_ENGINE/打包工具.command")"
 
+# 证书清理只归档不删：文件挪进 logs/certificate-history/<时间戳>/<平台>，
+# 所以清理后原目录为空、历史里能找到，证书状态回到未就绪。
+engine 'parse_args cert-clear ios; printf "%s|%s" "$ACTION" "$PLATFORM"'
+check "parse_args cert-clear 收平台" "cert-clear|ios" "$OUT"
+
+engine 'clear_certificate_platform bogus'
+check "cert-clear 非法平台退出码" "1" "$STATUS"
+
+mkdir -p "$TMP/certificates/iOS"
+: >"$TMP/certificates/iOS/dev.p12"
+engine 'clear_certificate_platform ios >/dev/null; printf "%s|%s" \
+  "$(ls -A "$PIPELINE_ROOT/certificates/iOS" | wc -l | tr -d " ")" \
+  "$(ls "$PIPELINE_ROOT"/logs/certificate-history/*/iOS/dev.p12 2>/dev/null | wc -l | tr -d " ")"'
+check "cert-clear 把文件挪进历史归档" "0|1" "$OUT"
+
 # harmony_signing_material 找不到证书时也是退出码 0（只是没输出）：cert_harmony_ready
 # 只能看输出内容，只看退出码的话「有个项目」就等于「鸿蒙证书已就绪」。
 cat >"$TMP/config/projects/demo.env" <<ENV

@@ -894,6 +894,23 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       // 它自己按扩展名判平台并归位到 certificates/<平台>/，覆盖即更新、旧文件进
       // logs/certificate-history；输出照常流进任务卡，导入完面板刷新状态。
       if (spec.kind === 'cert') {
+        // 清理走 cert-clear <平台>：引擎只把该平台证书挪进 logs/certificate-history，
+        // 所以面板按钮写「清理」而不是「删除」，导错了还能挪回来。
+        const clearPlatform = String(spec.clear || '').trim();
+        if (clearPlatform) {
+          if (![ 'ios', 'android', 'harmony' ].includes(clearPlatform)) {
+            throw new Error(`cert 清理只支持 ios / android / harmony，收到: ${clearPlatform}`);
+          }
+          return runner.start({
+            kind: 'cert',
+            platform: 'cert',
+            home,
+            commands: [ [ 'cert-clear', clearPlatform ] ],
+            timeoutMs: config.certTimeoutMs || 600_000,
+            searchRoots: config.searchRoots,
+            shell: shell.shell,
+          });
+        }
         const dirs = (Array.isArray(spec.dirs) ? spec.dirs : [ spec.dir ])
           .map((value) => String(value || '').trim())
           .filter(Boolean);

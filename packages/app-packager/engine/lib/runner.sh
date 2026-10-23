@@ -48,6 +48,7 @@ usage() {
   打包工具.command profiles
   打包工具.command cert-status            打印证书状态 JSON（面板用）
   打包工具.command cert-import <目录…>    把目录里认得的证书按平台归位
+  打包工具.command cert-clear ios|android|harmony  把该平台证书移到历史归档
   打包工具.command check ios <项目ID>
   打包工具.command check android <项目ID>
   打包工具.command check harmony <项目ID>
@@ -119,6 +120,7 @@ parse_args() {
       profiles) ACTION="profiles"; shift ;;
       cert-status) ACTION="cert-status"; shift ;;
       cert-import) ACTION="cert-import"; shift ;;
+      cert-clear) ACTION="cert-clear"; shift ;;
       check) ACTION="check"; shift ;;
       upload) ACTION="upload"; shift ;;
       ios|apple|苹果) PLATFORM="ios"; shift ;;
@@ -399,6 +401,15 @@ main() {
   if [ "$ACTION" = "cert-import" ]; then
     [ "${#CERT_SOURCES[@]}" -gt 0 ] || die "cert-import 需要一个证书目录"
     process_certificates_root "${CERT_SOURCES[@]}"
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-clear" ]; then
+    case "$PLATFORM" in
+      ios|android|harmony) ;;
+      *) die "cert-clear 需要平台：ios / android / harmony" ;;
+    esac
+    clear_certificate_platform "$PLATFORM"
     return 0
   fi
 
