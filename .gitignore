@@ -3,6 +3,9 @@ node_modules/
 .DS_Store
 .tmp/
 
+# TypeScript build output (packages ship dist/ in the npm tarball)
+packages/*/dist/
+
 # Local AppPackager runtime state materialized by `app-packager init`
 .app-packager/
 

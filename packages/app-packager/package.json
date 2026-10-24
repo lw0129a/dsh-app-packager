@@ -1,6 +1,6 @@
 {
   "name": "app-packager",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "AppPackager CLI: package uni-app x projects into iOS IPA, Android APK and HarmonyOS HAP from one command, on macOS today and Windows through a Git-Bash/WSL bridge.",
   "license": "MIT",
   "type": "module",
@@ -8,12 +8,12 @@
     "app-packager": "./bin/app-packager.mjs"
   },
   "exports": {
-    ".": "./src/index.mjs",
+    ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
   "files": [
     "bin",
-    "src",
+    "dist",
     "engine",
     "README.md",
     "README.zh-CN.md"
@@ -22,7 +22,9 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/packager.test.mjs && bash test/engine.test.sh"
+    "test": "tsc -p tsconfig.json && node --test test/packager.test.mjs && bash test/engine.test.sh",
+    "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json"
   },
   "repository": {
     "type": "git",
@@ -50,5 +52,6 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

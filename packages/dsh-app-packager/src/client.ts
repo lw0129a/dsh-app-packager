@@ -1,7 +1,7 @@
 /**
  * AppPackager panel — browser half of the DeepSeek Harness bundle.
  *
- * A plain ModuleLoader bundle (no build step), matching how the host loads
+ * A plain ModuleLoader bundle (compiled by `tsc`, no bundler step), matching how the host loads
  * plugin client halves: `react` comes from `require`, everything else from the
  * `slots` and `locale` services the bundle injects. It contributes a row to the
  * sidebar's own panel list (`sidebar.panellist`) and its page to the keyed
@@ -10,10 +10,10 @@
  * All data comes from the host half's same-origin routes under
  * `/api/app-packager`; no engine call happens in the browser.
  */
-window.__ModuleLoader__.load({
+(window as any).__ModuleLoader__.load({
   id: 'dsh-app-packager',
   factory: (require) => {
-    var module = { exports: {} };
+    var module: any = { exports: {} };
     var exports = module.exports;
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
 
@@ -414,55 +414,134 @@ window.__ModuleLoader__.load({
     // scroll whenever the parent chain hands it a definite height, and the
     // measured fallback in `Panel` (see `useEffect` near the root node) flips the
     // nearest clipping ancestor when the chain is broken instead.
+    // 设计层：间距/圆角/缓动统一成一组变量，下面各条规则只引用变量，
+    // 想整体调密度或手感时改这里一次就够。
     const CSS = `
-      .ap-root { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 28px; height: 100%; min-height: 0; max-height: 100%; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-primary, inherit); }
-      .ap-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: sticky; top: 0; z-index: 3; margin: 0 -16px; padding: 12px 16px 10px; background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, rgba(127,127,127,.06))); backdrop-filter: blur(10px); border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18)); }
-      .ap-title { font-size: 15px; font-weight: 600; white-space: nowrap; }
+      .ap-root {
+        --ap-gap: 14px;
+        --ap-r-sm: 8px;
+        --ap-r-md: 10px;
+        --ap-r-lg: 12px;
+        --ap-ease: cubic-bezier(.2, .7, .3, 1);
+        --ap-fast: .14s var(--ap-ease);
+        --ap-shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 18px -12px rgba(0,0,0,.35);
+        display: flex; flex-direction: column; gap: var(--ap-gap); padding: 0 16px 28px;
+        height: 100%; min-height: 0; max-height: 100%; box-sizing: border-box;
+        overflow-y: auto; overscroll-behavior: contain;
+        font-size: 13px; line-height: 1.55; color: var(--dsw-alias-label-primary, inherit);
+      }
+      .ap-root::-webkit-scrollbar { width: 10px; height: 10px; }
+      .ap-root::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3, rgba(128,128,128,.28)); border: 3px solid transparent; background-clip: content-box; border-radius: 99px; }
+      .ap-root::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-border-default, rgba(128,128,128,.45)); background-clip: content-box; }
+
+      /* 顶栏：品牌色细线 + 毛玻璃，滚动时始终压住内容。 */
+      .ap-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: sticky; top: 0; z-index: 3; margin: 0 -16px; padding: 12px 16px 10px;
+        background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, rgba(127,127,127,.06)));
+        backdrop-filter: blur(12px) saturate(1.2);
+        border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18));
+        box-shadow: 0 8px 16px -16px rgba(0,0,0,.5); }
+      .ap-title { font-size: 15px; font-weight: 650; letter-spacing: .2px; white-space: nowrap; }
       .ap-sub { font-size: 12px; color: var(--dsw-alias-label-tertiary, inherit); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .ap-path { font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .ap-card { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.26)); border-radius: 10px; background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.05)); }
+
+      /* 卡片：入场动画只在挂载时跑一次；展开板块等于挂载子内容，所以收放也跟着淡入。 */
+      @keyframes ap-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+      @keyframes ap-breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+      .ap-card { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+        border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.26)); border-radius: var(--ap-r-lg);
+        background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.05));
+        animation: ap-rise .18s var(--ap-ease) both;
+        transition: border-color var(--ap-fast), box-shadow var(--ap-fast); }
+      .ap-card:hover { border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.34)); box-shadow: var(--ap-shadow); }
+      .ap-card > * { animation: ap-rise .22s var(--ap-ease) both; }
+      .ap-card > *:nth-child(2) { animation-delay: .02s; }
+      .ap-card > *:nth-child(3) { animation-delay: .04s; }
+      .ap-card > *:nth-child(n+4) { animation-delay: .06s; }
       .ap-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .ap-card-title { font-size: 13px; font-weight: 600; margin-right: auto; }
+      .ap-card-title { font-size: 13px; font-weight: 650; margin-right: auto; letter-spacing: .2px; }
+
       /* 折叠：标题本身是个按钮（键盘也能收放），右侧的操作按钮留在按钮之外，
          点「刷新」之类的不会顺手把板块合上。 */
-      .ap-fold { display: flex; align-items: center; gap: 6px; margin-right: auto; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+      .ap-fold { display: flex; align-items: center; gap: 6px; margin-right: auto; padding: 2px 4px 2px 0; border: 0; border-radius: var(--ap-r-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+        transition: color var(--ap-fast), background var(--ap-fast); }
       .ap-fold:hover { color: var(--dsw-alias-brand-primary, #4a8cff); }
-      .ap-fold-arrow { display: inline-block; font-size: 10px; line-height: 1; transition: transform .12s ease; }
+      .ap-fold:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4a8cff); outline-offset: 2px; }
+      .ap-fold-arrow { display: inline-block; font-size: 10px; line-height: 1; color: var(--dsw-alias-label-tertiary, inherit); transition: transform .18s var(--ap-ease), color var(--ap-fast); }
       .ap-fold:not(.ap-fold-open) .ap-fold-arrow { transform: rotate(-90deg); }
-      .ap-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 2px 10px; font-size: 12.5px; }
+      .ap-fold:hover .ap-fold-arrow { color: inherit; }
+
+      .ap-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 3px 12px; font-size: 12.5px; }
       .ap-row-label { color: var(--dsw-alias-label-tertiary, inherit); }
       .ap-row-value { min-width: 0; overflow-wrap: anywhere; }
       .ap-row-value.ap-mono { font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; }
       .ap-note { font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); }
       .ap-muted { color: var(--dsw-alias-label-tertiary, inherit); opacity: .8; font-size: 11.5px; }
-      .ap-mark { text-align: center; }
-      .ap-btn { font: inherit; font-size: 12px; line-height: 1.4; padding: 4px 10px; border-radius: 6px; white-space: nowrap; border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: transparent; color: inherit; cursor: pointer; }
-      .ap-btn:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-3, rgba(128,128,128,.16)); }
+      .ap-mark { text-align: center; font-weight: 700; }
+
+      /* 按钮：主按钮走品牌色描边+淡底，hover 再抬一点，按下有回落。 */
+      .ap-btn { font: inherit; font-size: 12px; line-height: 1.4; padding: 4px 11px; border-radius: var(--ap-r-sm); white-space: nowrap;
+        border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: transparent; color: inherit; cursor: pointer;
+        transition: background var(--ap-fast), border-color var(--ap-fast), color var(--ap-fast), transform var(--ap-fast), box-shadow var(--ap-fast); }
+      .ap-btn:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-3, rgba(128,128,128,.16)); border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.5)); }
+      .ap-btn:active:not(:disabled) { transform: translateY(1px); }
+      .ap-btn:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4a8cff); outline-offset: 2px; }
       .ap-btn:disabled { opacity: .45; cursor: default; }
-      .ap-btn-primary { border-color: var(--dsw-alias-brand-primary, #4a8cff); color: var(--dsw-alias-brand-primary, #4a8cff); }
+      .ap-btn-primary { border-color: var(--dsw-alias-brand-primary, #4a8cff); color: var(--dsw-alias-brand-primary, #4a8cff);
+        background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 12%, transparent); }
+      .ap-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 20%, transparent); }
       .ap-btn-sm { font-size: 11.5px; padding: 2px 8px; }
-      .ap-input { font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.08)); color: inherit; }
-      .ap-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-secondary, inherit); }
-      .ap-check-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 0 8px; font-size: 12.5px; align-items: start; }
+
+      .ap-input { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: var(--ap-r-sm);
+        border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.08)); color: inherit;
+        transition: border-color var(--ap-fast), box-shadow var(--ap-fast); }
+      .ap-input:hover { border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.5)); }
+      .ap-input:focus { outline: none; border-color: var(--dsw-alias-brand-primary, #4a8cff);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 18%, transparent); }
+
+      .ap-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-secondary, inherit); cursor: pointer; }
+      .ap-check input { accent-color: var(--dsw-alias-brand-primary, #4a8cff); }
+      .ap-check-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 0 8px; font-size: 12.5px; align-items: start;
+        padding: 3px 6px; margin: 0 -6px; border-radius: var(--ap-r-sm); transition: background var(--ap-fast); }
+      .ap-check-row:hover { background: var(--dsw-alias-bg-layer-3, rgba(128,128,128,.1)); }
       .ap-check-hint { grid-column: 2; font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); }
-      .ap-link { font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-link, #4c8dff); text-decoration: none; }
+
+      .ap-link { font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-link, #4c8dff); text-decoration: none; text-underline-offset: 2px;
+        transition: color var(--ap-fast); }
       .ap-link:hover { text-decoration: underline; }
-      .ap-tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); }
-      .ap-tag.ok { color: #3fb950; border-color: rgba(63,185,80,.45); }
-      .ap-tag.warn { color: #d29922; border-color: rgba(210,153,34,.45); }
-      .ap-tag.fail { color: #ff6b6b; border-color: rgba(255,107,107,.45); }
-      .ap-sdk { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.16)); }
+      .ap-link:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4a8cff); outline-offset: 2px; border-radius: 4px; }
+
+      /* 状态标签：左侧一个小圆点，扫一眼就知道好不好。 */
+      .ap-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+        border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); transition: background var(--ap-fast), border-color var(--ap-fast); }
+      .ap-tag::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .85; }
+      .ap-tag.ok { color: #3fb950; border-color: rgba(63,185,80,.45); background: rgba(63,185,80,.1); }
+      .ap-tag.warn { color: #d29922; border-color: rgba(210,153,34,.45); background: rgba(210,153,34,.1); }
+      .ap-tag.fail { color: #ff6b6b; border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.1); }
+      .ap-tag.fail::before { animation: ap-breathe 1.6s ease-in-out infinite; }
+
+      .ap-sdk { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.16)); }
       .ap-sdk-first { padding-top: 0; border-top: none; }
       .ap-sdk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .ap-sdk-name { font-size: 12.5px; font-weight: 600; }
+      .ap-sdk-name { font-size: 12.5px; font-weight: 650; }
       .ap-sdk-detail { display: flex; flex-direction: column; gap: 2px; padding-left: 22px; }
       .ap-kv { font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); overflow-wrap: anywhere; }
-      .ap-project { display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.16)); }
-      .ap-project-name { font-size: 13px; font-weight: 600; }
-      .ap-scope { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.24)); background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.04)); }
-      .ap-log { margin: 0; padding: 8px 10px; max-height: 40vh; overflow: auto; font-size: 11.5px; line-height: 1.45; font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); white-space: pre-wrap; word-break: break-all; background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.09)); border-radius: 6px; }
-      .ap-box-error { border: 1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5)); color: var(--dsw-alias-state-error, #ff6b6b); border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
-      .ap-box-warn { border: 1px solid var(--dsw-alias-state-warning, rgba(210,153,34,.5)); color: var(--dsw-alias-state-warning, #d29922); border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; }
+      .ap-project { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.16)); }
+      .ap-project-name { font-size: 13px; font-weight: 650; }
+      .ap-scope { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--ap-r-md); border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.24)); background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.04)); }
+
+      .ap-log { margin: 0; padding: 10px 12px; max-height: 40vh; overflow: auto; font-size: 11.5px; line-height: 1.5; font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); white-space: pre-wrap; word-break: break-all;
+        background: var(--dsw-alias-bg-base, rgba(128,128,128,.09)); border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18)); border-radius: var(--ap-r-md); }
+      .ap-log::-webkit-scrollbar { width: 10px; height: 10px; }
+      .ap-log::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3, rgba(128,128,128,.28)); border: 3px solid transparent; background-clip: content-box; border-radius: 99px; }
+
+      .ap-box-error { border: 1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5)); color: var(--dsw-alias-state-error, #ff6b6b); border-radius: var(--ap-r-md); padding: 8px 10px; font-size: 12px; white-space: pre-wrap; background: color-mix(in srgb, var(--dsw-alias-state-error, #ff6b6b) 8%, transparent); }
+      .ap-box-warn { border: 1px solid var(--dsw-alias-state-warning, rgba(210,153,34,.5)); color: var(--dsw-alias-state-warning, #d29922); border-radius: var(--ap-r-md); padding: 8px 10px; font-size: 12px; white-space: pre-wrap; background: color-mix(in srgb, var(--dsw-alias-state-warning, #d29922) 8%, transparent); }
+
+      /* 系统开了「减少动态效果」就全部关掉，别跟无障碍设置对着干。 */
+      @media (prefers-reduced-motion: reduce) {
+        .ap-card, .ap-card > *, .ap-tag.fail::before { animation: none; }
+        .ap-fold-arrow, .ap-btn, .ap-input { transition: none; }
+      }
     `;
 
     function installStyles() {
@@ -486,7 +565,7 @@ window.__ModuleLoader__.load({
     };
 
     /** Same-origin call into the host half; throws the host's error message. */
-    async function call(path, options = {}) {
+    async function call(path: string, options: any = {}) {
       const body = options.body;
       const response = await fetch(`${ROUTE}/${path}`, {
         method: options.method || 'GET',
@@ -700,6 +779,17 @@ window.__ModuleLoader__.load({
         if (element) element.scrollTop = element.scrollHeight;
       }, [output]);
 
+      // 新任务一出现就把日志滚进视野：打包按钮在列表下方，日志在最底部，
+      // 不滚一下用户会以为「点了没反应」。同一条任务只滚一次，免得轮询抖动。
+      const seenJob = useRef('');
+      useEffect(() => {
+        const id = job && job.id;
+        if (!id || id === seenJob.current) return;
+        seenJob.current = id;
+        const element = logRef.current;
+        if (element && typeof element.scrollIntoView === 'function') element.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }, [job && job.id]);
+
       // 宿主的 main 槽位把面板塞进哪个盒子里不归我们管：只要父链中间有一层 auto 高度，
       // `.ap-root { height: 100% }` 就解析成 auto，面板按内容撑高，底部被宿主的
       // overflow: hidden 裁掉、又没处可滚（用户看到的「上下不能滚动」）。
@@ -740,7 +830,7 @@ window.__ModuleLoader__.load({
       // 进面板就把环境检查跑起来，用户不该盯着一句「加载中…」等一个没人发起的检查。
       // 手动点「开始检查」走 guard（占 busy、出错进横幅）；自动这一次不抢 busy，
       // 出错就写在卡片里，按钮还在原处可以重试。换平台会按新平台再检查一次。
-      const runDoctor = (options = {}) => {
+      const runDoctor = (options: any = {}) => {
         const work = async () => {
           setDoctorError('');
           try {
@@ -881,8 +971,8 @@ window.__ModuleLoader__.load({
 
       // 打包与上传是两条流程：打包时勾了分发平台就打包完顺手传（引擎侧上传失败不影响
       // 打包结果），一个都没勾就明确 noUpload；上传卡片只送已归档的产物（`--to`）。
-      const startJob = (kind, spec) => guard('job', async () => {
-        const body = {
+      const startJob = (kind: string, spec: any) => guard('job', async () => {
+        const body: any = {
           kind,
           platforms: spec.platforms || [spec.platform],
           projects: spec.projects || (spec.project ? [spec.project] : []),
@@ -1035,7 +1125,7 @@ window.__ModuleLoader__.load({
         await refresh();
       });
 
-      const button = (label, onClick, options = {}) => h(
+      const button = (label: any, onClick: any, options: any = {}) => h(
         'button',
         {
           type: 'button',
@@ -1048,14 +1138,14 @@ window.__ModuleLoader__.load({
 
       // Label/value pairs are a two-column grid, so long paths wrap inside the
       // value column instead of shoving the label around.
-      const row = (label, value, options = {}) => h(
+      const row = (label: any, value: any, options: any = {}) => h(
         'div',
         { className: 'ap-row' },
         h('span', { className: 'ap-row-label' }, label),
         h('span', { className: `ap-row-value${options.mono ? ' ap-mono' : ''}`, title: options.title || undefined }, value),
       );
 
-      const checkbox = (label, checked, onChange, options = {}) => h(
+      const checkbox = (label: any, checked: any, onChange: any, options: any = {}) => h(
         'label',
         { className: 'ap-check', style: options.disabled ? { opacity: 0.5 } : undefined, title: options.title || undefined },
         h('input', { type: 'checkbox', checked, disabled: Boolean(options.disabled), onChange: (event) => onChange(event.target.checked) }),

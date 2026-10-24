@@ -9,7 +9,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { engineEntryPath } from './home.mjs';
+import { engineEntryPath } from './home.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -114,7 +114,13 @@ export function shellAvailable() {
  * @param {string} [options.script] engine script to run instead of the default
  *   entry (used for the interactive 初始化.command wizard).
  */
-export function engineCommand(home, args, { searchRoots, shell = resolveShell(), script } = {}) {
+export interface EngineCommandOptions {
+  searchRoots?: string[];
+  shell?: any;
+  script?: string;
+}
+
+export function engineCommand(home: string, args: string[], { searchRoots, shell = resolveShell(), script }: EngineCommandOptions = {}) {
   const entry = shell.toShellPath(script ? path.join(home, script) : engineEntryPath(home));
   const root = shell.toShellPath(home);
   if (!entry || !root) {
@@ -155,7 +161,23 @@ export function engineCommand(home, args, { searchRoots, shell = resolveShell(),
  * @param {string[]} [options.searchRoots]
  * @param {string} [options.script]
  */
-export function runEngine(home, args, { stdio = 'inherit', stdin = 'ignore', timeoutMs, onLine, onSpawn, searchRoots, shell, script } = {}) {
+export interface RunEngineOptions extends EngineCommandOptions {
+  stdio?: any;
+  stdin?: any;
+  timeoutMs?: number;
+  onLine?: (line: string, stream: 'stdout' | 'stderr') => void;
+  onSpawn?: (child: import('node:child_process').ChildProcess) => void;
+}
+
+export interface EngineResult {
+  code: number;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  shellKind?: string;
+}
+
+export function runEngine(home: string, args: string[], { stdio = 'inherit', stdin = 'ignore', timeoutMs, onLine, onSpawn, searchRoots, shell, script }: RunEngineOptions = {}): Promise<EngineResult> {
   const prepared = engineCommand(home, args, { searchRoots, shell, script });
   return new Promise((resolve, reject) => {
     const child = spawn(prepared.command, prepared.args, {

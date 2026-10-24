@@ -66,7 +66,7 @@ The first call materialises the engine into `<plugin>/home` (an existing `~/AppP
 
 ### Web panel
 
-The same plugin ships a browser half (`./client.js`), so a profile with the web UI gets an **AppPackager** row in the sidebar panel list and a page in the centre column:
+The same plugin ships a browser half (`./src/client.ts`), so a profile with the web UI gets an **AppPackager** row in the sidebar panel list and a page in the centre column:
 
 - **Engine** — engine directory, version, materialised state and the detected bash bridge, with a one-click initialise.
 - **Environment** — the same report as `app_packager_doctor`, for one platform or all, each failure carrying its fix hint.
@@ -101,7 +101,7 @@ packages/
     bin/app-packager.mjs   # executable entry
     src/                   # home / projects / engine / doctor / cli
     engine/                # 打包工具.command, 初始化.command, lib/, config/, signing/ …
-  dsh-app-packager/        # DeepSeek Harness plugin: four tools (index.js, web.js) + web panel (client.js)
+  dsh-app-packager/        # DeepSeek Harness plugin: four tools (index.js, web.js) + web panel (src/client.ts)
 .github/workflows/ci.yml   # three platforms × Node 18/20/22 + packaging checks
 docs/en/                   # architecture, publishing, Windows notes
 docs/zh-CN/                # the same documents in Chinese

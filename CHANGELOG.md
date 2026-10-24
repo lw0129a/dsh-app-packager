@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] - 2026-10-23
+
+### Changed
+
+- 两个包改为 TypeScript 源码（`src/*.ts`），`tsc` 构建到 `dist/`；npm 包与测试都以 `dist/` 为准，新增 `pnpm build`。
+
+- **面板做了一版视觉与交互重做。** 尺寸收敛成一组 CSS 变量（间距 14px、圆角 8/10/12px、统一缓动），整体排版更松、更好扫：卡片 14×16 内边距、标题 650 字重 + 字距、行标签列加宽到 108px、板块之间的分隔线统一。交互补齐了按钮/输入框的 hover、`:active` 回落、`:focus-visible` 描边、输入框品牌色聚焦环，状态标签统一成「圆点 + 药丸」样式（失败态圆点缓慢呼吸），日志新任务出现时自动滚进视野。动画只在挂载时跑一次（卡片淡入上浮、折叠展开跟随淡入、折叠箭头 180ms 缓动翻转），并在 `prefers-reduced-motion: reduce` 下一律关闭。样式仍全部走宿主 `--dsw-alias-*` token，不新增依赖、不改数据结构。
+
 ## [0.6.6] - 2026-10-19
 
 ### Added

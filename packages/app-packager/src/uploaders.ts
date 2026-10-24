@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseEnvFile } from './projects.mjs';
+import { parseEnvFile } from './projects.js';
 
 /** Artifact platforms an uploader can be offered for. */
 export const ARTIFACT_PLATFORMS = ['ios', 'android', 'harmony'];
@@ -21,9 +21,9 @@ function splitList(value) {
     .filter(Boolean);
 }
 
-function uploaderVars(home) {
+function uploaderVars(home: string): Record<string, string> {
   const vars = { PIPELINE_ROOT: home, HOME: os.homedir(), USER: os.userInfo().username };
-  const merged = {};
+  const merged: Record<string, string> = {};
   for (const name of ['upload.env', 'upload.local.env']) {
     const file = path.join(home, 'config', name);
     if (!fs.existsSync(file)) continue;
@@ -33,13 +33,13 @@ function uploaderVars(home) {
 }
 
 /** `engine/lib/upload.sh:29` treats a missing ENABLED as true and only accepts a literal "true". */
-function uploaderEnabled(config, id) {
+function uploaderEnabled(config: Record<string, string>, id: string): boolean {
   const value = config[`UPLOAD_PLATFORM_${id}_ENABLED`];
   return value === undefined ? true : String(value).trim() === 'true';
 }
 
 /** The provider function must actually be declared in the provider script (declare -F in the engine). */
-function declaresFunction(text, name) {
+function declaresFunction(text: string, name: string): boolean {
   if (!name) return false;
   return new RegExp(`(^|\\n)\\s*(function\\s+)?${name}\\s*\\(\\s*\\)`).test(text);
 }
@@ -183,7 +183,7 @@ export function listArtifacts(home) {
     for (const name of names) {
       if (!name.endsWith('-latest.json')) continue;
       const infoFile = path.join(dir, name);
-      let info = {};
+      let info: Record<string, any> = {};
       try {
         info = JSON.parse(fs.readFileSync(infoFile, 'utf8'));
       } catch {

@@ -7,11 +7,11 @@
  * bridge.
  */
 import path from 'node:path';
-import { ENGINE_WIZARD, engineEntryPath, isMaterialized, materialize, packageVersion, resolveHome } from './home.mjs';
-import { runEngine, shellAvailable } from './engine.mjs';
-import { listProjects, PLATFORMS } from './projects.mjs';
-import { runDoctor } from './doctor.mjs';
-import { parseRemoteTarget, pullArtifacts, runRemote } from './remote.mjs';
+import { ENGINE_WIZARD, engineEntryPath, isMaterialized, materialize, packageVersion, resolveHome } from './home.js';
+import { runEngine, shellAvailable } from './engine.js';
+import { listProjects, PLATFORMS } from './projects.js';
+import { runDoctor } from './doctor.js';
+import { parseRemoteTarget, pullArtifacts, runRemote } from './remote.js';
 
 const MARKS = { ok: '✓', warn: '!', fail: '✗' };
 
@@ -63,7 +63,7 @@ const PLUGIN_ONLY_FLAGS = new Set(['--dir', '--search-roots', '--json', '--remot
 
 // 把插件专属参数从要交给引擎的 argv 里摘掉：`app-packager --dir X upload ios p`
 // 以前会把 `--dir X` 一起传下去，引擎于是回「未知参数: --dir」。
-function engineArgv(args) {
+function engineArgv(args: string[]): string[] {
   const out = [];
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
@@ -76,8 +76,10 @@ function engineArgv(args) {
   return out;
 }
 
-function parseArgs(argv) {
-  const flags = { _: [] };
+type CliFlags = Record<string, any> & { _: string[] };
+
+function parseArgs(argv: string[]): CliFlags {
+  const flags: CliFlags = { _: [] };
   const takesValue = FLAGS_WITH_VALUE;
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -95,7 +97,7 @@ function parseArgs(argv) {
   return flags;
 }
 
-function searchRootsFrom(flags) {
+function searchRootsFrom(flags: CliFlags): string[] | undefined {
   const raw = flags['search-roots'] || process.env.APP_PACKAGER_SEARCH_ROOTS;
   if (!raw) return undefined;
   return String(raw)
@@ -104,7 +106,7 @@ function searchRootsFrom(flags) {
     .filter(Boolean);
 }
 
-function printDoctor(report) {
+function printDoctor(report: any) {
   console.log(`AppPackager 环境检查 — ${report.platformName}`);
   console.log(`引擎目录: ${report.home}${isMaterialized(report.home) ? '' : '（未初始化）'}`);
   console.log('');
@@ -117,7 +119,7 @@ function printDoctor(report) {
   console.log(report.ok ? `通过（${report.warnings} 项警告）` : `${report.failures} 项失败，${report.warnings} 项警告`);
 }
 
-function printProjects(home, projects) {
+function printProjects(home: string, projects: any[]) {
   console.log(`引擎目录: ${home}`);
   if (projects.length === 0) {
     console.log('未发现项目配置 config/projects/*.env。');
@@ -133,7 +135,7 @@ function printProjects(home, projects) {
   }
 }
 
-async function withRemote(home, args, flags, platform) {
+async function withRemote(home: string, args: string[], flags: CliFlags, platform?: string): Promise<number> {
   const target = parseRemoteTarget(flags.remote);
   const remoteHome = flags['remote-home'] || '~/AppPackager';
   console.log(`远程执行：${target.spec} · 引擎目录 ${remoteHome}`);
@@ -152,7 +154,14 @@ async function withRemote(home, args, flags, platform) {
   return pullArtifacts({ target, key: flags['remote-key'], remoteHome, localHome: home, platform });
 }
 
-async function withEngine(home, args, flags, { stdio = 'inherit', timeoutMs, script, stdin = 'ignore' } = {}) {
+interface EngineOptions {
+  stdio?: any;
+  timeoutMs?: number;
+  script?: string;
+  stdin?: string;
+}
+
+async function withEngine(home: string, args: string[], flags: CliFlags, { stdio = 'inherit', timeoutMs, script, stdin = 'ignore' }: EngineOptions = {}): Promise<number> {
   if (!isMaterialized(home)) {
     console.error(`引擎未初始化：${home}`);
     console.error('先运行 `app-packager init`。');
@@ -167,7 +176,7 @@ async function withEngine(home, args, flags, { stdio = 'inherit', timeoutMs, scr
   return result.code;
 }
 
-export async function main(argv) {
+export async function main(argv: string[]): Promise<number> {
   const flags = parseArgs(argv);
   const command = flags._[0] || 'help';
   const home = resolveHome(flags.dir);

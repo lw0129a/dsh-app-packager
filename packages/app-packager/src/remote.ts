@@ -19,7 +19,14 @@ const ENGINE_ENTRY = '打包工具.command';
 export const PLATFORM_DIRS = { ios: 'iOS', android: 'Android', harmony: 'HarmonyOS' };
 
 /** `user@host`、`user@host:2222`、`ssh://user@host:2222` 都能解析。 */
-export function parseRemoteTarget(value) {
+export interface RemoteTarget {
+  user: string;
+  host: string;
+  port?: number;
+  spec: string;
+}
+
+export function parseRemoteTarget(value: string): RemoteTarget {
   const raw = String(value || '').trim();
   if (!raw) throw new Error('远程目标不能为空，例如 --remote user@192.168.1.20');
   const rest = raw.replace(/^ssh:\/\//, '');
@@ -40,7 +47,7 @@ export function parseRemoteTarget(value) {
 }
 
 /** POSIX 单引号转义：远程命令里每个参数都过一遍，空格和引号都不会被 shell 吃掉。 */
-function quoteArg(value) {
+function quoteArg(value: string): string {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
@@ -48,14 +55,14 @@ function quoteArg(value) {
  * 远程引擎命令。`~` 开头写成 `"$HOME/…"` 让远端 shell 自己展开，
  * 其余路径原样单引号包住。
  */
-export function remoteEngineCommand(home, args) {
+export function remoteEngineCommand(home: string, args: string[]): string {
   const value = String(home);
   const homeExpr = value.startsWith('~') ? `"$HOME${value.slice(1)}"` : quoteArg(value);
   const rest = args.map(quoteArg).join(' ');
   return `cd ${homeExpr} && exec bash ${quoteArg(ENGINE_ENTRY)}${rest ? ` ${rest}` : ''}`;
 }
 
-export function sshArgv(target, remoteCommand, { key, allowPassword = false } = {}) {
+export function sshArgv(target: RemoteTarget, remoteCommand: string, { key, allowPassword = false }: { key?: string; allowPassword?: boolean } = {}): string[] {
   const args = [];
   if (target.port) args.push('-p', String(target.port));
   if (key) args.push('-i', key);
@@ -66,7 +73,7 @@ export function sshArgv(target, remoteCommand, { key, allowPassword = false } = 
   return args;
 }
 
-export function scpArgv(target, remotePath, localPath, { key, recursive = true } = {}) {
+export function scpArgv(target: RemoteTarget, remotePath: string, localPath: string, { key, recursive = true }: { key?: string; recursive?: boolean } = {}): string[] {
   const args = [];
   if (target.port) args.push('-P', String(target.port));
   if (key) args.push('-i', key);
@@ -77,7 +84,13 @@ export function scpArgv(target, remotePath, localPath, { key, recursive = true }
 }
 
 /** spawn 一个外部命令，等到退出；`code` 为整数，被信号杀掉按 1 处理。 */
-export function runCommand(command, argv, { stdio = 'inherit', timeoutMs, env } = {}) {
+export interface RunCommandOptions {
+  stdio?: any;
+  timeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
+}
+
+export function runCommand(command: string, argv: string[], { stdio = 'inherit', timeoutMs, env }: RunCommandOptions = {}): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, argv, { stdio, env: env || process.env });
     const timer = timeoutMs ? setTimeout(() => child.kill('SIGKILL'), timeoutMs) : null;
@@ -90,7 +103,18 @@ export function runCommand(command, argv, { stdio = 'inherit', timeoutMs, env } 
 }
 
 /** 在远程机器上跑一次引擎命令，返回退出码。 */
-export function runRemote({ target, key, home = '~/AppPackager', args = [], timeoutMs, stdio = 'inherit', env, allowPassword }) {
+export interface RunRemoteOptions {
+  target: RemoteTarget;
+  key?: string;
+  home?: string;
+  args?: string[];
+  timeoutMs?: number;
+  stdio?: any;
+  env?: NodeJS.ProcessEnv;
+  allowPassword?: boolean;
+}
+
+export function runRemote({ target, key, home = '~/AppPackager', args = [], timeoutMs, stdio = 'inherit', env, allowPassword }: RunRemoteOptions): Promise<number> {
   const remoteCommand = remoteEngineCommand(home, args);
   return runCommand('ssh', sshArgv(target, remoteCommand, { key, allowPassword }), { stdio, timeoutMs, env });
 }
@@ -99,7 +123,15 @@ export function runRemote({ target, key, home = '~/AppPackager', args = [], time
  * 把远程 `packages/<平台>/` 拉回本地同名目录。
  * 返回第一个失败的退出码，全成功返回 0。
  */
-export async function pullArtifacts({ target, key, remoteHome = '~/AppPackager', localHome, platform }) {
+export interface PullArtifactsOptions {
+  target: RemoteTarget;
+  key?: string;
+  remoteHome?: string;
+  localHome: string;
+  platform: string;
+}
+
+export async function pullArtifacts({ target, key, remoteHome = '~/AppPackager', localHome, platform }: PullArtifactsOptions): Promise<number> {
   const names = platform === 'all' ? Object.values(PLATFORM_DIRS) : [PLATFORM_DIRS[platform]].filter(Boolean);
   const dest = path.join(localHome, 'packages');
   for (const name of names) {

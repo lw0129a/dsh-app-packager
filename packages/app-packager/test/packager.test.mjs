@@ -7,11 +7,11 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { join, resolve } from 'node:path';
-import { listProjects, parseEnvText } from '../src/projects.mjs';
-import { listArtifacts, listUploaders, pgyerCliStatus, selectableUploaders, writeUploaderCredential } from '../src/uploaders.mjs';
-import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../src/home.mjs';
-import { runDoctor } from '../src/doctor.mjs';
-import { parseRemoteTarget, remoteEngineCommand, sshArgv, runRemote } from '../src/remote.mjs';
+import { listProjects, parseEnvText } from '../dist/projects.js';
+import { listArtifacts, listUploaders, pgyerCliStatus, selectableUploaders, writeUploaderCredential } from '../dist/uploaders.js';
+import { HOME_GITIGNORE, engineEntryPath, isMaterialized, materialize, resolveHome } from '../dist/home.js';
+import { runDoctor } from '../dist/doctor.js';
+import { parseRemoteTarget, remoteEngineCommand, sshArgv, runRemote } from '../dist/remote.js';
 
 function tempDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));

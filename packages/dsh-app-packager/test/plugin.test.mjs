@@ -14,9 +14,9 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, wri
 import { tmpdir, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { apply, inject, name } from '../index.js';
-import { createJobRunner, createPanel, downloadDestination, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../web.js';
-import { LEGACY_HOME_NAME, homeInPlugin, isNewerVersion, legacyHome, pluginRoot, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../index.mjs';
+import { apply, inject, name } from '../dist/index.js';
+import { createJobRunner, createPanel, downloadDestination, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../dist/web.js';
+import { LEGACY_HOME_NAME, homeInPlugin, isNewerVersion, legacyHome, pluginRoot, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../dist/home.js';
 
 /**
  * Mirror cordis service access: reading `ctx.<service>` without declaring it in
@@ -407,13 +407,14 @@ test('打包契约：exports/client 入口、files 与 bundle id 都指向浏览
   assert.equal(pkg.dsh.client.platform, 'web');
   const entry = pkg.exports['./client'];
   const file = typeof entry === 'string' ? entry : entry.default;
-  assert.equal(file, './client.js');
+  assert.equal(file, './dist/client.js');
   assert.ok(readFileSync(new URL(file, dir), 'utf8').length > 0, 'exports["./client"] 必须存在');
-  for (const listed of ['index.js', 'web.js', 'client.js', 'cordis.patch.yml']) {
+  assert.ok(readFileSync(new URL('dist/client.js', dir), 'utf8').length > 0, 'dist 必须已构建');
+  for (const listed of ['dist', 'cordis.patch.yml']) {
     assert.ok(pkg.files.includes(listed), `files 必须包含 ${listed}`);
   }
   // The host keys its module table by package name, not by the patch row id.
-  assert.match(readFileSync(new URL('client.js', dir), 'utf8'), /__ModuleLoader__\.load\(\{\s*id:\s*'dsh-app-packager'/);
+  assert.match(readFileSync(new URL('dist/client.js', dir), 'utf8'), /__ModuleLoader__\.load\(\{\s*id:\s*'dsh-app-packager'/);
 });
 
 test('面板路由：state / init / doctor 走通，非法平台报错且不启动引擎', async () => {
@@ -941,7 +942,8 @@ test('mountWebPanel 在没有 webServer 时返回 null，且不直接读 ctx.web
 });
 
 test('client half：注册侧栏行与主面板，并能渲染', () => {
-  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../dist/client.js', import.meta.url), 'utf8');
+  const flat = source.replace(/\s+/g, ' ');
   let definition;
   new Function('window', source)({ __ModuleLoader__: { load: (value) => { definition = value; } } });
   assert.equal(definition.id, 'dsh-app-packager');
@@ -1019,8 +1021,7 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   // 一个都不勾才明确 noUpload（打包与独立上传是两条流程，但共用同一份勾选状态）。
   assert.match(source, /platforms: spec\.platforms \|\| \[spec\.platform\]/);
   assert.match(source, /projects: spec\.projects \|\| \(spec\.project \? \[spec\.project\] : \[\]\)/);
-  assert.match(source, /if \(targets\) body\.upload = targets;/);
-  assert.match(source, /else body\.noUpload = true;/);
+  assert.match(flat, /if \(targets\) body\.upload = targets; else body\.noUpload = true;/);
   assert.match(source, /uploaderPicker\('options\.uploadAfterBuild'\)/);
   // 上传是独立板块：产物清单 + 每行一个上传按钮，分发平台与两把密钥都在这里。
   assert.match(source, /body\.upload = spec\.targets \|\| targets;/);
@@ -1028,7 +1029,7 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
   assert.match(source, /button\(t\('upload\.action'\), \(\) => startUpload\(item\)/);
   // 环境检查进面板就自己跑一次（state 到手后），不再让用户对着一句「加载中…」干等；
   // 依赖写成 Boolean(state) 这种基本值，免得每次 state 刷新都重跑一遍检查。
-  assert.match(source, /if \(!state\) return;\s*\n\s*runDoctor\(\{ silent: true \}\)/);
+  assert.match(flat, /if \(!state\) return; runDoctor\(\{ silent: true \}\)/);
   assert.match(source, /\[platform, Boolean\(state\)\]/);
   assert.match(source, /doctorError \|\| t\('loading'\)/);
   // 所有板块默认收起（用户要求），只有显式 open:true 才展开。
@@ -1249,7 +1250,8 @@ test('client half：注册侧栏行与主面板，并能渲染', () => {
 
 // 滚动那条兜底要对宿主链做判断，光靠正则钉不住，直接用假 DOM 跑真实 effect 本体。
 test('client half：父链没有确定高度时，把最近的裁剪祖先改成可滚动', () => {
-  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../dist/client.js', import.meta.url), 'utf8');
+  const flat = source.replace(/\s+/g, ' ');
   let definition;
   new Function('window', source)({
     __ModuleLoader__: { load: (value) => { definition = value; } },
@@ -1314,7 +1316,8 @@ test('client half：父链没有确定高度时，把最近的裁剪祖先改成
 // 板块折叠：假 react 这次要真的记账（useState 能改值并触发重渲染），
 // 不然「点了开关内容就没了」这条根本验不到。
 test('client half：每个板块都能折叠，且互不影响', () => {
-  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../dist/client.js', import.meta.url), 'utf8');
+  const flat = source.replace(/\s+/g, ' ');
   let definition;
   new Function('window', source)({ __ModuleLoader__: { load: (value) => { definition = value; } } });
 

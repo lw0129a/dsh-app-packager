@@ -13,7 +13,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { PACKAGE_NAME, homeInPlugin, isNewerVersion, pluginRoot, withHomePreserved } from './index.mjs';
+import { PACKAGE_NAME, homeInPlugin, isNewerVersion, pluginRoot, withHomePreserved } from './home.js';
 
 const root = pluginRoot();
 if (!root) {
@@ -61,7 +61,7 @@ console.log(`DSH profile: ${profileName} (${profileDir})`);
 
 // 本地 tarball 装的版本可能比 registry 还新（例如 0.6.0 还没发出去）：那种
 // 「升级」只会把装好的功能换回旧版，所以先比一次版本，--force 才强制重装。
-const installed = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+const installed = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const latest = await registryLatest();
 if (!process.argv.includes('--force')) {
   if (!latest) {

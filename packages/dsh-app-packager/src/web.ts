@@ -33,7 +33,7 @@ import {
   shellAvailable,
   writeUploaderCredential,
 } from 'app-packager';
-import { pluginRoot, resolvePluginHome } from './index.mjs';
+import { pluginRoot, resolvePluginHome } from './home.js';
 
 export const ROUTE_BASE = '/api/app-packager';
 export const PLATFORM_VALUES = ['ios', 'android', 'harmony', 'mp-weixin', 'all'];
@@ -64,7 +64,24 @@ const execFileAsync = promisify(execFileCallback);
  * @param {{check?: boolean}} [options]
  * @returns {string[]}
  */
-export function engineArgsFor(args = {}, { check = false } = {}) {
+export interface JobArgs {
+  platform?: string;
+  action?: string;
+  project?: string;
+  upload?: string | string[];
+  noUpload?: boolean;
+  version?: string;
+  harmonyDebug?: boolean;
+  keepWork?: boolean;
+  mpWeixinUpload?: boolean;
+  fullPermission?: boolean;
+  packageKind?: string;
+  profile?: string;
+  set?: string | string[];
+  [key: string]: any;
+}
+
+export function engineArgsFor(args: JobArgs = {}, { check = false }: { check?: boolean } = {}): string[] {
   const platform = String(args.platform || '').toLowerCase();
   if (!PLATFORM_VALUES.includes(platform)) {
     throw new Error(`platform 必须是 ${PLATFORM_VALUES.join(' | ')}，收到 ${JSON.stringify(args.platform)}`);
@@ -141,7 +158,7 @@ export function overrideList(value) {
  * @param {{platforms?: string[], platform?: string}} [spec]
  * @returns {string[]}
  */
-export function sdkPlatforms(spec = {}) {
+export function sdkPlatforms(spec: any = {}): any[] {
   const requested = Array.isArray(spec.platforms) && spec.platforms.length > 0
     ? spec.platforms
     : spec.platform && spec.platform !== 'all'
@@ -177,7 +194,7 @@ function dirStamp(dir) {
 
 /** The project's own env files (`--env-file` inputs) offered to the panel as presets. */
 function presetsOf(sourceDir) {
-  const out = {};
+  const out: Record<string, any> = {};
   if (!sourceDir) return out;
   for (const rel of ['scripts/ios-package/env', 'scripts/env']) {
     let names;
@@ -206,7 +223,7 @@ function presetsOf(sourceDir) {
  * @param {{platform?: string, platforms?: string|string[]}} args
  * @returns {string[]}
  */
-export function scopePlatforms(args = {}) {
+export function scopePlatforms(args: any = {}): string[] {
   const raw = args.platforms === undefined ? [args.platform] : args.platforms;
   const picked = [];
   for (const value of Array.isArray(raw) ? raw : [raw]) {
@@ -229,7 +246,7 @@ export function scopePlatforms(args = {}) {
  * @param {{project?: string, projects?: string|string[]}} args
  * @returns {string[]}
  */
-export function scopeProjects(args = {}) {
+export function scopeProjects(args: any = {}): string[] {
   const raw = args.projects === undefined ? (args.project ? [args.project] : []) : args.projects;
   const picked = [];
   for (const value of Array.isArray(raw) ? raw : [raw]) {
@@ -240,7 +257,7 @@ export function scopeProjects(args = {}) {
 }
 
 /** One engine run per platform × project: the engine CLI takes exactly one of each. */
-export function engineCommandsFor(args = {}, { check = false } = {}) {
+export function engineCommandsFor(args: JobArgs = {}, { check = false }: { check?: boolean } = {}) {
   const platforms = scopePlatforms(args);
   const projects = scopeProjects(args);
   const combos = [];
@@ -287,7 +304,14 @@ export function downloadDestination(dir, fileName, exists = fs.existsSync) {
  * @param {{prompt?: string}} [options]
  * @returns {Promise<{path: string, paths: string[], cancelled?: boolean, error?: string}>}
  */
-export async function pickFolder({ prompt = FOLDER_PROMPT } = {}) {
+export interface PickResult {
+  path: string;
+  paths: string[];
+  cancelled?: boolean;
+  error?: string;
+}
+
+export async function pickFolder({ prompt = FOLDER_PROMPT }: { prompt?: string } = {}): Promise<PickResult> {
   const run = async (file, args) => (await execFileAsync(file, args, { windowsHide: true })).stdout;
   const split = (text) => String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
   let script;
@@ -296,16 +320,16 @@ export async function pickFolder({ prompt = FOLDER_PROMPT } = {}) {
       // `choose folder` wants {alias, ...} back with `as alias list` when
       // multiple selections are allowed, hence the explicit coercion.
       script = `set chosen to (choose folder with prompt ${JSON.stringify(prompt)} with multiple selections allowed)\nset out to ""\nrepeat with f in chosen\nset out to out & (POSIX path of f) & linefeed\nend repeat\nreturn out`;
-      const paths = split(await run('osascript', ['-e', script]));
-      return { path: paths[0] || '', paths };
+      const picked = split(await run('osascript', ['-e', script]));
+      return { path: picked[0] || '', paths: picked };
     }
     if (process.platform === 'win32') {
       script = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = ${JSON.stringify(prompt)}; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`;
-      const paths = split(await run('powershell', ['-NoProfile', '-STA', '-Command', script]));
-      return { path: paths[0] || '', paths };
+      const picked = split(await run('powershell', ['-NoProfile', '-STA', '-Command', script]));
+      return { path: picked[0] || '', paths: picked };
     }
-    const paths = split(await run('zenity', ['--file-selection', '--directory', '--multiple', '--separator=\n', `--title=${prompt}`]));
-    return { path: paths[0] || '', paths };
+    const picked = split(await run('zenity', ['--file-selection', '--directory', '--multiple', '--separator=\n', `--title=${prompt}`]));
+    return { path: picked[0] || '', paths: picked };
   } catch (error) {
     const detail = String(error?.stderr || error?.message || error).trim();
     // Cancelling exits non-zero everywhere ("User canceled" / -128 / 1); only a
@@ -398,7 +422,14 @@ function jobView(job) {
  * Run the plugin's own node script (the 升级插件 action) with the same streaming
  * contract as `runEngine`, so the panel shows and cancels it like an engine run.
  */
-export function runNode(script, args = [], { cwd, timeoutMs, onLine, onSpawn } = {}) {
+export interface RunNodeOptions {
+  cwd?: string;
+  timeoutMs?: number;
+  onLine?: (line: string, stream: 'stdout' | 'stderr') => void;
+  onSpawn?: (child: any) => void;
+}
+
+export function runNode(script: string, args: string[] = [], { cwd, timeoutMs, onLine, onSpawn }: RunNodeOptions = {}): Promise<any> {
   return new Promise((resolve, reject) => {
     const child = spawnProcess(process.execPath, [script, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     onSpawn?.(child);
@@ -437,7 +468,14 @@ export function runNode(script, args = [], { cwd, timeoutMs, onLine, onSpawn } =
  *
  * @param {{spawn?: typeof runEngine, nodeSpawn?: typeof runNode, limit?: number, outputLimit?: number}} [options]
  */
-export function createJobRunner({ spawn = runEngine, nodeSpawn = runNode, limit = JOB_LIMIT, outputLimit = OUTPUT_LIMIT } = {}) {
+export interface JobRunnerOptions {
+  spawn?: any;
+  nodeSpawn?: any;
+  limit?: number;
+  outputLimit?: number;
+}
+
+export function createJobRunner({ spawn = runEngine, nodeSpawn = runNode, limit = JOB_LIMIT, outputLimit = OUTPUT_LIMIT }: JobRunnerOptions = {}): any {
   /** @type {any[]} */
   const jobs = [];
   let seq = 0;
@@ -503,6 +541,7 @@ export function createJobRunner({ spawn = runEngine, nodeSpawn = runNode, limit 
         dropped: 0,
         outputLimit,
         child: null,
+        blockedByCheck: false,
       };
       jobs.unshift(job);
       evict();
@@ -603,7 +642,18 @@ export function createJobRunner({ spawn = runEngine, nodeSpawn = runNode, limit 
  *
  * @param {{config?: object, spawn?: typeof runEngine, limit?: number, outputLimit?: number}} [options]
  */
-export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNode, pick = pickFolder, limit, outputLimit, moduleUrl = import.meta.url, env = process.env } = {}) {
+export interface PanelOptions {
+  config?: any;
+  spawn?: any;
+  nodeSpawn?: any;
+  pick?: any;
+  limit?: number;
+  outputLimit?: number;
+  moduleUrl?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNode, pick = pickFolder, limit, outputLimit, moduleUrl = import.meta.url, env = process.env }: PanelOptions = {}): any {
   const runner = createJobRunner({ spawn, nodeSpawn, limit, outputLimit });
   const homeNotices = [];
   const homeOf = () => resolvePluginHome(config.home || '', {
@@ -756,7 +806,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
 
   /** Defaults the panel mirrors from config/settings.env (the engine still owns them). */
   function optionsOf(home) {
-    let env = {};
+    let env: Record<string, string> = {};
     try {
       env = parseEnvFile(path.join(home, 'config', 'settings.env'));
     } catch {
@@ -837,13 +887,13 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       };
     },
 
-    init({ force = false } = {}) {
+    init({ force = false }: { force?: boolean } = {}) {
       const home = homeOf();
       const result = materialize(home, { force: Boolean(force) });
       return { home, force: Boolean(force), ...result, materialized: isMaterialized(home) };
     },
 
-    doctor({ platform = 'all' } = {}) {
+    doctor({ platform = 'all' }: { platform?: string } = {}) {
       const home = homeOf();
       // No-op while the home already carries the current engine; otherwise this
       // refreshes the scripts a plugin upgrade left behind (user data stays).
@@ -861,7 +911,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
     },
 
     /** Start a `check` / `build` / `sdk` / `upgrade` run; returns the job record. */
-    startJob(spec = {}) {
+    startJob(spec: JobArgs = {}) {
       const home = homeOf();
       // No-op while the home already carries the current engine; otherwise this
       // refreshes the scripts a plugin upgrade left behind (user data stays).
@@ -1015,7 +1065,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
      * scans one level below it. `dir` may hold several paths (newline or comma
      * separated) — the engine takes them all in one call.
      */
-    async addProject({ dir } = {}) {
+    async addProject({ dir }: { dir?: string } = {}) {
       const dirs = String(dir || '')
         .split(/[\n,]/)
         .map((line) => line.trim())
@@ -1049,7 +1099,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
      * touched. The id must be one the engine just listed, so a stray value
      * cannot escape the config directory.
      */
-    removeProject({ id } = {}) {
+    removeProject({ id }: { id?: string } = {}) {
       const target = String(id || '').trim();
       const home = homeOf();
       const projects = projectsOf(home);
@@ -1075,7 +1125,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
      * copy; the folder is a single setting shared by every platform and project,
      * and a repeated download never overwrites (`name-1.apk`).
      */
-    async downloadArtifact({ platform, project, dir } = {}) {
+    async downloadArtifact({ platform, project, dir }: { platform?: string; project?: string; dir?: string } = {}) {
       const home = homeOf();
       const wanted = String(platform || '').trim();
       const id = String(project || '').trim();
@@ -1105,7 +1155,7 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
      * clears just that one. Values are never echoed back — the panel only learns
      * whether each one is set.
      */
-    saveUploadCredential({ provider, apiKey, userKey } = {}) {
+    saveUploadCredential({ provider, apiKey, userKey }: { provider?: string; apiKey?: string; userKey?: string } = {}) {
       const home = homeOf();
       const id = String(provider || '').trim();
       const uploaders = listUploaders(home);
@@ -1173,7 +1223,7 @@ function queryOf(req) {
  * @param {object} [config] bundle patch config.
  * @returns {(() => void) | null} disposer, or null when no web server is up yet.
  */
-export function mountWebPanel(ctx, config = {}) {
+export function mountWebPanel(ctx: any, config: any = {}): any {
   // `ctx.get` reads a service without the inject requirement; touching
   // `ctx.webServer` from a plugin that does not inject it throws
   // ("cannot get property \"webServer\" without inject"), so never do that here.

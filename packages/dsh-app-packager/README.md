@@ -20,7 +20,7 @@ and the packaging engine), which is installed with it.
 
 ## Panel in the web GUI
 
-The bundle ships a client half (`./client.js`), so the web GUI gains an
+The bundle ships a client half (`./src/client.ts`), so the web GUI gains an
 **App packaging** entry in the sidebar's own panel list, with its page in the
 centre column:
 
@@ -93,7 +93,7 @@ centre column:
   **restart DeepSeek Harness** and deliberately offers no *Reload page* button:
   the browser asks for client modules by the revision from its boot-time
   manifest, and after an upgrade that revision no longer exists on the server
-  (`plugins/??<id>/client.js&rev=<old>` answers **404**), so a reload takes the
+  (`plugins/??<id>/src/client.ts&rev=<old>` answers **404**), so a reload takes the
   sidebar entry away instead of bringing it back. Restarting DSH rebuilds the
   manifest.
 - **Job** — the running check/build/upload with its live engine log, its verdict
@@ -204,7 +204,7 @@ stashed until the install finishes.
 > `pnpm install --force`, adding another version, changing the `file:` spec —
 > deletes the engine directory along with it, SDKs, certificates and registered
 > projects included. Use *Upgrade plugin* in the panel, or
-> `node <plugin>/upgrade.mjs`, which stashes the engine directory first; both
+> `node <plugin>/upgrade.ts`, which stashes the engine directory first; both
 > also refuse to move you onto an older release than the one installed.
 >
 > **When the sidebar entry disappears.** The host composes the plugin list once at

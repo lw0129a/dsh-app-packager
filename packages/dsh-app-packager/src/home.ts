@@ -85,7 +85,14 @@ export function upgradeBackupDir(root) {
  * happens to carry the old name is left untouched. `legacy` exists so callers
  * (and tests) can name that directory explicitly instead of relying on $HOME.
  */
-export function resolvePluginHome(explicit, options = {}) {
+export interface ResolveHomeOptions {
+  moduleUrl?: string;
+  env?: NodeJS.ProcessEnv;
+  onNotice?: (message: string) => void;
+  legacy?: string;
+}
+
+export function resolvePluginHome(explicit: any, options: ResolveHomeOptions = {}): string {
   const { moduleUrl = import.meta.url, env = process.env, onNotice, legacy = legacyHome() } = options;
   const notice = typeof onNotice === 'function' ? onNotice : () => {};
 

@@ -9,10 +9,10 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { findExecutable, shellAvailable } from './engine.mjs';
-import { materializedVersion, packageVersion, isMaterialized } from './home.mjs';
-import { listProjects } from './projects.mjs';
-import { parseEnvFile } from './projects.mjs';
+import { findExecutable, shellAvailable } from './engine.js';
+import { materializedVersion, packageVersion, isMaterialized } from './home.js';
+import { listProjects } from './projects.js';
+import { parseEnvFile } from './projects.js';
 
 const PLATFORM_LABELS = {
   ios: 'iOS (IPA)',
@@ -24,7 +24,7 @@ const PLATFORM_LABELS = {
 /** uni-app x 从 HBuilderX 4.41 起支持发行微信小程序。 */
 const MP_WEIXIN_MIN_SERIES = 4.41;
 
-function hbuilderxSeries(cli) {
+function hbuilderxSeries(cli: string): string {
   try {
     const out = execFileSync(cli, ['--help'], { encoding: 'utf8', timeout: 20000 });
     const match = out.match(/HBuilderX\(v?([0-9]+\.[0-9]+)/);
@@ -34,11 +34,11 @@ function hbuilderxSeries(cli) {
   }
 }
 
-function check(id, label, status, detail, hint) {
+function check(id: string, label: string, status: string, detail = '', hint = '') {
   return { id, label, status, detail: detail || '', hint: hint || '' };
 }
 
-function probeExecutable(id, label, names, hint) {
+function probeExecutable(id: string, label: string, names: string[], hint?: string) {
   for (const name of names) {
     const found = findExecutable(name);
     if (found) return check(id, label, 'ok', found);
@@ -46,7 +46,7 @@ function probeExecutable(id, label, names, hint) {
   return check(id, label, 'fail', `未找到 ${names.join(' / ')}`, hint);
 }
 
-function readSettings(home) {
+function readSettings(home: string): Record<string, string> {
   const file = path.join(home, 'config', 'settings.env');
   if (!fs.existsSync(file)) return {};
   try {
@@ -56,7 +56,7 @@ function readSettings(home) {
   }
 }
 
-export function runDoctor({ home, platform = 'all' } = {}) {
+export function runDoctor({ home, platform = 'all' }: { home: string; platform?: string }) {
   const wantPlatform = (name) => platform === 'all' || platform === name;
   const checks = [];
   const nodeMajor = Number(process.versions.node.split('.')[0]);

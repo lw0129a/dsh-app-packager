@@ -15,7 +15,8 @@
     "docs:check": "node scripts/check-docs.mjs",
     "cli": "node packages/app-packager/bin/app-packager.mjs",
     "doctor": "node packages/app-packager/bin/app-packager.mjs doctor",
-    "list": "node packages/app-packager/bin/app-packager.mjs list"
+    "list": "node packages/app-packager/bin/app-packager.mjs list",
+    "build": "pnpm -r build"
   },
   "keywords": [
     "uni-app-x",
@@ -25,5 +26,9 @@
     "ios",
     "android",
     "harmonyos"
-  ]
+  ],
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
 }

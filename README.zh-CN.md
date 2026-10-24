@@ -66,7 +66,7 @@ dsh plugin --profile desktop add dsh-app-packager
 
 ### Web 面板
 
-同一个插件还带浏览器侧代码（`./client.js`）：装了 Web 界面的 profile 会在侧栏面板列表里多一个 **应用打包** 入口，页面开在中栏：
+同一个插件还带浏览器侧代码（`./src/client.ts`）：装了 Web 界面的 profile 会在侧栏面板列表里多一个 **应用打包** 入口，页面开在中栏：
 
 - **引擎** —— 引擎目录、版本、是否已物化、探测到的 bash 桥接，缺引擎时一键初始化。
 - **环境检查** —— 与 `app_packager_doctor` 同一份报告，可只查某个平台或全部，每个失败项都带修复提示。
@@ -101,7 +101,7 @@ packages/
     bin/app-packager.mjs   # 可执行入口
     src/                   # home / projects / engine / doctor / cli
     engine/                # 打包工具.command、初始化.command、lib/、config/、signing/…
-  dsh-app-packager/        # DeepSeek Harness 插件：四个工具（index.js、web.js）+ Web 面板（client.js）
+  dsh-app-packager/        # DeepSeek Harness 插件：四个工具（index.js、web.js）+ Web 面板（src/client.ts）
 .github/workflows/ci.yml   # 三平台 × Node 18/20/22 + 打包检查
 docs/zh-CN/                # 发布上架、Windows 说明、架构（中文）
 docs/en/                   # 对应英文版

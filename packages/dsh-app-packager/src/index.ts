@@ -23,7 +23,7 @@ import {
   shellAvailable,
 } from 'app-packager';
 import { PACKAGE_KINDS, PLATFORM_VALUES, engineArgsFor, mountWebPanel, summarizeOutput } from './web.js';
-import { resolvePluginHome } from './index.mjs';
+import { resolvePluginHome } from './home.js';
 
 export const name = 'app-packager';
 

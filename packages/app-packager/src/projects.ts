@@ -56,7 +56,7 @@ function expand(value, vars) {
 }
 
 /** Parse a bash-style KEY=value file. Values quoted by the engine's `%q` survive. */
-export function parseEnvText(text, vars = {}) {
+export function parseEnvText(text: string, vars: Record<string, string> = {}): Record<string, string> {
   const out = {};
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -81,7 +81,7 @@ export function parseEnvText(text, vars = {}) {
   return out;
 }
 
-export function parseEnvFile(file, vars = {}) {
+export function parseEnvFile(file: string, vars: Record<string, string> = {}): Record<string, string> {
   const bytes = fs.readFileSync(file);
   const utf8 = bytes.toString('utf8');
   if (!utf8.includes('\uFFFD')) return parseEnvText(utf8, vars);
@@ -118,7 +118,7 @@ export function listProjects(home) {
     .sort()
     .map((name) => {
       const file = path.join(dir, name);
-      let config = {};
+      let config: Record<string, string> = {};
       let error = null;
       try {
         config = parseEnvFile(file, vars);
