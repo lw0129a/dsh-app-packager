@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.9] - 2026-10-24
+
+### Changed
+
+- **引擎迁移第 4 批：证书与上传层进 TypeScript。** 新增 `src/engine/certificates.ts`（对应 `engine/lib/certificates.sh`，610 行全量移植：就绪判定、证书源目录扫描与规范化改名、同名覆盖前归档到 `logs/certificate-history/<时间戳>/<平台>/`、平台清理与单文件删除、`cert-status` 的 JSON 契约不变）与 `src/engine/upload.ts` + `src/engine/uploaders/pgyer.ts`（平台清单解析、构建后上传与失败不中止语义、`latest.json` 产物发现、pgyer CLI 上传与 HarmonyOS HAP 走接口上传）。HTTP 从 `curl` 换成内置 `fetch`，不再依赖外部 uploader 脚本。新增 17 例测试。
+- 面板视觉与交互重做：卡片错峰淡入、悬停抬升、折叠箭头弹性旋转、按钮按压反馈与焦点环、顶栏毛玻璃、等宽数字显示时长、窄面板自适应两列；未引入 Tailwind 等新依赖，样式仍由宿主设计令牌驱动，并尊重 `prefers-reduced-motion`。
+
 ## [0.6.8] - 2026-10-23
 
 ### Changed

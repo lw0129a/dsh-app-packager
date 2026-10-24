@@ -420,59 +420,70 @@
     // 想整体调密度或手感时改这里一次就够。
     const CSS = `
       .ap-root {
-        --ap-gap: 14px;
+        --ap-gap: 16px;
         --ap-r-sm: 8px;
         --ap-r-md: 10px;
-        --ap-r-lg: 12px;
-        --ap-ease: cubic-bezier(.2, .7, .3, 1);
+        --ap-r-lg: 14px;
+        --ap-ease: cubic-bezier(.22, .68, .28, 1);
+        --ap-spring: cubic-bezier(.34, 1.56, .64, 1);
         --ap-fast: .14s var(--ap-ease);
-        --ap-shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 18px -12px rgba(0,0,0,.35);
+        --ap-mid: .22s var(--ap-ease);
+        --ap-shadow: 0 1px 2px rgba(0,0,0,.06), 0 10px 24px -16px rgba(0,0,0,.42);
+        --ap-shadow-lift: 0 2px 4px rgba(0,0,0,.07), 0 16px 32px -18px rgba(0,0,0,.5);
         display: flex; flex-direction: column; gap: var(--ap-gap); padding: 0 16px 28px;
         height: 100%; min-height: 0; max-height: 100%; box-sizing: border-box;
         overflow-y: auto; overscroll-behavior: contain;
         font-size: 13px; line-height: 1.55; color: var(--dsw-alias-label-primary, inherit);
+        font-variant-numeric: tabular-nums;
       }
+      .ap-root *, .ap-root *::before, .ap-root *::after { box-sizing: border-box; }
+      .ap-root ::selection { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 26%, transparent); }
       .ap-root::-webkit-scrollbar { width: 10px; height: 10px; }
-      .ap-root::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3, rgba(128,128,128,.28)); border: 3px solid transparent; background-clip: content-box; border-radius: 99px; }
+      .ap-root::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3, rgba(128,128,128,.28)); border: 3px solid transparent; background-clip: content-box; border-radius: 99px; transition: background .2s; }
       .ap-root::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-border-default, rgba(128,128,128,.45)); background-clip: content-box; }
 
-      /* 顶栏：品牌色细线 + 毛玻璃，滚动时始终压住内容。 */
-      .ap-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: sticky; top: 0; z-index: 3; margin: 0 -16px; padding: 12px 16px 10px;
-        background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, rgba(127,127,127,.06)));
-        backdrop-filter: blur(12px) saturate(1.2);
-        border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18));
-        box-shadow: 0 8px 16px -16px rgba(0,0,0,.5); }
+      /* 顶栏：毛玻璃 + 底部渐隐，滚动时把内容压在下面。 */
+      .ap-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; margin: 0 -16px; padding: 13px 16px 11px;
+        background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #1a1a1a) 82%, transparent);
+        backdrop-filter: blur(14px) saturate(1.4);
+        -webkit-backdrop-filter: blur(14px) saturate(1.4);
+        border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18)); }
+      .ap-head::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 12px; pointer-events: none;
+        background: linear-gradient(to bottom, rgba(0,0,0,.10), transparent); }
       .ap-title { font-size: 15px; font-weight: 650; letter-spacing: .2px; white-space: nowrap; }
       .ap-sub { font-size: 12px; color: var(--dsw-alias-label-tertiary, inherit); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .ap-path { font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-      /* 卡片：入场动画只在挂载时跑一次；展开板块等于挂载子内容，所以收放也跟着淡入。 */
-      @keyframes ap-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-      @keyframes ap-breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-      .ap-card { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+      /* 卡片：挂载时按顺序淡入；悬停只做 1px 抬起，不抢注意力。 */
+      @keyframes ap-rise { from { opacity: 0; transform: translateY(6px) scale(.995); } to { opacity: 1; transform: none; } }
+      @keyframes ap-breathe { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+      @keyframes ap-pulse-ring { 0% { box-shadow: 0 0 0 0 currentColor; } 70% { box-shadow: 0 0 0 4px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+      .ap-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 15px 16px;
         border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.26)); border-radius: var(--ap-r-lg);
-        background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.05));
-        animation: ap-rise .18s var(--ap-ease) both;
-        transition: border-color var(--ap-fast), box-shadow var(--ap-fast); }
-      .ap-card:hover { border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.34)); box-shadow: var(--ap-shadow); }
-      .ap-card > * { animation: ap-rise .22s var(--ap-ease) both; }
-      .ap-card > *:nth-child(2) { animation-delay: .02s; }
-      .ap-card > *:nth-child(3) { animation-delay: .04s; }
-      .ap-card > *:nth-child(n+4) { animation-delay: .06s; }
+        background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-layer-2, #222) 92%, transparent), var(--dsw-alias-bg-layer-1, #1a1a1a));
+        animation: ap-rise .26s var(--ap-ease) both;
+        transition: border-color var(--ap-mid), box-shadow var(--ap-mid), transform var(--ap-mid); }
+      .ap-root > .ap-card:nth-child(1) { animation-delay: 0s; }
+      .ap-root > .ap-card:nth-child(2) { animation-delay: .03s; }
+      .ap-root > .ap-card:nth-child(3) { animation-delay: .06s; }
+      .ap-root > .ap-card:nth-child(4) { animation-delay: .09s; }
+      .ap-root > .ap-card:nth-child(n+5) { animation-delay: .12s; }
+      .ap-card > * { animation: ap-rise .26s var(--ap-ease) both; animation-delay: .04s; }
       .ap-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .ap-card-title { font-size: 13px; font-weight: 650; margin-right: auto; letter-spacing: .2px; }
 
-      /* 折叠：标题本身是个按钮（键盘也能收放），右侧的操作按钮留在按钮之外，
-         点「刷新」之类的不会顺手把板块合上。 */
-      .ap-fold { display: flex; align-items: center; gap: 6px; margin-right: auto; padding: 2px 4px 2px 0; border: 0; border-radius: var(--ap-r-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+      /* 折叠：标题本身是按钮（键盘可收放），右侧操作按钮留在按钮外。 */
+      .ap-fold { display: flex; align-items: center; gap: 6px; margin-right: auto; padding: 3px 6px 3px 2px; border: 0; border-radius: var(--ap-r-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
         transition: color var(--ap-fast), background var(--ap-fast); }
       .ap-fold:hover { color: var(--dsw-alias-brand-primary, #4a8cff); }
+      .ap-fold:active { transform: translateY(1px); }
       .ap-fold:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4a8cff); outline-offset: 2px; }
-      .ap-fold-arrow { display: inline-block; font-size: 10px; line-height: 1; color: var(--dsw-alias-label-tertiary, inherit); transition: transform .18s var(--ap-ease), color var(--ap-fast); }
+      .ap-fold-arrow { display: inline-block; font-size: 10px; line-height: 1; color: var(--dsw-alias-label-tertiary, inherit);
+        transition: transform .24s var(--ap-spring), color var(--ap-fast); }
       .ap-fold:not(.ap-fold-open) .ap-fold-arrow { transform: rotate(-90deg); }
       .ap-fold:hover .ap-fold-arrow { color: inherit; }
 
-      .ap-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 3px 12px; font-size: 12.5px; }
+      .ap-row { display: grid; grid-template-columns: minmax(84px, max-content) minmax(0, 1fr); gap: 4px 14px; font-size: 12.5px; align-items: baseline; }
       .ap-row-label { color: var(--dsw-alias-label-tertiary, inherit); }
       .ap-row-value { min-width: 0; overflow-wrap: anywhere; }
       .ap-row-value.ap-mono { font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11.5px; }
@@ -480,39 +491,41 @@
       .ap-muted { color: var(--dsw-alias-label-tertiary, inherit); opacity: .8; font-size: 11.5px; }
       .ap-mark { text-align: center; font-weight: 700; }
 
-      /* 按钮：主按钮走品牌色描边+淡底，hover 再抬一点，按下有回落。 */
+      /* 按钮：hover 提亮，按下回落，主按钮带一点品牌色晕。 */
       .ap-btn { font: inherit; font-size: 12px; line-height: 1.4; padding: 4px 11px; border-radius: var(--ap-r-sm); white-space: nowrap;
         border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: transparent; color: inherit; cursor: pointer;
-        transition: background var(--ap-fast), border-color var(--ap-fast), color var(--ap-fast), transform var(--ap-fast), box-shadow var(--ap-fast); }
+        transition: background var(--ap-fast), border-color var(--ap-fast), color var(--ap-fast), box-shadow var(--ap-fast), transform .09s var(--ap-ease); }
       .ap-btn:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-3, rgba(128,128,128,.16)); border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.5)); }
-      .ap-btn:active:not(:disabled) { transform: translateY(1px); }
+      .ap-btn:active:not(:disabled) { transform: translateY(1px) scale(.985); }
       .ap-btn:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4a8cff); outline-offset: 2px; }
       .ap-btn:disabled { opacity: .45; cursor: default; }
-      .ap-btn-primary { border-color: var(--dsw-alias-brand-primary, #4a8cff); color: var(--dsw-alias-brand-primary, #4a8cff);
-        background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 12%, transparent); }
-      .ap-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 20%, transparent); }
+      .ap-btn-primary { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 70%, transparent); color: var(--dsw-alias-brand-primary, #4a8cff);
+        background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 13%, transparent); }
+      .ap-btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 22%, transparent);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 12%, transparent); }
       .ap-btn-sm { font-size: 11.5px; padding: 2px 8px; }
 
-      .ap-input { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: var(--ap-r-sm);
+      .ap-input { font: inherit; font-size: 12px; padding: 4px 9px; border-radius: var(--ap-r-sm);
         border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.08)); color: inherit;
-        transition: border-color var(--ap-fast), box-shadow var(--ap-fast); }
+        transition: border-color var(--ap-fast), box-shadow var(--ap-mid), background var(--ap-fast); }
       .ap-input:hover { border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.5)); }
       .ap-input:focus { outline: none; border-color: var(--dsw-alias-brand-primary, #4a8cff);
-        box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 18%, transparent); }
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary, #4a8cff) 20%, transparent); }
 
-      .ap-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-secondary, inherit); cursor: pointer; }
-      .ap-check input { accent-color: var(--dsw-alias-brand-primary, #4a8cff); }
-      .ap-check-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 0 8px; font-size: 12.5px; align-items: start;
-        padding: 3px 6px; margin: 0 -6px; border-radius: var(--ap-r-sm); transition: background var(--ap-fast); }
+      .ap-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-secondary, inherit); cursor: pointer; transition: color var(--ap-fast); }
+      .ap-check:hover { color: var(--dsw-alias-label-primary, inherit); }
+      .ap-check input { accent-color: var(--dsw-alias-brand-primary, #4a8cff); cursor: pointer; }
+      .ap-check-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 2px 8px; font-size: 12.5px; align-items: start;
+        padding: 4px 8px; margin: 0 -8px; border-radius: var(--ap-r-sm); transition: background var(--ap-fast); }
       .ap-check-row:hover { background: var(--dsw-alias-bg-layer-3, rgba(128,128,128,.1)); }
       .ap-check-hint { grid-column: 2; font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); }
 
       .ap-link { font-size: 12px; white-space: nowrap; color: var(--dsw-alias-label-link, #4c8dff); text-decoration: none; text-underline-offset: 2px;
-        transition: color var(--ap-fast); }
+        transition: color var(--ap-fast), opacity var(--ap-fast); }
       .ap-link:hover { text-decoration: underline; }
       .ap-link:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #4a8cff); outline-offset: 2px; border-radius: 4px; }
 
-      /* 状态标签：左侧一个小圆点，扫一眼就知道好不好。 */
+      /* 状态标签：左侧小圆点，失败时轻微呼吸。 */
       .ap-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
         border: 1px solid var(--dsw-alias-border-default, rgba(128,128,128,.42)); transition: background var(--ap-fast), border-color var(--ap-fast); }
       .ap-tag::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .85; }
@@ -529,9 +542,12 @@
       .ap-kv { font-size: 11.5px; color: var(--dsw-alias-label-tertiary, inherit); overflow-wrap: anywhere; }
       .ap-project { display: flex; flex-direction: column; gap: 4px; padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.16)); }
       .ap-project-name { font-size: 13px; font-weight: 650; }
-      .ap-scope { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--ap-r-md); border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.24)); background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.04)); }
+      .ap-scope { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--ap-r-md);
+        border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.24));
+        background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #1a1a1a) 70%, transparent); }
 
-      .ap-log { margin: 0; padding: 10px 12px; max-height: 40vh; overflow: auto; font-size: 11.5px; line-height: 1.5; font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); white-space: pre-wrap; word-break: break-all;
+      .ap-log { margin: 0; padding: 10px 12px; max-height: 40vh; overflow: auto; font-size: 11.5px; line-height: 1.55; tab-size: 2;
+        font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); white-space: pre-wrap; word-break: break-word;
         background: var(--dsw-alias-bg-base, rgba(128,128,128,.09)); border: 1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.18)); border-radius: var(--ap-r-md); }
       .ap-log::-webkit-scrollbar { width: 10px; height: 10px; }
       .ap-log::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3, rgba(128,128,128,.28)); border: 3px solid transparent; background-clip: content-box; border-radius: 99px; }
@@ -539,10 +555,22 @@
       .ap-box-error { border: 1px solid var(--dsw-alias-state-error, rgba(255,96,96,.5)); color: var(--dsw-alias-state-error, #ff6b6b); border-radius: var(--ap-r-md); padding: 8px 10px; font-size: 12px; white-space: pre-wrap; background: color-mix(in srgb, var(--dsw-alias-state-error, #ff6b6b) 8%, transparent); }
       .ap-box-warn { border: 1px solid var(--dsw-alias-state-warning, rgba(210,153,34,.5)); color: var(--dsw-alias-state-warning, #d29922); border-radius: var(--ap-r-md); padding: 8px 10px; font-size: 12px; white-space: pre-wrap; background: color-mix(in srgb, var(--dsw-alias-state-warning, #d29922) 8%, transparent); }
 
-      /* 系统开了「减少动态效果」就全部关掉，别跟无障碍设置对着干。 */
+      /* 悬停抬高只在真有指针的设备上做，触屏点完不会留下「悬停态」。 */
+      @media (hover: hover) and (pointer: fine) {
+        .ap-card:hover { border-color: var(--dsw-alias-border-l3, rgba(128,128,128,.36)); box-shadow: var(--ap-shadow-lift); transform: translateY(-1px); }
+      }
+      /* 窄侧栏：标签列收窄，避免值被挤成一列一个字。 */
+      @media (max-width: 520px) {
+        .ap-root { padding: 0 12px 24px; }
+        .ap-head { margin: 0 -12px; padding: 12px 12px 10px; }
+        .ap-row { grid-template-columns: minmax(64px, max-content) minmax(0, 1fr); gap: 2px 10px; }
+        .ap-card { padding: 13px 14px; }
+      }
+      /* 系统开了「减少动态效果」就全关，别跟无障碍设置对着干。 */
       @media (prefers-reduced-motion: reduce) {
-        .ap-card, .ap-card > *, .ap-tag.fail::before { animation: none; }
-        .ap-fold-arrow, .ap-btn, .ap-input { transition: none; }
+        .ap-card, .ap-card > *, .ap-tag.fail::before { animation: none !important; }
+        .ap-fold-arrow, .ap-btn, .ap-input, .ap-check, .ap-link, .ap-fold, .ap-card { transition: none !important; }
+        .ap-card:hover { transform: none; }
       }
     `;
 
