@@ -5,6 +5,8 @@ node_modules/
 
 # TypeScript build output (packages ship dist/ in the npm tarball)
 packages/*/dist/
+packages/*/dist-test/
+.scripts/
 
 # Local AppPackager runtime state materialized by `app-packager init`
 .app-packager/

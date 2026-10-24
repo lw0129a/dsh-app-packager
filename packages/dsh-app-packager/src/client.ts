@@ -209,6 +209,7 @@
       'job.kind.cert': '证书导入',
       'job.dropped': '（日志过长，已省略前 {n} 字符）',
       'job.waiting': '等待输出…',
+      'job.progress': '运行中 {time} · 当前：{line}',
       'job.problems': '发现 {errors} 项错误、{warnings} 项警告：',
       'job.warnOnly': '发现 {warnings} 项警告：',
       'job.more': '…另有 {n} 行，完整内容见下方日志',
@@ -398,6 +399,7 @@
       'job.blockedByCheck': 'The pre-build environment check failed, so the build did not start. Fix the [FAIL] items above, then press “Build” again.',
       'job.dropped': '(log truncated, {n} leading characters dropped)',
       'job.waiting': 'Waiting for output…',
+      'job.progress': 'Running for {time} · now: {line}',
       'job.problems': '{errors} error(s), {warnings} warning(s):',
       'job.warnOnly': '{warnings} warning(s):',
       'job.more': '…and {n} more lines; see the full log below',
@@ -674,6 +676,20 @@
         ),
         open ? props.children : null,
       );
+    }
+
+    /** 已经跑了多久：0s / 42s / 3m07s。轮询每 1.2s 触发一次重渲染，这里跟着走。 */
+    function clock(ms) {
+      const seconds = Math.max(0, Math.round(ms / 1000));
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes}m${String(seconds % 60).padStart(2, '0')}s`;
+    }
+
+    /** 最后一行非空输出 = 引擎正在干的活，用来在「运行中」旁边显示进度。 */
+    function lastLine(output) {
+      const lines = String(output || '').split(/\r?\n/).filter((line) => line.trim());
+      return lines.length > 0 ? lines[lines.length - 1].trim().slice(0, 90) : '';
     }
 
     function Panel(props) {
@@ -1727,6 +1743,16 @@
           ),
         },
         job && job.blockedByCheck ? h('div', { style: styles.error }, t('job.blockedByCheck')) : null,
+        jobRunning
+          ? h(
+              'div',
+              { className: 'ap-note' },
+              tf('job.progress', {
+                time: job.startedAt ? clock(Date.now() - job.startedAt) : '0s',
+                line: lastLine(job.output) || t('job.waiting'),
+              }),
+            )
+          : null,
         job && job.error && job.error !== '已被取消' ? h('div', { style: styles.error }, job.error) : null,
         // 升级换掉的正是宿主里那个插件条目。DSH 的客户端模块是按 rev 取的，而页面里
         // 存的 rev 来自启动时那份清单：升级后刷新页面，浏览器会拿着旧 rev 去要模块，

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Checks for the AppPackager host plugin and its harness bundle.
  *

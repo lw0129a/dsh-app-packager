@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] - 2026-10-23
+
+### Changed
+
+- **打包引擎开始迁进 TypeScript，仓库不再有 JavaScript 源码。** 第 1–3 批已落地：`src/engine/{settings,run,common,projects,workspace,sdk}.ts` 逐函数对应原来的 `engine/lib/common.sh`（日志/`die`、命令探测、manifest JSONC 解析、项目 ID 与 Bundle ID 推导、项目注册与 env 刷新、构建锁、`init_run`、`prepare_workspace` 的 rsync 隔离、三端离线 SDK 就绪判定、`--set` 覆盖项）。语义对齐后由 `packages/app-packager/test/engine-*.test.ts` 覆盖（45 例，含锁竞争、跨进程 `die` 退出码、工作区越界拒绝）。bash 引擎在迁移期间保持可跑，等第 4–7 批（`runner`/`parallel`/`certificates`/`uploaders`/`init`/`.command` 启动器/`engine.test.sh`）全部搬完后删除。
+- 清掉最后的 JavaScript 与 Swift：`bin/app-packager.mjs` → `src/bin.ts`（`bin` 指 `dist/bin.js`），`scripts/*.mjs` → `*.ts`（`tsconfig.scripts.json` → `.scripts/`），引擎里无调用者的 `make-brand-assets.swift` 删除。
+- 面板任务卡在「运行中」时显示已运行时长与当前输出行（1.2s 轮询刷新），不用再等到底才知道卡在哪一步。
+
 ## [0.6.7] - 2026-10-23
 
 ### Changed

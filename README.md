@@ -98,7 +98,7 @@ CI runs the unit tests and `init` / `list` / `doctor` smoke runs on `ubuntu-late
 ```
 packages/
   app-packager/            # CLI + packaging engine (engine/ is the original bash toolchain, kept as-is)
-    bin/app-packager.mjs   # executable entry
+    dist/bin.js   # executable entry
     src/                   # home / projects / engine / doctor / cli
     engine/                # 打包工具.command, 初始化.command, lib/, config/, signing/ …
   dsh-app-packager/        # DeepSeek Harness plugin: four tools (index.js, web.js) + web panel (src/client.ts)

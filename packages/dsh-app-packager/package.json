@@ -1,6 +1,6 @@
 {
   "name": "dsh-app-packager",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "description": "AppPackager for DeepSeek Harness: list uni-app x projects, check the local toolchain, and build iOS / Android / HarmonyOS packages on macOS, Windows and Linux.",
   "keywords": [
     "dsh",
@@ -88,12 +88,12 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "tsc -p tsconfig.json && node --test test/plugin.test.mjs",
+    "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test dist-test/plugin.test.js",
     "build": "tsc -p tsconfig.json",
     "prepack": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "app-packager": "workspace:^0.6.7"
+    "app-packager": "workspace:^0.6.8"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"

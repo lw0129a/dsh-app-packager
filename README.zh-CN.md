@@ -98,7 +98,7 @@ CI 在 `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22 上�
 ```
 packages/
   app-packager/            # CLI + 打包引擎（engine/ 为原 bash 工具链，原样保留）
-    bin/app-packager.mjs   # 可执行入口
+    dist/bin.js   # 可执行入口
     src/                   # home / projects / engine / doctor / cli
     engine/                # 打包工具.command、初始化.command、lib/、config/、signing/…
   dsh-app-packager/        # DeepSeek Harness 插件：四个工具（index.js、web.js）+ Web 面板（src/client.ts）

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Checks for the AppPackager Node half: env parsing, project listing, engine
  * materialization and the doctor report. Everything runs on a throwaway home.

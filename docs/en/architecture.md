@@ -7,7 +7,7 @@ Three layers, one behaviour: the original bash packaging toolchain stays the sin
 ```
         user                          agent (DeepSeek Harness)        browser (web profile)
           │                                     │                              │
-   bin/app-packager.mjs        packages/dsh-app-packager/src/index.ts      src/client.ts (panel)
+   dist/bin.js        packages/dsh-app-packager/src/index.ts      src/client.ts (panel)
           │  (arg parsing)            │  (4 tools)        │                    │ fetch
           └──────────────┬───────────┴───────────────────┘                    │
                          ▼                        web.js (9 exact routes) ◄───┘
@@ -25,7 +25,7 @@ Three layers, one behaviour: the original bash packaging toolchain stays the sin
 
 | Path | Responsibility |
 | --- | --- |
-| `packages/app-packager/bin/app-packager.mjs` | Executable entry; parses argv and dispatches to `src/cli.ts`. |
+| `packages/app-packager/dist/bin.js` | Executable entry; parses argv and dispatches to `src/cli.ts`. |
 | `packages/app-packager/src/cli.ts` | Command table (`init` `doctor` `list` `register` `check` `build` `run` `env` `version`), option parsing, pass-through of unknown engine arguments. |
 | `packages/app-packager/src/home.ts` | Engine directory resolution (`--dir` → `APP_PACKAGER_HOME` → the repository default), version-stamped materialisation, user-file preservation, `HOME_GITIGNORE`. |
 | `packages/dsh-app-packager/src/home.ts` | The plugin's single source for the engine directory and the upgrade wrapper: `resolvePluginHome` (explicit config → `APP_PACKAGER_HOME` → `<plugin>/home`, renaming a legacy `~/AppPackager` into place once — and only when that directory really is an engine home), `withHomePreserved` (stashes the home in the profile's `node_modules/.app-packager-home-backup` around an upgrade and restores it either way) and `pluginRoot`. Shared by the host tools, the panel backend and the upgrade script. |
@@ -65,12 +65,12 @@ The browser side is a second Cordis tree: the host reads `dsh.client` + `exports
 
 ## Tests and CI
 
-`node --test`, no framework: `packages/app-packager/test/packager.test.mjs` (env parsing, project discovery, materialisation, doctor), `packages/app-packager/test/engine.test.sh` (`parse_args` options, the package-env allow-list, the JSON of `profiles` and `sdk status`, `harmony_sdk_ready` — all inside a temporary `PIPELINE_ROOT`, which works because the harness copies `lib/` instead of symlinking it) and `packages/dsh-app-packager/test/plugin.test.mjs` (tool registration, schemas, rendering, argument validation, the host routes against fake request/response objects, the job runner, and a smoke test that loads `src/client.ts` with a stubbed React and asserts the panel registers into `sidebar.panellist` + `main`). CI runs both on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, plus CLI smoke runs and a `pnpm -r pack` job that validates the tarballs. The bash engine itself is untouched and untested by CI — Android/HarmonyOS builds need a real machine with HBuilderX.
+`node --test`, no framework: `packages/app-packager/test/packager.test.ts` (env parsing, project discovery, materialisation, doctor), `packages/app-packager/test/engine.test.sh` (`parse_args` options, the package-env allow-list, the JSON of `profiles` and `sdk status`, `harmony_sdk_ready` — all inside a temporary `PIPELINE_ROOT`, which works because the harness copies `lib/` instead of symlinking it) and `packages/dsh-app-packager/test/plugin.test.ts` (tool registration, schemas, rendering, argument validation, the host routes against fake request/response objects, the job runner, and a smoke test that loads `src/client.ts` with a stubbed React and asserts the panel registers into `sidebar.panellist` + `main`). CI runs both on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, plus CLI smoke runs and a `pnpm -r pack` job that validates the tarballs. The bash engine itself is untouched and untested by CI — Android/HarmonyOS builds need a real machine with HBuilderX.
 
 ## Extending it
 
 - **New CLI command**: add it to the table in `src/cli.ts`; anything the engine already understands can also be reached through `app-packager run <engine args>`.
-- **New agent tool**: add a definition inside `apply()` in `packages/dsh-app-packager/src/index.ts` (`{name, description, parameters, output, execute}`) and cover it in `test/plugin.test.mjs`.
+- **New agent tool**: add a definition inside `apply()` in `packages/dsh-app-packager/src/index.ts` (`{name, description, parameters, output, execute}`) and cover it in `test/plugin.test.ts`.
 - **New engine argument**: teach `engineArgsFor` in `packages/dsh-app-packager/web.js` (tools and panel share it) and extend the CLI pass-through if it belongs there too.
 - **Panel changes**: edit `src/client.ts` only — it hot-reloads in a running DSH; remember `package.json` changes need a restart.
 - **Engine changes**: edit `packages/app-packager/engine/`, bump the script version inside it, and update `engine/项目介绍.md` in the same commit (see [CONTRIBUTING.md](../../CONTRIBUTING.md)).

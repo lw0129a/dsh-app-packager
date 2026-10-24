@@ -10,12 +10,12 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node scripts/check-no-local-config.mjs && pnpm -r test",
-    "guard:check": "node scripts/check-no-local-config.mjs",
-    "docs:check": "node scripts/check-docs.mjs",
-    "cli": "node packages/app-packager/bin/app-packager.mjs",
-    "doctor": "node packages/app-packager/bin/app-packager.mjs doctor",
-    "list": "node packages/app-packager/bin/app-packager.mjs list",
+    "test": "tsc -p tsconfig.scripts.json && node .scripts/check-no-local-config.js && pnpm -r test",
+    "guard:check": "tsc -p tsconfig.scripts.json && node .scripts/check-no-local-config.js",
+    "docs:check": "tsc -p tsconfig.scripts.json && node .scripts/check-docs.js",
+    "cli": "pnpm -C packages/app-packager build && node packages/app-packager/dist/bin.js",
+    "doctor": "pnpm -C packages/app-packager build && node packages/app-packager/dist/bin.js doctor",
+    "list": "pnpm -C packages/app-packager build && node packages/app-packager/dist/bin.js list",
     "build": "pnpm -r build"
   },
   "keywords": [
