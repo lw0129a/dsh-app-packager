@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.10] - 2026-10-24
+
+### Fixed
+
+- **插件被重复挂载时不再抛 `webserver: duplicate exact route "/api/app-packager/state"`。** 插件市场更新会在同一个宿主进程里二次 apply 插件，旧版本每次都重新注册同一批 exact route，宿主抛错后更新失败并回滚。`packages/dsh-app-packager/src/web.ts:1219` 起新增 `mountedServers` WeakSet 守卫：同一个 webServer 只挂一次，重复挂载返回空 disposer，dispose 时释放以便之后重挂。新增 1 例测试（插件侧 43 例）。
+
 ## [0.6.9] - 2026-10-24
 
 ### Changed

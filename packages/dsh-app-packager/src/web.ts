@@ -1223,12 +1223,18 @@ function queryOf(req) {
  * @param {object} [config] bundle patch config.
  * @returns {(() => void) | null} disposer, or null when no web server is up yet.
  */
+// ponytail: 同一 webServer 只挂一次。插件被重复 apply（热更新、条目重复插入）时
+// 再注册会抛 webserver: duplicate exact route，这里吞掉第二次。
+const mountedServers = new WeakSet<object>();
+
 export function mountWebPanel(ctx: any, config: any = {}): any {
   // `ctx.get` reads a service without the inject requirement; touching
   // `ctx.webServer` from a plugin that does not inject it throws
   // ("cannot get property \"webServer\" without inject"), so never do that here.
   const webServer = ctx?.get?.('webServer');
   if (!webServer || typeof webServer.register !== 'function') return null;
+  if (mountedServers.has(webServer)) return () => {};
+  mountedServers.add(webServer);
 
   const panel = createPanel({ config });
   const routes = [
@@ -1265,5 +1271,6 @@ export function mountWebPanel(ctx: any, config: any = {}): any {
   }
   return () => {
     for (const dispose of disposers.splice(0)) dispose?.();
+    mountedServers.delete(webServer);
   };
 }

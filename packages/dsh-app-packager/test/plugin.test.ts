@@ -942,6 +942,33 @@ test('mountWebPanel 在没有 webServer 时返回 null，且不直接读 ctx.web
   assert.throws(() => ctx.webServer, /without inject/);
 });
 
+test('同一 webServer 重复挂载不再抛 duplicate exact route，dispose 后可重新挂载', () => {
+  // 复刻宿主：重复注册同一 exact route 直接抛错（真实报错文案）。
+  const paths = new Set();
+  const server = {
+    register({ path }) {
+      if (paths.has(path)) throw new Error(`webserver: duplicate exact route "${path}"`);
+      paths.add(path);
+      return () => paths.delete(path);
+    },
+  };
+  const ctx = { get: (name) => (name === 'webServer' ? server : undefined) };
+
+  const dispose = mountWebPanel(ctx, {});
+  assert.equal(typeof dispose, 'function');
+  const count = paths.size;
+  assert.ok(count > 0);
+
+  assert.doesNotThrow(() => mountWebPanel(ctx, {}));
+  assert.equal(paths.size, count);
+
+  dispose();
+  assert.equal(paths.size, 0);
+  const again = mountWebPanel(ctx, {});
+  assert.equal(paths.size, count);
+  again();
+});
+
 test('client half：注册侧栏行与主面板，并能渲染', () => {
   const source = readFileSync(new URL('../dist/client.js', import.meta.url), 'utf8');
   const flat = source.replace(/\s+/g, ' ');
