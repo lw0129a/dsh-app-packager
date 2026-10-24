@@ -96,7 +96,7 @@
     "app-packager": "workspace:^0.6.10"
   },
   "peerDependencies": {
-    "@deepseek-ai/schemastery": "^3.18.4"
+    "@deepseek-ai/schemastery": "^3.18.5"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/schemastery": {
@@ -104,7 +104,7 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/schemastery": "^3.18.4"
+    "@deepseek-ai/schemastery": "^3.18.5"
   },
   "publishConfig": {
     "access": "public"
