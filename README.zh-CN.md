@@ -22,8 +22,8 @@
 
 ```bash
 # 全局安装（也可以直接用 npx）
-npm i -g app-packager
-# 或 pnpm add -g app-packager
+npm i -g dsh-app-packager
+# 或 pnpm add -g dsh-app-packager
 
 app-packager init          # 首次：把打包引擎复制到 ~/AppPackager，并进入初始化向导
 app-packager doctor        # 检查这台机器能打哪些平台
@@ -36,9 +36,9 @@ app-packager build ios --all
 不安装也能开箱试用：
 
 ```bash
-npx app-packager doctor
-npx app-packager build harmony my-project
-npx app-packager build mp-weixin my-project   # 编译并上传微信公众平台
+npx dsh-app-packager doctor
+npx dsh-app-packager build harmony my-project
+npx dsh-app-packager build mp-weixin my-project   # 编译并上传微信公众平台
 ```
 
 引擎目录默认 `~/AppPackager`，可用 `APP_PACKAGER_HOME` 环境变量或 `--dir <路径>` 指定。初始化向导会把同级目录下的 uni-app x 项目自动登记到 `config/projects/`；也可以用 `--search-roots` 追加扫描目录，或用 `app-packager register <路径>`（面板里的「选择目录…」按钮）登记磁盘上任意位置的项目。

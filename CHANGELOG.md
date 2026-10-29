@@ -1,8 +1,14 @@
 # Changelog
 
-All notable changes to this project are documented here. Both published packages share a version number.
+All notable changes to this project are documented here. The plugin ships the engine it is built from, so there is only one published package.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.7.2] - 2026-10-29
+
+### Changed
+
+- 只发布一个包：引擎（`dist/` 与 `engine/`）在 prepack 时复制进插件包的 `vendor/app-packager/`，插件不再依赖 `app-packager` 这个独立包。`npx dsh-app-packager build ...` 可以直接用，`app-packager` 包从 npm 撤下。
 
 ## [0.7.1] - 2026-10-29
 

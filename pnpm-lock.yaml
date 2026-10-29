@@ -176,14 +176,13 @@ importers:
   packages/app-packager: {}
 
   packages/dsh-app-packager:
-    dependencies:
-      app-packager:
-        specifier: workspace:^0.7.0
-        version: link:../app-packager
     devDependencies:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.4
         version: 3.18.4
+      app-packager:
+        specifier: workspace:^0.7.0
+        version: link:../app-packager
 
 packages:
 

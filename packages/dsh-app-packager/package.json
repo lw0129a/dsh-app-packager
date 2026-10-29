@@ -1,6 +1,6 @@
 {
   "name": "dsh-app-packager",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "AppPackager for DeepSeek Harness · 用 HBuilderX 一键配好 iOS / Android / HarmonyOS 环境，打出安装包并一键上传",
   "icon": "icon.svg",
   "keywords": [
@@ -43,6 +43,7 @@
     "cordis.patch.yml",
     "icon.svg",
     "assets",
+    "vendor",
     "README.md",
     "README.zh-CN.md"
   ],
@@ -91,12 +92,9 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test dist-test/plugin.test.js",
-    "build": "tsc -p tsconfig.json",
-    "prepack": "tsc -p tsconfig.json"
-  },
-  "dependencies": {
-    "app-packager": "workspace:^0.7.0"
+    "build": "node scripts/vendor-engine.mjs && tsc -p tsconfig.json && node scripts/link-vendored-engine.mjs",
+    "test": "node scripts/vendor-engine.mjs && tsc -p tsconfig.json && node scripts/link-vendored-engine.mjs && tsc -p tsconfig.test.json && node --test dist-test/plugin.test.js",
+    "prepack": "node scripts/vendor-engine.mjs && tsc -p tsconfig.json && node scripts/link-vendored-engine.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"
@@ -107,10 +105,14 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/schemastery": "^3.18.4"
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "app-packager": "workspace:^0.7.0"
   },
   "publishConfig": {
     "access": "public"
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "app-packager": "./vendor/app-packager/dist/bin.js"
+  }
 }

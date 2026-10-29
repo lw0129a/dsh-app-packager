@@ -6,6 +6,8 @@ node_modules/
 # TypeScript build output (packages ship dist/ in the npm tarball)
 packages/*/dist/
 packages/*/dist-test/
+# Engine copy vendored into the plugin at build time
+packages/dsh-app-packager/vendor/
 .scripts/
 
 # Local AppPackager runtime state materialized by `app-packager init`

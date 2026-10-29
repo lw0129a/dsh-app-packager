@@ -22,8 +22,8 @@ A local, offline toolchain that turns uni-app x projects into **iOS IPA / Androi
 
 ```bash
 # install globally (or just use npx)
-npm i -g app-packager
-# or: pnpm add -g app-packager
+npm i -g dsh-app-packager
+# or: pnpm add -g dsh-app-packager
 
 app-packager init          # first run: copy the engine to ~/AppPackager and start the wizard
 app-packager doctor        # what can this machine build?
@@ -36,9 +36,9 @@ app-packager build ios --all
 Without installing anything:
 
 ```bash
-npx app-packager doctor
-npx app-packager build harmony my-project
-npx app-packager build mp-weixin my-project   # compile + upload to the WeChat MP platform
+npx dsh-app-packager doctor
+npx dsh-app-packager build harmony my-project
+npx dsh-app-packager build mp-weixin my-project   # compile + upload to the WeChat MP platform
 ```
 
 The engine directory defaults to `~/AppPackager`; override it with the `APP_PACKAGER_HOME` environment variable or `--dir <path>`. The wizard registers uni-app x projects found next to it into `config/projects/`; `--search-roots` adds more directories to scan, and `app-packager register <path>` (or the panel's **Choose folder…** button) registers a project anywhere on disk.
