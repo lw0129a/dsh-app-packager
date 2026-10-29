@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-29
+
+### Changed
+
+- **更新插件改成「先关旧版，再安装」：** 面板点「升级插件」时不再挂一条等着装完的任务，而是先停掉在跑的任务、撤掉插件自己注册的全部路由（旧版本当场关闭），再由 `dist/upgrade.js` 在后台独立进程里跑安装，输出写进 `home/logs/upgrade-<时间>.log`；关闭之后面板不再接受新任务，装完重启 DeepSeek Harness 生效。宿主没有重载插件的 API，所以「新旧同时在线」是做不到的，旧版必须真的下线。
+- **升级失败不再丢引擎目录：** 安装进程如果在暂存 `home` 与恢复之间被杀（SIGKILL、关终端、pnpm 失败），下次启动由新增的 `recoverUpgradeBackup()` 把 `.app-packager-home-backup` 认领回 `home`；已有 `home` 时只提示、绝不覆盖。离线 SDK、证书、项目配置不再需要人肉搬。
+- **自动升级能找到 `dsh` 了：** 以前只试 `/usr/local/bin/dsh`，Homebrew（`/opt/homebrew/bin`）或自定义 `PATH` 的机器会掉到 `pnpm add` 装错地方。现在按 `DSH_BIN` → `/usr/local/bin` → `/opt/homebrew/bin` → `PATH` 顺序查找，全都找不到才退回 pnpm 并提示。
+- 插件图标：蓝色渐变（`#57B0FF` → `#1B4FD6`）+ 白色等距包裹，`package.json` 增加 `icon` 字段；侧栏图标换成同一剪影（等距箱 + 顶面淡填充，18px 下不放箭头）。描述改中英双语。
+
+### Added
+
+- 测试：升级关闭流程（停任务、撤路由、后台安装、关闭后拒收任务）、HTTP 层升级请求后路由归零、升级备份自愈——插件侧 46 例。
+
 ## [0.6.10] - 2026-10-24
 
 ### Fixed

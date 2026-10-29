@@ -74,6 +74,7 @@
       'upgrade.hint': '升级会先把引擎目录（SDK、证书、项目配置）暂存到插件旁边，装完立即移回，不会丢；升级完成后重启 DeepSeek Harness 生效。',
       'upgrade.run': '升级插件',
       'upgrade.unavailable': '这段代码不在 DSH 插件目录里，无法从面板升级：请在终端执行 dsh plugin --profile <profile> add dsh-app-packager@latest。',
+      'upgrade.closing': '旧版本已关闭，新版本正在后台安装（面板已失效，这是预期的）。装完重启 DeepSeek Harness 生效；安装日志：{{log}}',
       'upgrade.after': '插件已升级：请重启 DeepSeek Harness。别拿刷新页面代替 —— 页面里记的是启动时那份清单给的客户端模块版本号，刷新会去取一个已经不存在的版本（404），侧栏入口反而会消失。',
       cert: '证书',
       'cert.hint': '证书文件夹整个交给引擎：里面的 .mobileprovision / .p12 / .cer / .p7b / .keystore / keystore.properties 会按平台自动归位到 certificates/ 下，同名文件覆盖即更新（旧文件进 logs/certificate-history），来源文件夹不动。',
@@ -263,6 +264,7 @@
       'upgrade.hint': 'The upgrade parks the engine directory (SDKs, certificates, project configs) next to the plugin, installs, then moves it straight back, so nothing is lost. Restart DeepSeek Harness afterwards.',
       'upgrade.run': 'Upgrade plugin',
       'upgrade.unavailable': 'This code is not inside a DSH plugin directory, so the panel cannot upgrade it: run dsh plugin --profile <profile> add dsh-app-packager@latest.',
+      'upgrade.closing': 'The old version is shut down and the new one is installing in the background (this panel is dead now, by design). Restart DeepSeek Harness once it finishes; install log: {{log}}',
       'upgrade.after': 'The plugin has been upgraded: restart DeepSeek Harness. Do not reload the page instead — the page still holds the client-module revision from boot, so a reload asks for a revision that no longer exists (404) and the sidebar entry disappears.',
       cert: 'Certificates',
       'cert.hint': 'Hand the whole folder to the engine: the .mobileprovision / .p12 / .cer / .p7b / .keystore / keystore.properties inside are filed under certificates/ by platform, overwriting the same name means “updated” (the old file goes to logs/certificate-history) and the source folder is left alone.',
@@ -734,6 +736,8 @@
       const [job, setJob] = useState(null);
       const [error, setError] = useState('');
       const [busy, setBusy] = useState('');
+      // 升级时宿主会先把旧版本关掉（撤路由）；这里拿到的就是那一刻的凭据：日志路径。
+      const [closing, setClosing] = useState(null);
       const [platform, setPlatform] = useState('all');
       const [version, setVersion] = useState('');
       const [uploads, setUploads] = useState({});
@@ -782,7 +786,12 @@
         }
       }, []);
 
-      const refresh = useCallback(() => guard('state', async () => setState(await call('state'))), [guard]);
+      // 旧版本关掉之后，state/job 接口全部 404；再拉只会把「已停用」刷成一屏红字。
+      const closingRef = useRef(null);
+      const refresh = useCallback(() => {
+        if (closingRef.current) return undefined;
+        return guard('state', async () => setState(await call('state')));
+      }, [guard]);
 
       useEffect(() => {
         refresh();
@@ -794,6 +803,7 @@
         if (!jobId || !jobRunning) return undefined;
         let alive = true;
         const timer = setInterval(async () => {
+          if (closingRef.current) return;
           try {
             const next = await call(`job/log?id=${encodeURIComponent(jobId)}`);
             if (alive) setJob(next);
@@ -1056,8 +1066,17 @@
         setJob(await call('job', { method: 'POST', body: { kind: 'sdk', ...spec } }));
         refresh();
       });
+      // 宿主收到升级请求后先把旧版本关掉（停任务 + 撤路由），再把安装甩到后台，
+      // 所以这次回包不是 job 而是「已关闭」：面板从此只显示日志路径，等重启。
       const upgradePlugin = () => guard('upgrade', async () => {
-        setJob(await call('job', { method: 'POST', body: { kind: 'upgrade' } }));
+        const answer = await call('job', { method: 'POST', body: { kind: 'upgrade' } });
+        if (answer && answer.closing) {
+          closingRef.current = answer;
+          setClosing(answer);
+          setJob(null);
+          return;
+        }
+        setJob(answer);
       });
 
       // Certificate import rides the same job route: the whole folder goes to the
@@ -1802,6 +1821,7 @@
         { className: 'ap-root', ref: rootRef },
         header,
         error ? h('div', { style: styles.error }, `${t('error')}: ${error}`) : null,
+        closing ? h('div', { style: styles.warn }, tf('upgrade.closing', { log: closing.log || '' })) : null,
         engineCard,
         doctorCard,
         sdkCard,
@@ -1817,9 +1837,12 @@
       return h(
         'svg',
         { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' },
-        h('path', { d: 'M21 8.4 12 3.6 3 8.4v7.2l9 4.8 9-4.8z' }),
-        h('path', { d: 'M3 8.4l9 4.8 9-4.8' }),
-        h('path', { d: 'M12 13.2v7.2' }),
+        // 和应用图标同一个剪影：等距包裹。18px 下顶面镶箭头会糊成一团，只留顶面淡填充，
+        // 让它读作「一个包裹」而不是普通方块；线宽 1.7 与侧栏其它行一致。
+        h('path', { d: 'M12 2.8 20.8 7.6 12 12.4 3.2 7.6Z', fill: 'currentColor', fillOpacity: 0.1, stroke: 'none' }),
+        h('path', { d: 'M12 2.8 20.8 7.6v8.8L12 21.2 3.2 16.4V7.6Z' }),
+        h('path', { d: 'M3.2 7.6 12 12.4l8.8-4.8' }),
+        h('path', { d: 'M12 12.4v8.8' }),
       );
     }
 

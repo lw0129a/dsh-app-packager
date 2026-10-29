@@ -653,9 +653,52 @@ export interface PanelOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+/**
+ * Where a background upgrade writes its log. The panel is gone by then (its routes
+ * are disposed first), so the file is the only place the install can talk back.
+ */
+function upgradeLogPath(home) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return path.join(home, 'logs', `upgrade-${stamp}.log`);
+}
+
+/**
+ * Start the installer as a detached child so it keeps running after the panel —
+ * and even the harness window — closes. `dist/upgrade.js` parks the engine home,
+ * runs `dsh plugin … add dsh-app-packager@latest`, then moves the home back.
+ */
+function launchUpgrade({ script, cwd, log }) {
+  fs.mkdirSync(path.dirname(log), { recursive: true });
+  const fd = fs.openSync(log, 'a');
+  try {
+    fs.writeSync(fd, `\n=== ${new Date().toISOString()} app-packager upgrade ===\n`);
+    const child = spawnProcess(process.execPath, [script], { cwd, stdio: ['ignore', fd, fd], detached: true });
+    child.unref();
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNode, pick = pickFolder, limit, outputLimit, moduleUrl = import.meta.url, env = process.env }: PanelOptions = {}): any {
   const runner = createJobRunner({ spawn, nodeSpawn, limit, outputLimit });
   const homeNotices = [];
+  // 升级要先把旧版本关掉：撤掉自己挂在宿主上的路由（mountWebPanel 注册回来），
+  // 再在后台跑安装脚本。宿主没有「重载插件」的 API，所以装完必须重启才换新代码。
+  let closing = false;
+  const shutdownHooks = [];
+  const spawnUpgrade = typeof config.spawnUpgrade === 'function' ? config.spawnUpgrade : launchUpgrade;
+  const shutDown = () => {
+    for (const hook of shutdownHooks.splice(0)) {
+      try {
+        hook();
+      } catch {
+        /* 撤路由失败不该拦住安装：最坏是旧路由多活一会儿 */
+      }
+    }
+  };
+  const onShutdown = (hook: () => void) => {
+    if (typeof hook === 'function') shutdownHooks.push(hook);
+  };
   const homeOf = () => resolvePluginHome(config.home || '', {
     moduleUrl,
     env,
@@ -910,8 +953,12 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       };
     },
 
+    /** Host mounts its route disposer here; the upgrade closes the old version through it. */
+    onShutdown,
+
     /** Start a `check` / `build` / `sdk` / `upgrade` run; returns the job record. */
     startJob(spec: JobArgs = {}) {
+      if (closing) throw new Error('插件正在更新，暂不接受新任务；装好后重启 DeepSeek Harness。');
       const home = homeOf();
       // No-op while the home already carries the current engine; otherwise this
       // refreshes the scripts a plugin upgrade left behind (user data stays).
@@ -993,19 +1040,35 @@ export function createPanel({ config = {}, spawn = runEngine, nodeSpawn = runNod
       }
 
       // 升级插件：home 在插件目录内，升级前先把它暂存到插件旁边、升级完再移回
-      // （upgrade.mjs），所以已下载的 SDK / 证书 / 项目配置都不会丢。
+      // （dist/upgrade.js），所以已下载的 SDK / 证书 / 项目配置都不会丢。
       if (spec.kind === 'upgrade') {
         const root = pluginRoot(moduleUrl, env);
         if (!root) {
           throw new Error('当前代码不在 DSH 插件目录内，无法自动升级。请执行：dsh plugin --profile <profile> add dsh-app-packager@latest');
         }
-        return runner.start({
-          kind: 'upgrade',
-          home,
-          commands: [['upgrade']],
-          node: { script: path.join(root, 'upgrade.mjs'), args: [], cwd: root },
-          timeoutMs: config.upgradeTimeoutMs || 1_800_000,
-        });
+        // 「先关旧版，再更新」：停掉正在跑的任务、撤掉自己注册的路由，然后让安装脚本
+        // 在后台独立跑（detached，输出写进 home/logs）。等这一刻之后再有人调面板，
+        // 拿到的就是 404 —— 旧版本确实已经关掉了。
+        closing = true;
+        const stopped = [];
+        for (const job of runner.list()) {
+          if (!job.running) continue;
+          stopped.push(job.id);
+          Promise.resolve(runner.kill(job.id)).catch(() => {});
+        }
+        const script = path.join(root, 'dist', 'upgrade.js');
+        const log = upgradeLogPath(home);
+        // 让路由先把响应写回去，再撤自己：否则这次请求会挂在一个已经关掉的处理器上。
+        setTimeout(() => {
+          shutDown();
+          try {
+            spawnUpgrade({ script, cwd: root, log, home });
+          } catch (error) {
+            closing = false;
+            homeNotices.push(`后台安装没能启动：${String(error?.message || error)}`);
+          }
+        }, 0);
+        return { kind: 'upgrade', closing: true, stopped, script, log };
       }
 
       // 上传是独立动作：只把已归档的安装包送到分发平台，不重新打包，也不做打包前检查。
@@ -1234,7 +1297,6 @@ export function mountWebPanel(ctx: any, config: any = {}): any {
   const webServer = ctx?.get?.('webServer');
   if (!webServer || typeof webServer.register !== 'function') return null;
   if (mountedServers.has(webServer)) return () => {};
-  mountedServers.add(webServer);
 
   const panel = createPanel({ config });
   const routes = [
@@ -1253,24 +1315,35 @@ export function mountWebPanel(ctx: any, config: any = {}): any {
   ];
 
   const disposers = [];
-  for (const route of routes) {
-    disposers.push(
-      webServer.register({
-        kind: 'exact',
-        path: route.path,
-        handler: async (req, res) => {
-          try {
-            const payload = await route.run(await readJson(req), queryOf(req));
-            sendJson(res, 200, payload);
-          } catch (error) {
-            sendJson(res, 500, { error: String(error?.message || error) });
-          }
-        },
-      }),
-    );
+  try {
+    for (const route of routes) {
+      disposers.push(
+        webServer.register({
+          kind: 'exact',
+          path: route.path,
+          handler: async (req, res) => {
+            try {
+              const payload = await route.run(await readJson(req), queryOf(req));
+              sendJson(res, 200, payload);
+            } catch (error) {
+              sendJson(res, 500, { error: String(error?.message || error) });
+            }
+          },
+        }),
+      );
+    }
+  } catch (error) {
+    // 挂到一半失败：先把已挂的撤掉，也不要把 webServer 记成「已挂载」，
+    // 否则下一次 apply 会被 WeakSet 挡掉，路由永远补不回来。
+    for (const dispose of disposers.splice(0)) dispose?.();
+    throw error;
   }
-  return () => {
+  mountedServers.add(webServer);
+  const unmount = () => {
     for (const dispose of disposers.splice(0)) dispose?.();
     mountedServers.delete(webServer);
   };
+  // 升级时先调这个：路由全撤掉，旧版本的面板再也调不到宿主。
+  panel.onShutdown?.(unmount);
+  return unmount;
 }

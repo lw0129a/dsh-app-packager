@@ -17,7 +17,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { apply, inject, name } from '../dist/index.js';
 import { createJobRunner, createPanel, downloadDestination, engineArgsFor, engineCommandsFor, mountWebPanel, scopePlatforms, sdkPlatforms, summarizeOutput } from '../dist/web.js';
-import { LEGACY_HOME_NAME, homeInPlugin, isNewerVersion, legacyHome, pluginRoot, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../dist/home.js';
+import { LEGACY_HOME_NAME, homeInPlugin, isNewerVersion, legacyHome, pluginRoot, recoverUpgradeBackup, resolvePluginHome, upgradeBackupDir, withHomePreserved } from '../dist/home.js';
 
 /**
  * Mirror cordis service access: reading `ctx.<service>` without declaring it in
@@ -969,6 +969,70 @@ test('同一 webServer 重复挂载不再抛 duplicate exact route，dispose 后
   again();
 });
 
+test('挂在半路失败时回滚已挂路由，同一个 webServer 下次仍能补齐', () => {
+  const paths = new Set();
+  let failAt = 3;
+  const server = {
+    register({ path }) {
+      if (paths.has(path)) throw new Error(`webserver: duplicate exact route "${path}"`);
+      if ((failAt -= 1) === 0) throw new Error('webserver: register exploded');
+      paths.add(path);
+      return () => paths.delete(path);
+    },
+  };
+  const ctx = { get: (name) => (name === 'webServer' ? server : undefined) };
+
+  assert.throws(() => mountWebPanel(ctx, {}), /register exploded/);
+  assert.equal(paths.size, 0, '半路失败时已挂上的路由必须撤掉');
+
+  failAt = -1;
+  const dispose = mountWebPanel(ctx, {});
+  assert.equal(typeof dispose, 'function');
+  assert.ok(paths.size > 0, '同一个 webServer 上还能重新挂上：失败的那次不能把它记成「已挂载」');
+  dispose();
+  assert.equal(paths.size, 0);
+});
+
+test('面板收到升级请求：先撤掉自己的路由，再让安装脚本在后台跑', async () => {
+  const routes = new Map();
+  const server = {
+    register({ path, handler }) {
+      routes.set(path, handler);
+      return () => routes.delete(path);
+    },
+  };
+  const ctx = { get: (name) => (name === 'webServer' ? server : undefined) };
+  const home = fixtureHome();
+  const launches = [];
+  const dispose = mountWebPanel(ctx, { home, spawnUpgrade: (info) => launches.push(info) });
+  assert.equal(typeof dispose, 'function');
+
+  const req = {
+    method: 'POST',
+    url: '/api/app-packager/job',
+    async *[Symbol.asyncIterator]() {
+      yield Buffer.from(JSON.stringify({ kind: 'upgrade' }));
+    },
+  };
+  const answer = { status: 0, body: '' };
+  const res = {
+    setHeader() {},
+    end(chunk) { answer.body = String(chunk || ''); },
+    set statusCode(value) { answer.status = value; },
+    get statusCode() { return answer.status; },
+  };
+  await routes.get('/api/app-packager/job')(req, res);
+  const payload = JSON.parse(answer.body);
+  assert.equal(answer.status, 200);
+  assert.equal(payload.closing, true, '升级的语义是「旧版本已关闭」，不是起一条任务');
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(routes.size, 0, '旧版本的路由必须全部撤掉');
+  assert.equal(launches.length, 1, '安装脚本在后台跑');
+  assert.match(launches[0].log, /logs[\\/]upgrade-/);
+  rmSync(home, { recursive: true, force: true });
+});
+
 test('client half：注册侧栏行与主面板，并能渲染', () => {
   const source = readFileSync(new URL('../dist/client.js', import.meta.url), 'utf8');
   const flat = source.replace(/\s+/g, ' ');
@@ -1598,20 +1662,30 @@ test('升级插件：走插件自己的 node 脚本，并用引擎目录暂存�
     options.onLine?.('升级完成', 'stdout');
     return Promise.resolve({ code: 0, signal: null, stdout: '升级完成\n', stderr: '' });
   };
+  const launches = [];
   const panel = createPanel({
-    config: { home },
+    config: { home, spawnUpgrade: (info) => launches.push(info) },
     spawn: fakeSpawn(record),
     nodeSpawn,
     moduleUrl: pathToFileURL(join(plugin, 'web.js')).href,
   });
+  let shut = 0;
+  panel.onShutdown(() => { shut += 1; });
   const started = panel.startJob({ kind: 'upgrade' });
-  assert.equal(started.kind, 'upgrade');
-  for (let index = 0; index < 4; index += 1) await settle();
+  // 「先关旧版，再更新」：回包说的是关闭状态，不是一条挂着的任务。
+  assert.equal(started.closing, true, '升级先把旧版本关掉');
+  assert.deepEqual(started.stopped, [], '没有在跑的任务就不用停');
+  assert.equal(started.script, join(plugin, 'dist', 'upgrade.js'), '升级脚本就在 dist 里，不再是构建时并不生成的 upgrade.mjs');
+  assert.match(started.log, /logs[\\/]upgrade-.*\.log$/, '面板已经失效，日志只能落在文件里');
+
+  await new Promise((resolve) => setTimeout(resolve, 20)); // 关闭动作排在 setTimeout(0) 里，等它落地
+  assert.equal(shut, 1, '先撤掉自己挂在宿主上的路由');
   assert.deepEqual(record, [], '升级不通过引擎跑');
-  assert.equal(nodes.length, 1);
-  assert.equal(nodes[0].script, join(plugin, 'upgrade.mjs'));
-  assert.equal(nodes[0].cwd, plugin);
-  assert.match(panel.jobLog(started.id).output, /升级完成/);
+  assert.equal(launches.length, 1);
+  assert.equal(launches[0].script, join(plugin, 'dist', 'upgrade.js'));
+  assert.equal(launches[0].cwd, plugin);
+  assert.equal(launches[0].log, started.log);
+  assert.throws(() => panel.startJob({ kind: 'check' }), /正在更新/, '关掉之后不再接新任务');
 
   // 用平台原生的临时路径造 URL：Windows 上 fileURLToPath('file:///tmp/elsewhere/web.js')
   // 直接抛 'File URL path must be absolute'，就连「路径里没有 node_modules」这条断言都进不去。
@@ -1639,6 +1713,36 @@ test('升级期间不丢引擎目录：暂存到插件旁边，成功或失败�
 
   await assert.rejects(withHomePreserved(plugin, async () => { throw new Error('安装失败'); }), /安装失败/);
   assert.equal(readFileSync(join(home, 'sdk', 'marker.txt'), 'utf8'), 'ios sdk', '升级失败也必须还原');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('升级中途被杀：下次启动把暂存的引擎目录认领回来，已有 home 时不覆盖', () => {
+  const root = mkdtempSync(join(tmpdir(), 'app-packager-recover-'));
+  const profile = join(root, 'profile');
+  const plugin = join(profile, 'node_modules', 'dsh-app-packager');
+  mkdirSync(plugin, { recursive: true });
+  writeFileSync(join(plugin, 'package.json'), '{}');
+  const backup = upgradeBackupDir(plugin);
+  const notices = [];
+
+  // 没有备份时什么都不做。
+  assert.equal(recoverUpgradeBackup(plugin, (text) => notices.push(text)), false, '没有备份就不动');
+
+  // 安装进程在暂存之后被杀：备份还在，home 没了 -> 认领回来。
+  mkdirSync(join(backup, 'sdk'), { recursive: true });
+  writeFileSync(join(backup, 'sdk', 'marker.txt'), '离线 SDK');
+  assert.equal(recoverUpgradeBackup(plugin, (text) => notices.push(text)), true);
+  assert.equal(readFileSync(join(homeInPlugin(plugin), 'sdk', 'marker.txt'), 'utf8'), '离线 SDK');
+  assert.equal(existsSync(backup), false, '备份被移走，不留双份');
+
+  // 新版本已经建好 home、旧备份又冒出来：保留备份，不覆盖新数据。
+  mkdirSync(join(plugin, 'home', 'config'), { recursive: true });
+  writeFileSync(join(plugin, 'home', 'config', 'settings.env'), 'KEEP=1');
+  mkdirSync(join(backup, 'sdk'), { recursive: true });
+  assert.equal(recoverUpgradeBackup(plugin, (text) => notices.push(text)), false);
+  assert.equal(readFileSync(join(plugin, 'home', 'config', 'settings.env'), 'utf8'), 'KEEP=1');
+  assert.ok(existsSync(backup), '备份仍然留着，交给用户处理');
+  assert.match(notices.join('\n'), /已从 .* 恢复到/);
   rmSync(root, { recursive: true, force: true });
 });
 

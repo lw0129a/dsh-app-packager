@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="AppPackager">
+  <defs>
+    <linearGradient id="ap-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#57B0FF"/>
+      <stop offset="1" stop-color="#1B4FD6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#ap-bg)"/>
+  <g stroke="#fff" stroke-width="2.4" stroke-linejoin="round">
+    <path d="M10 21 32 9l22 12v22L32 55 10 43Z" fill="none" stroke-width="3" stroke-opacity=".9"/>
+    <path d="M10 21 32 33l22-12V43L32 55 10 43Z" fill="#fff" fill-opacity=".09"/>
+    <path d="M10 21 32 33l22-12" fill="none" stroke-width="3" stroke-opacity=".9"/>
+    <path d="M32 33v22" fill="none" stroke-width="3" stroke-opacity=".55"/>
+    <path d="M32 15.5v9.5" fill="none" stroke-width="3"/>
+    <path d="M27.8 20.8 32 25l4.2-4.2" fill="none" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

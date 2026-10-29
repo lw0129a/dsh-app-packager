@@ -7,7 +7,7 @@
  * plugin directory instead of next to $HOME, so a single plugin folder carries
  * the whole tool.
  *
- * Upgrading the plugin replaces node_modules/dsh-app-packager, so upgrade.mjs
+ * Upgrading the plugin replaces node_modules/dsh-app-packager, so upgrade.js
  * moves home aside before the upgrade and moves it back afterwards — a fresh
  * plugin version must never throw away a 1 GB SDK download.
  */
@@ -73,6 +73,35 @@ export function upgradeBackupDir(root) {
 }
 
 /**
+ * Claim a home that a previous upgrade left stashed next to the plugin.
+ *
+ * `withHomePreserved` restores on every path it survives, but an install that is
+ * killed (SIGKILL, closed shell, failed pnpm) can die between the stash and the
+ * restore — and then the new plugin version starts with no home at all. Moving
+ * the backup back on the next start turns that into a self-healing case instead
+ * of a support ticket. Never overwrites an existing home; a leftover backup next
+ * to a live home is reported and kept.
+ */
+export function recoverUpgradeBackup(root, onNotice?: (message: string) => void) {
+  const notice = typeof onNotice === 'function' ? onNotice : () => {};
+  const backup = upgradeBackupDir(root);
+  if (!fs.existsSync(backup)) return false;
+  const home = homeInPlugin(root);
+  if (fs.existsSync(home)) {
+    notice(`发现上次升级留下的备份 ${backup}，但 ${home} 已存在，保留备份未动。`);
+    return false;
+  }
+  try {
+    fs.renameSync(backup, home);
+    notice(`上次升级没来得及把引擎目录放回来，已从 ${backup} 恢复到 ${home}。`);
+    return true;
+  } catch (error) {
+    notice(`无法把 ${backup} 恢复到 ${home}（${error.code || error.message}），数据仍在备份目录里。`);
+    return false;
+  }
+}
+
+/**
  * Home precedence: explicit config > APP_PACKAGER_HOME > <plugin>/home > ~/AppPackager.
  *
  * The first time <plugin>/home is about to be used, an existing ~/AppPackager
@@ -102,6 +131,7 @@ export function resolvePluginHome(explicit: any, options: ResolveHomeOptions = {
   const root = pluginRoot(moduleUrl, env);
   if (!root) return legacy;
 
+  recoverUpgradeBackup(root, notice);
   const home = homeInPlugin(root);
   if (fs.existsSync(home)) return home;
   if (!looksLikeEngineHome(legacy)) return home;

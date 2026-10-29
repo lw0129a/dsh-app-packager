@@ -3,7 +3,7 @@
  * Upgrade the installed DSH plugin while keeping everything inside its home
  * directory (offline SDKs, certificates, project config, logs).
  *
- *   node <plugin>/upgrade.mjs [pnpm-args-extra...]
+ *   node <plugin>/dist/upgrade.js [pnpm-args-extra...]
  *
  * Home lives in <plugin>/home, so replacing the plugin would delete it. This
  * script renames home to <profile>/node_modules/.app-packager-home-backup, runs
@@ -46,12 +46,37 @@ async function registryLatest() {
   }
 }
 
+/**
+ * Find the `dsh` CLI. Only `/usr/local/bin/dsh` used to be tried, so a Homebrew
+ * install, a per-user bin directory or any other PATH layout fell through to
+ * `pnpm add` — which is the wrong package manager for a DSH profile and the main
+ * way an upgrade ends in a broken profile on someone else's machine.
+ */
+export function findDsh(env = process.env) {
+  const name = process.platform === 'win32' ? 'dsh.cmd' : 'dsh';
+  const candidates = [env.DSH_BIN, `/usr/local/bin/${name}`, `/opt/homebrew/bin/${name}`];
+  for (const dir of String(env.PATH || '').split(path.delimiter)) {
+    if (dir) candidates.push(path.join(dir, name));
+  }
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      /* 权限或坏链接都当没有 */
+    }
+  }
+  return null;
+}
+
 async function upgrade() {
   const extra = process.argv.slice(2).filter((arg) => arg !== '--force');
-  const dsh = '/usr/local/bin/dsh';
-  if (fs.existsSync(dsh)) {
+  const dsh = findDsh();
+  if (dsh) {
     return run(dsh, ['plugin', '--profile', profileName, 'add', `${PACKAGE_NAME}@latest`, ...extra], profileDir);
   }
+  // 连 dsh 都找不到：pnpm 至少能装，但这时多半还需要手动处理 profile。
+  console.log('没找到 dsh 命令，改用 pnpm 直接装；装完可能仍要在 DSH 里确认插件已启用。');
   return run('pnpm', ['add', `${PACKAGE_NAME}@latest`, ...extra], profileDir);
 }
 
