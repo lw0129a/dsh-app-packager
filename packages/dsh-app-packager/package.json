@@ -1,6 +1,6 @@
 {
   "name": "dsh-app-packager",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "AppPackager for DeepSeek Harness · 用 HBuilderX 一键配好 iOS / Android / HarmonyOS 环境，打出安装包并一键上传",
   "icon": "icon.svg",
   "keywords": [

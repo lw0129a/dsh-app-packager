@@ -969,6 +969,30 @@ test('同一 webServer 重复挂载不再抛 duplicate exact route，dispose 后
   again();
 });
 
+test('两个 ctx 各自包着同一个宿主服务时，第二次挂载不报 duplicate', () => {
+  // 真实事故：插件被 apply 两次，两个 ctx 拿到的 webServer 包装对象不是同一个
+  // 引用，WeakSet 认不出来，第二次注册撞上宿主的重复路由检查，整条插件激活失败。
+  const paths = new Set();
+  const makeServer = () => ({
+    register({ path }) {
+      if (paths.has(path)) throw new Error(`webserver: duplicate exact route "${path}"`);
+      paths.add(path);
+      return () => paths.delete(path);
+    },
+  });
+  const ctxOf = (server) => ({ get: (name) => (name === 'webServer' ? server : undefined) });
+
+  const dispose = mountWebPanel(ctxOf(makeServer()), {});
+  const count = paths.size;
+  assert.ok(count > 0);
+
+  assert.doesNotThrow(() => mountWebPanel(ctxOf(makeServer()), {}));
+  assert.equal(paths.size, count, '重复挂载不能真的注册第二份路由');
+
+  dispose();
+  assert.equal(paths.size, 0);
+});
+
 test('挂在半路失败时回滚已挂路由，同一个 webServer 下次仍能补齐', () => {
   const paths = new Set();
   let failAt = 3;

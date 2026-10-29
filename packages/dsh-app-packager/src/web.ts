@@ -1317,20 +1317,27 @@ export function mountWebPanel(ctx: any, config: any = {}): any {
   const disposers = [];
   try {
     for (const route of routes) {
-      disposers.push(
-        webServer.register({
-          kind: 'exact',
-          path: route.path,
-          handler: async (req, res) => {
-            try {
-              const payload = await route.run(await readJson(req), queryOf(req));
-              sendJson(res, 200, payload);
-            } catch (error) {
-              sendJson(res, 500, { error: String(error?.message || error) });
-            }
-          },
-        }),
-      );
+      try {
+        disposers.push(
+          webServer.register({
+            kind: 'exact',
+            path: route.path,
+            handler: async (req, res) => {
+              try {
+                const payload = await route.run(await readJson(req), queryOf(req));
+                sendJson(res, 200, payload);
+              } catch (error) {
+                sendJson(res, 500, { error: String(error?.message || error) });
+              }
+            },
+          }),
+        );
+      } catch (error) {
+        // 同进程 apply 两次时，两个 ctx 拿到的 webServer 包装对象不是同一个，
+        // WeakSet 认不出来，第二次注册会撞上宿主的重复路由检查。那一条就当
+        // 别人已经挂好，跳过即可；别的错误照旧往上抛。
+        if (!/duplicate exact route/i.test(String(error?.message || error))) throw error;
+      }
     }
   } catch (error) {
     // 挂到一半失败：先把已挂的撤掉，也不要把 webServer 记成「已挂载」，

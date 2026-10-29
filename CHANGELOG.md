@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Both published packages
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-10-29
+
+### Fixed
+
+- **启用时报 `webserver: duplicate exact route "/api/app-packager/state"`：** 插件被 apply 两次时，两个 ctx 拿到的 `webServer` 包装对象不是同一个引用，原来按引用去重的 WeakSet 认不出来，第二次注册撞上宿主的重复路由检查，整条插件激活失败、面板和工具都不加载。现在注册时把「duplicate exact route」当作已经挂好跳过，其它错误照旧上抛；失败回滚逻辑不变。补了一例回归测试（两个 ctx 共用一个宿主服务）。
+
 ## [0.7.0] - 2026-10-29
 
 ### Changed
