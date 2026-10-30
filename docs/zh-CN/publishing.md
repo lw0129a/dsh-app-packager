@@ -16,7 +16,7 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 先看 tarball 内容再发布
 
 1. `packages/app-packager` 的 tarball 里带上了 `engine/`（约 46 个文件、~124 KB），入口 `engine/打包工具.command` 与 `engine/lib/common.sh` 都在。
    注意 **pnpm 打的包里所有文件都是 644**（`npm pack` 才保留 755），所以别指望 tarball 里的权限位：CLI 物化引擎时会把 `.command`/`.sh` 一律补回 755（`src/home.ts` 的 `EXECUTABLE` 规则，有单测），用户手里那份是可双击的。
-2. `packages/dsh-app-packager` 的 tarball 里 `package.json` 的 `app-packager` 依赖已从 `workspace:^0.2.0` 被 pnpm 重写成 `^0.2.0`（npm 不认 workspace 协议，未重写的包装上去会装不上）。
+2. tarball 里没有运行时依赖：引擎由 `prepack` 复制进 `vendor/app-packager`，不需要第二个包，也不会留下没重写的 `workspace:` 协议。
 3. 两个 `package.json` 的 `version` 已递增。
 
 两个包都发布在 npm 公共仓库上、**包名不带 scope**（`app-packager` 与 `dsh-app-packager`），发布前只需确认 `npm whoami` 是本人（`lw0129a`）：
@@ -200,11 +200,11 @@ data/plugins/<owner>__<repo>.yml                            # 根包
 data/plugins/<owner>__<repo>--<子包路径，/ 换成 ->.yml        # monorepo 子包
 ```
 
-本项目是 monorepo（根包是纯 CLI，插件在 `packages/dsh-app-packager`），所以走子包形式：`url` 指向子目录，`name` 用 `#` 带上子包名。
+仓库根就是插件包，所以用普通仓库形式即可；`dist/` 与 `vendor/` 已入库，从 git 安装不需要再构建。
 
 ```yaml
 # data/plugins/lw0129a__dsh-app-packager--packages-dsh-app-packager.yml
-url: https://github.com/lw0129a/dsh-app-packager/tree/main/packages/dsh-app-packager
+url: https://github.com/lw0129a/dsh-app-packager
 name: lw0129a/dsh-app-packager#dsh-app-packager
 category: dev
 description:
@@ -223,7 +223,7 @@ description:
 ### 对方 CI 会检查什么（`scripts/check-submission.mjs`）
 
 1. 一个 PR 最多 3 条 entry。
-2. **`dsh.bundle`**：从条目指向的那份 `package.json` 读（根包，或 `packages/` · `plugins/` · `apps/` 子包）。本项目的插件在 `packages/dsh-app-packager/package.json`，声明的正是 `dsh.bundle.patch`，符合这条。
+2. **`dsh.bundle`**：从条目指向的那份 `package.json` 读（根包，或 `packages/` · `plugins/` · `apps/` 子包）。本项目的插件就在仓库根的 `package.json`，声明的正是 `dsh.bundle.patch`，符合这条。
 3. **`MIN_AGE_DAYS = 1`：仓库创建满 1 天。这条红是自己会消失的** —— 校验器原话是不要重提、不要空推、不要关掉重开，`regate.yml`（cron `19 */6 * * *`）每 6 小时重跑一遍 gate，时间一到自动转绿。
 4. 仓库要打 `dsh-plugin` topic。
 5. 官方 `@deepseek-ai/*` 包必须是 `peerDependencies` 而不是 `dependencies`。

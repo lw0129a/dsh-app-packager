@@ -49,7 +49,7 @@ jobs:
           echo "npm $v"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             tag="${GITHUB_REF_NAME#v}"
-            for p in packages/app-packager packages/dsh-app-packager; do
+            for p in .; do
               have=$(node -p "require('./$p/package.json').version")
               [ "$have" = "$tag" ] \
                 || { echo "::error::$p 的版本是 $have，与 tag $GITHUB_REF_NAME 不一致"; exit 1; }
@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for dir in packages/app-packager packages/dsh-app-packager; do
+          for dir in .; do
             name=$(node -p "require('./$dir/package.json').name")
             ver=$(node -p "require('./$dir/package.json').version")
             if npm view "$name@$ver" version >/dev/null 2>&1; then
@@ -130,8 +130,7 @@ jobs:
             fi
             npm publish $tgz $dry
           }
-          publish packages/app-packager "$RUNNER_TEMP"/tarballs/app-packager-[0-9]*.tgz
-          publish packages/dsh-app-packager "$RUNNER_TEMP"/tarballs/dsh-app-packager-[0-9]*.tgz
+          publish . "$RUNNER_TEMP"/tarballs/dsh-app-packager-[0-9]*.tgz
 
       - name: 回读 registry 版本
         if: ${{ inputs.dry_run != true }}

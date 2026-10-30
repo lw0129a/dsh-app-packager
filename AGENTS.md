@@ -10,7 +10,7 @@
 
 - `packages/app-packager/engine/` —— bash 打包引擎，正在按批迁进 TypeScript（进度见 `src/engine/`，行为权威说明仍是 [`engine/项目介绍.md`](packages/app-packager/engine/项目介绍.md)）；迁移完成前 bash 保持可跑。
 - `packages/app-packager/src/*.ts` —— 零运行时依赖的 Node CLI（物化引擎、读项目配置、探测 bash、体检、转发命令），`tsc` 构建到 `dist/`。
-- `packages/dsh-app-packager/` —— DeepSeek Harness 插件：`src/index.ts` 注册四个工具，`src/web.ts` 是面板的宿主侧（引擎 argv、任务执行器、6 条同源路由），`src/client.ts` 是浏览器侧面板（手写 `__ModuleLoader__` bundle，零构建），源码在 `src/`、产物在 `dist/`。
+- 仓库根 —— DeepSeek Harness 插件包（`packages/` 下只剩被内联的引擎 CLI）：`src/index.ts` 注册四个工具，`src/web.ts` 是面板的宿主侧（引擎 argv、任务执行器、6 条同源路由），`src/client.ts` 是浏览器侧面板（手写 `__ModuleLoader__` bundle，零构建），源码在 `src/`、产物在 `dist/`。
 
 分层与数据流的完整说明见 [`docs/zh-CN/architecture.md`](docs/zh-CN/architecture.md)。
 
@@ -40,9 +40,9 @@ AppPackager 的任何功能缺陷、配置错误、依赖缺失、脚本异常�
 
 ```bash
 pnpm install                       # 安装 workspace（packageManager 锁定 pnpm 版本）
-pnpm test                          # 两个包的 node --test
+pnpm test                          # 插件 + 引擎的 node --test
 node --test packages/app-packager/test/packager.test.ts       # 单包
-node --test packages/dsh-app-packager/test/plugin.test.ts
+node --test test/plugin.test.ts
 pnpm cli list                      # 直接跑本地 CLI（= node packages/app-packager/dist/bin.js）
 pnpm guard:check                   # 业务项目配置/密钥/证书守卫（pnpm test 里也会跑）
 pnpm docs:check                    # 中英文档配对检查
@@ -53,7 +53,7 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 发布前看 tarball
 
 - 源码只有 TypeScript（`src/**/*.ts`），`tsc` 输出 ESM 到 `dist/`；仓库里不出现 `.js`/`.mjs` 源文件。不要引入打包器。
 - 导出函数保持小而纯：能单测的逻辑放 `src/*.ts`，副作用（读盘、spawn）集中在 `home.ts` / `engine.ts`。
-- **新增或修改行为必须带测试**（`node --test`，不用框架、不加 fixture 目录）。当前基线：CLI/引擎 45 例 + 插件 42 例，另有 `test/engine.test.sh` 跑 bash 引擎（含宿主路由用假 req/res 驱动、任务执行器、`client.ts` 用 stub React 加载的冒烟测试）。
+- **新增或修改行为必须带测试**（`node --test`，不用框架、不加 fixture 目录）。当前基线：CLI/引擎 62 例 + 插件 47 例，另有 `test/engine.test.sh` 跑 bash 引擎（含宿主路由用假 req/res 驱动、任务执行器、`client.ts` 用 stub React 加载的冒烟测试）。
 - `engine/` 下的 bash 保持原样缩进与风格，**换行必须是 LF**（`.gitattributes` 已固定），不要格式化无关文件。
 - 中文注释与文案是本仓库的既有风格；代码标识符、配置键、日志中的技术名词用英文。
 - 面板（`src/web.ts` / `src/client.ts`）有一条硬约束：**bundle id 必须是 npm 包名**（`dsh-app-packager`），入口由 `exports["./client"]` + `dsh.client.platform === "web"` 决定。样式只用宿主的 `--dsw-alias-*` / `--dsh-*` token，禁止硬编码颜色；`src/client.ts` 改动需要重新构建（`pnpm build`），改 `package.json` 必须重启。
@@ -69,7 +69,7 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 发布前看 tarball
 ## 6. 提交与发布
 
 - 提交信息用 Conventional Commits：`feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `chore:` / `ci:`，一次提交一件事。
-- 版本号两个包同步递增；插件依赖 CLI 用 caret 范围。
+- 插件与引擎各自升版本；插件从不发布 CLI，引擎以 `workspace:` 依赖内联进包里。
 - 发布走 npm 暂存发布 + 本人在 npmjs.com 批准，完整流程见 [`docs/zh-CN/publishing.md`](docs/zh-CN/publishing.md)。
 - 不要 `git push --force` 到 `main`；不要删除市场 fork（会让 PR 关闭），见 `docs/zh-CN/publishing.md` 的上架记录。
 

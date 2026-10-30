@@ -1,0 +1,973 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -z "${PIPELINE_ROOT:-}" ]; then
+  PIPELINE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+export PIPELINE_ROOT
+# shellcheck source=/dev/null
+source "$PIPELINE_ROOT/lib/common.sh"
+# shellcheck source=/dev/null
+source "$PIPELINE_ROOT/config/settings.env"
+# shellcheck source=/dev/null
+[ -f "$PIPELINE_ROOT/config/parallel.env" ] && source "$PIPELINE_ROOT/config/parallel.env"
+# shellcheck source=/dev/null
+[ -f "$PIPELINE_ROOT/config/upload.env" ] && source "$PIPELINE_ROOT/config/upload.env"
+# shellcheck source=/dev/null
+[ -f "$PIPELINE_ROOT/config/settings.local.env" ] && source "$PIPELINE_ROOT/config/settings.local.env"
+# shellcheck source=/dev/null
+[ -f "$PIPELINE_ROOT/config/parallel.local.env" ] && source "$PIPELINE_ROOT/config/parallel.local.env"
+# shellcheck source=/dev/null
+[ -f "$PIPELINE_ROOT/config/upload.local.env" ] && source "$PIPELINE_ROOT/config/upload.local.env"
+relocate_work_root_out_of_node_modules
+parallel_init
+
+ACTION="build"
+PLATFORM=""
+PROJECT_ID=""
+CLI_VERSION=""
+# 微信小程序上传开关的显式 CLI 覆盖（true/false）；空表示跟随 settings.env / 项目 env。
+CLI_MP_WEIXIN_UPLOAD=""
+CLI_KEEP_WORK=0
+UPLOAD_SELECTED_PLATFORMS=""
+CERT_SOURCES=()
+
+usage() {
+  cat <<'USAGE'
+打包工具统一入口
+
+用法:
+  打包工具.command ios <项目ID> [选项]
+  打包工具.command android <项目ID> [选项]
+  打包工具.command harmony <项目ID> [选项]
+  打包工具.command ios --all [选项]
+  打包工具.command android --all [选项]
+  打包工具.command harmony --all [选项]
+  打包工具.command all [项目ID] [选项]
+  打包工具.command list
+  打包工具.command profiles
+  打包工具.command cert-status            打印证书状态 JSON（面板用）
+  打包工具.command cert-import <目录…>    把目录里认得的证书按平台归位
+  打包工具.command cert-clear ios|android|harmony  把该平台证书移到历史归档
+  打包工具.command cert-remove <平台> <文件名>      把单个证书文件移到历史归档
+  打包工具.command check ios <项目ID>
+  打包工具.command check android <项目ID>
+  打包工具.command check harmony <项目ID>
+  打包工具.command upload ios <项目ID> [--to 平台]
+  打包工具.command upload android <项目ID> [--to 平台]
+  打包工具.command upload harmony <项目ID> [--to 平台]
+  打包工具.command upload all <项目ID> [--to 平台]
+
+项目:
+  从 config/projects/*.env 动态读取，不在本仓库内置业务项目。
+
+设备/平台:
+  ios         苹果 IPA
+  android     安卓 APK
+  harmony     鸿蒙 HAP
+  all         全部平台和已启用项目
+
+并行构建:
+  config/parallel.env        人工维护总并发、平台并发和重型工具限制
+  config/parallel.local.env  本机并行覆盖配置，Git 忽略
+
+上传配置:
+  config/upload.env        人工维护上传平台、接口和轮询参数
+  config/upload.local.env  本机 API Key、P12 密码，Git 忽略
+
+选项:
+  --version <版本>    覆盖 manifest 中的 versionName
+  --keep-work         保留隔离构建工作区
+  --harmony-debug     使用项目 default debug signingConfig 生成可侧载 HAP
+  --full-permission   本次构建合并全量 Android 权限与 iOS 隐私说明
+  --no-full-permission  本次构建不加全量权限，只保留项目自身声明
+  --package-kind <类型>  iOS 描述文件类型：adhoc(测试) | appstore(正式) | development | enterprise
+  --profile <路径>    本次构建使用指定描述文件（按类型自动校验）
+  --set KEY=VALUE     覆盖本次构建的打包参数，可重复；可用键见 config/settings.env 说明
+  --upload <平台>     打包成功后上传；当前支持 pgyer，可逗号分隔多个平台
+  --no-upload         显式跳过上传（微信小程序一并只编译不上传）
+  --mp-weixin-upload  微信小程序构建后是否自动上传：true | false
+  --to <平台>         upload 动作的分发平台，逗号分隔；默认用 config/upload.env 里已启用的平台
+  --all               当前平台的所有已启用项目
+  -h, --help          查看帮助
+
+上传:
+  打包和上传是两条流程：upload 只把「上一次打包」归档的安装包传到分发平台，不重新打包。
+  未打过包（没有 <项目ID>-latest.json）时只提示不报错，产物被清理过同样如此。
+
+示例:
+  打包工具.command ios <项目ID>
+  打包工具.command android <项目ID>
+  打包工具.command harmony <项目ID>
+  打包工具.command ios --all
+  打包工具.command android --all
+  打包工具.command harmony --all
+  打包工具.command android <项目ID> --upload pgyer
+  打包工具.command all <项目ID> --upload pgyer
+  打包工具.command upload ios <项目ID> --to pgyer
+  打包工具.command upload all --all
+  打包工具.command all
+
+  打包工具.command check mp-weixin
+  打包工具.command build mp-weixin <项目ID>
+  打包工具.command mp-weixin
+USAGE
+}
+
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      list) ACTION="list"; shift ;;
+      profiles) ACTION="profiles"; shift ;;
+      cert-status) ACTION="cert-status"; shift ;;
+      cert-import) ACTION="cert-import"; shift ;;
+      cert-clear) ACTION="cert-clear"; shift ;;
+      cert-remove) ACTION="cert-remove"; shift ;;
+      check) ACTION="check"; shift ;;
+      upload) ACTION="upload"; shift ;;
+      ios|apple|苹果) PLATFORM="ios"; shift ;;
+      android|安卓) PLATFORM="android"; shift ;;
+      harmony|harmonyos|鸿蒙) PLATFORM="harmony"; shift ;;
+      mp-weixin|mpweixin|miniprogram|wechat|微信小程序|小程序) PLATFORM="mp-weixin"; shift ;;
+      all) PLATFORM="all"; shift ;;
+      --all) PROJECT_ID="__ALL__"; shift ;;
+      --version)
+        [ "$#" -ge 2 ] || die "--version 缺少参数"
+        CLI_VERSION="$2"; shift 2 ;;
+      --keep-work) CLI_KEEP_WORK=1; shift ;;
+      --harmony-debug) export HARMONY_PACKAGE_KIND="debug"; shift ;;
+      --mp-weixin-upload)
+        [ "$#" -ge 2 ] || die "--mp-weixin-upload 缺少参数（true|false）"
+        case "$2" in
+          true|false) CLI_MP_WEIXIN_UPLOAD="$2" ;;
+          *) die "--mp-weixin-upload 只接受 true 或 false，收到: $2" ;;
+        esac
+        shift 2 ;;
+      --full-permission) export APP_PACKAGER_FULL_PERMISSION="true"; shift ;;
+      --no-full-permission) export APP_PACKAGER_FULL_PERMISSION="false"; shift ;;
+      --package-kind)
+        [ "$#" -ge 2 ] || die "--package-kind 缺少参数"
+        case "$2" in
+          adhoc|appstore|development|enterprise) ;;
+          *) die "--package-kind 仅支持 adhoc、appstore、development、enterprise" ;;
+        esac
+        export APP_PACKAGER_PACKAGE_KIND="$2"; shift 2 ;;
+      --profile)
+        [ "$#" -ge 2 ] || die "--profile 缺少参数"
+        export APP_PACKAGER_PROFILE_FILE="$2"; shift 2 ;;
+      --set)
+        [ "$#" -ge 2 ] || die "--set 缺少参数"
+        set_package_override "$2"
+        shift 2 ;;
+      --upload)
+        [ "$#" -ge 2 ] || die "--upload 缺少平台参数"
+        set_upload_platforms "$2"
+        [ -n "$UPLOAD_SELECTED_PLATFORMS" ] || die "--upload 未解析到可用平台: $2"
+        shift 2 ;;
+      --to)
+        [ "$#" -ge 2 ] || die "--to 缺少平台参数"
+        set_upload_platforms "$2"
+        [ -n "$UPLOAD_SELECTED_PLATFORMS" ] || die "--to 未解析到可用平台: $2"
+        shift 2 ;;
+      --no-upload)
+        UPLOAD_SELECTED_PLATFORMS=""
+        export UPLOAD_SELECTED_PLATFORMS
+        # 微信小程序的上传内联在构建里，--no-upload 也必须把它一起关掉。
+        CLI_MP_WEIXIN_UPLOAD="false"
+        shift ;;
+      -h|--help) usage; exit 0 ;;
+      --*) die "未知参数: $1" ;;
+      *)
+        if [ "$ACTION" = "cert-import" ] || [ "$ACTION" = "cert-remove" ]; then
+          CERT_SOURCES+=("$1"); shift; continue
+        fi
+        [ -z "$PROJECT_ID" ] || die "只能指定一个项目"
+        PROJECT_ID="$1"; shift ;;
+    esac
+  done
+}
+
+ios_project_ids() {
+  local id file
+  for id in $(project_ids); do
+    file="$PIPELINE_ROOT/config/projects/$id.env"
+    (
+      # shellcheck source=/dev/null
+      source "$file"
+      [ "${IOS_ENABLED:-true}" = "true" ] && printf '%s\n' "${PROJECT_ID:-$id}"
+    )
+  done
+}
+
+android_project_ids() {
+  local id file
+  for id in $(project_ids); do
+    file="$PIPELINE_ROOT/config/projects/$id.env"
+    (
+      # shellcheck source=/dev/null
+      source "$file"
+      [ "${ANDROID_ENABLED:-false}" = "true" ] && printf '%s\n' "${PROJECT_ID:-$id}"
+    )
+  done
+}
+
+harmony_project_ids() {
+  local id file
+  for id in $(project_ids); do
+    file="$PIPELINE_ROOT/config/projects/$id.env"
+    (
+      # shellcheck source=/dev/null
+      source "$file"
+      [ "${HARMONY_ENABLED:-true}" = "true" ] && printf '%s\n' "${PROJECT_ID:-$id}"
+    )
+  done
+}
+
+mp_weixin_project_ids() {
+  local id file
+  for id in $(project_ids); do
+    file="$PIPELINE_ROOT/config/projects/$id.env"
+    (
+      # shellcheck source=/dev/null
+      source "$file"
+      [ "${MP_WEIXIN_ENABLED:-true}" = "true" ] && printf '%s\n' "${PROJECT_ID:-$id}"
+    )
+  done
+}
+
+project_platform_enabled() {
+  local id="$1" platform="$2" candidate
+  case "$platform" in
+    ios)
+      while IFS= read -r candidate; do
+        [ "$candidate" = "$id" ] && return 0
+      done < <(ios_project_ids)
+      ;;
+    android)
+      while IFS= read -r candidate; do
+        [ "$candidate" = "$id" ] && return 0
+      done < <(android_project_ids)
+      ;;
+    harmony)
+      while IFS= read -r candidate; do
+        [ "$candidate" = "$id" ] && return 0
+      done < <(harmony_project_ids)
+      ;;
+    mp-weixin)
+      while IFS= read -r candidate; do
+        [ "$candidate" = "$id" ] && return 0
+      done < <(mp_weixin_project_ids)
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  return 1
+}
+
+selected_projects() {
+  local platform="$1"
+  if [ "$PROJECT_ID" = "__ALL__" ]; then
+    case "$platform" in
+      ios) ios_project_ids ;;
+      android) android_project_ids ;;
+      harmony) harmony_project_ids ;;
+      mp-weixin) mp_weixin_project_ids ;;
+      *) die "未知平台: $platform" ;;
+    esac
+  else
+    [ -n "$PROJECT_ID" ] || die "请指定项目 ID"
+    printf '%s\n' "$PROJECT_ID"
+  fi
+}
+
+run_ios() {
+  local id="$1"
+  project_platform_enabled "$id" ios || die "项目 $id 未启用 iOS 打包"
+  ios_sdk_uniappx_ready || die "缺少符合 uni-app x 分包流程的 iOS SDK（需要 UniAppXDemo/UniAppXDemo.xcodeproj）。请运行 sdk/处理SDK.command 导入正确版本"
+  ( build_ios_project "$id" )
+}
+
+run_android() {
+  local id="$1"
+  project_platform_enabled "$id" android || die "项目 $id 未启用 Android 打包"
+  android_sdk_ready || die "缺少 Android 离线 SDK。请先运行 sdk/处理SDK.command 或 初始化.command 导入 Android SDK"
+  ( build_android_project "$id" )
+}
+
+run_harmony() {
+  local id="$1"
+  project_platform_enabled "$id" harmony || die "项目 $id 未启用 HarmonyOS 打包"
+  harmony_sdk_ready || die "缺少 HarmonyOS Runtime。请先运行 sdk/处理SDK.command 或 初始化.command 安装"
+  [ -d "$DEVECO_STUDIO_APP" ] || die "未检测到 DevEco Studio: $DEVECO_STUDIO_APP"
+  ( build_harmony_project "$id" )
+}
+
+run_mp_weixin() {
+  local id="$1"
+  project_platform_enabled "$id" mp-weixin || die "项目 $id 未启用微信小程序打包（$PIPELINE_ROOT/config/projects/$id.env 里 MP_WEIXIN_ENABLED=false）"
+  [ -x "$HBUILDERX_CLI" ] || die "未找到 HBuilderX CLI: $HBUILDERX_CLI"
+  mp_weixin_hbuilderx_ok || die "HBuilderX 版本过低（当前 $(sdk_series)）：uni-app x 发行微信小程序需要 HBuilderX 4.41 或更高"
+  ( build_mp_weixin_project "$id" )
+}
+
+list_projects() {
+  printf '%-12s %-22s %-6s %-8s %-10s %-10s %s\n' 'ID' '名称' 'iOS' 'Android' 'Harmony' 'MP' '源码目录'
+  local id found=0
+  for id in $(project_ids); do
+    found=$((found + 1))
+    (
+      load_project "$id"
+      printf '%-12s %-22s %-6s %-8s %-10s %-10s %s\n' \
+        "$PROJECT_ID" "$DISPLAY_NAME" "${IOS_ENABLED:-true}" "${ANDROID_ENABLED:-false}" "${HARMONY_ENABLED:-true}" "${MP_WEIXIN_ENABLED:-true}" "$SOURCE_DIR"
+    )
+  done
+  if [ "$found" -eq 0 ]; then
+    printf '未发现项目。请将 uni-app 项目放到 %s 同级目录，或运行初始化向导。\n' "$PIPELINE_ROOT"
+  fi
+}
+
+run_build_runner() {
+  local runner="$1" id status=0
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    "$runner" "$id" || return $?
+  done
+  return "$status"
+}
+
+run_build_platform_projects() {
+  local platform="$1" id
+  local -a tasks=()
+  while IFS= read -r id; do
+    [ -n "$id" ] && tasks+=("${platform}"$'\t'"${id}")
+  done
+  run_build_tasks "${tasks[@]}"
+}
+
+run_all_enabled_build_tasks() {
+  local id
+  local -a tasks=()
+  while IFS= read -r id; do
+    [ -n "$id" ] && tasks+=("ios"$'\t'"${id}")
+  done < <(ios_project_ids)
+  while IFS= read -r id; do
+    [ -n "$id" ] && tasks+=("android"$'\t'"${id}")
+  done < <(android_project_ids)
+  while IFS= read -r id; do
+    [ -n "$id" ] && tasks+=("harmony"$'\t'"${id}")
+  done < <(harmony_project_ids)
+  run_build_tasks "${tasks[@]}"
+}
+
+run_project_build_tasks() {
+  local id="$1"
+  local -a tasks=()
+  project_platform_enabled "$id" ios && tasks+=("ios"$'\t'"${id}")
+  project_platform_enabled "$id" android && tasks+=("android"$'\t'"${id}")
+  project_platform_enabled "$id" harmony && tasks+=("harmony"$'\t'"${id}")
+  run_build_tasks "${tasks[@]}"
+}
+
+run_check_runner() {
+  local runner="$1" id status=0 run_status=0
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    run_status=0
+    "$runner" "$id" || run_status=$?
+    if [ "$run_status" -ne 0 ] && [ "$status" -eq 0 ]; then
+      status="$run_status"
+    fi
+  done
+  return "$status"
+}
+
+main() {
+  parse_args "$@"
+
+  if [ "$ACTION" = "list" ]; then
+    list_projects
+    return 0
+  fi
+
+  if [ "$ACTION" = "profiles" ]; then
+    profiles_json
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-status" ]; then
+    cert_status_json
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-import" ]; then
+    [ "${#CERT_SOURCES[@]}" -gt 0 ] || die "cert-import 需要一个证书目录"
+    process_certificates_root "${CERT_SOURCES[@]}"
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-remove" ]; then
+    [ "${#CERT_SOURCES[@]}" -gt 0 ] || die "cert-remove 需要平台和文件名：cert-remove ios dev.p12"
+    remove_certificate_file "$PLATFORM" "${CERT_SOURCES[0]}"
+    return 0
+  fi
+
+  if [ "$ACTION" = "cert-clear" ]; then
+    case "$PLATFORM" in
+      ios|android|harmony) ;;
+      *) die "cert-clear 需要平台：ios / android / harmony" ;;
+    esac
+    clear_certificate_platform "$PLATFORM"
+    return 0
+  fi
+
+  local status=0
+  case "$ACTION" in
+    check)
+      case "$PLATFORM" in
+        ios) run_check_runner check_ios_project < <(selected_projects ios); return $? ;;
+        android) run_check_runner check_android_project < <(selected_projects android); return $? ;;
+        harmony) run_check_runner check_harmony_project < <(selected_projects harmony); return $? ;;
+        mp-weixin) run_check_runner check_mp_weixin_project < <(selected_projects mp-weixin); return $? ;;
+        all)
+          local run_status=0
+          run_status=0
+          run_check_runner check_ios_project < <(ios_project_ids) || run_status=$?
+          if [ "$run_status" -ne 0 ] && [ "$status" -eq 0 ]; then status="$run_status"; fi
+          run_status=0
+          run_check_runner check_android_project < <(android_project_ids) || run_status=$?
+          if [ "$run_status" -ne 0 ] && [ "$status" -eq 0 ]; then status="$run_status"; fi
+          run_status=0
+          run_check_runner check_harmony_project < <(harmony_project_ids) || run_status=$?
+          if [ "$run_status" -ne 0 ] && [ "$status" -eq 0 ]; then status="$run_status"; fi
+          run_status=0
+          run_check_runner check_mp_weixin_project < <(mp_weixin_project_ids) || run_status=$?
+          if [ "$run_status" -ne 0 ] && [ "$status" -eq 0 ]; then status="$run_status"; fi
+          return "$status" ;;
+        *) die "check 需要指定 ios、android、harmony、mp-weixin 或 all" ;;
+      esac
+      ;;
+    build)
+      case "$PLATFORM" in
+        ios) run_build_platform_projects ios < <(selected_projects ios); return $? ;;
+        android) run_build_platform_projects android < <(selected_projects android); return $? ;;
+        harmony) run_build_platform_projects harmony < <(selected_projects harmony); return $? ;;
+        mp-weixin) run_build_platform_projects mp-weixin < <(selected_projects mp-weixin); return $? ;;
+        all)
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "__ALL__" ]; then
+            run_all_enabled_build_tasks
+          else
+            [ -f "$PIPELINE_ROOT/config/projects/${PROJECT_ID}.env" ] || die "未知项目: ${PROJECT_ID}。可用项目: $(project_ids | tr '\n' ' ')"
+            run_project_build_tasks "$PROJECT_ID"
+          fi
+          ;;
+        *) die "请指定平台: ios、android、harmony、mp-weixin 或 all" ;;
+      esac
+      return 0 ;;
+    upload)
+      local upload_status=0
+      if [ -z "${UPLOAD_SELECTED_PLATFORMS:-}" ]; then
+        UPLOAD_SELECTED_PLATFORMS="$(upload_enabled_platforms | tr '\n' ',' | sed 's/,$//')"
+        [ -n "$UPLOAD_SELECTED_PLATFORMS" ] || die "没有已启用的上传平台：在 config/upload.env 里把对应平台的 ENABLED 设为 true"
+        export UPLOAD_SELECTED_PLATFORMS
+      fi
+      case "$PLATFORM" in
+        ios|android|harmony)
+          while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            load_project "$id"
+            upload_latest_artifact "$PLATFORM" || upload_status=1
+          done < <(selected_projects "$PLATFORM")
+          ;;
+        all)
+          local upload_platform
+          for upload_platform in ios android harmony; do
+            while IFS= read -r id; do
+              [ -n "$id" ] || continue
+              load_project "$id"
+              upload_latest_artifact "$upload_platform" || upload_status=1
+            done < <(selected_projects "$upload_platform")
+          done
+          ;;
+        mp-weixin) die "微信小程序没有独立上传步骤：上传在构建时由 HBuilderX 完成，用 build mp-weixin（MP_WEIXIN_UPLOAD=false 可只编译不上传）" ;;
+        *) die "upload 需要指定 ios、android、harmony、mp-weixin 或 all" ;;
+      esac
+      return "$upload_status" ;;
+  esac
+}
+
+check_ios_project() {
+  load_project "$1"
+  local errors=0 warnings=0
+  printf '\n========== CHECK: %s (%s) ==========\n' "$PROJECT_ID" "$DISPLAY_NAME"
+
+  if [ -d "$SOURCE_DIR" ]; then
+    printf '[OK]   源码目录: %s\n' "$SOURCE_DIR"
+  else
+    printf '[FAIL] 源码目录不存在: %s\n' "$SOURCE_DIR"; errors=$((errors + 1))
+  fi
+
+  if [ -x "$HBUILDERX_CLI" ]; then
+    printf '[OK]   HBuilderX CLI: %s\n' "$HBUILDERX_CLI"
+  else
+    printf '[FAIL] HBuilderX CLI 不存在: %s\n' "$HBUILDERX_CLI"; errors=$((errors + 1))
+  fi
+
+  if command -v xcodebuild >/dev/null 2>&1; then
+    printf '[OK]   Xcode: %s\n' "$(xcodebuild -version 2>/dev/null | head -n 1)"
+  else
+    printf '[FAIL] 未找到 xcodebuild\n'; errors=$((errors + 1))
+  fi
+
+  local resolved_profile=""
+  if [ -n "${EXPECTED_BUNDLE_ID:-}" ]; then
+    resolved_profile="$(find_matching_ios_profile "$EXPECTED_BUNDLE_ID" || true)"
+  fi
+  if [ -n "$resolved_profile" ]; then
+    PROFILE_FILE="$resolved_profile"
+  fi
+
+  if [ -f "$PROFILE_FILE" ]; then
+    local tmp_plist
+    tmp_plist="$(mktemp)"
+    if read_profile_metadata "$PROFILE_FILE" "$tmp_plist" >/dev/null 2>&1; then
+      printf '[OK]   Profile: %s\n' "$PROFILE_NAME"
+      printf '       Bundle:  %s\n' "$BUNDLE_ID"
+      printf '       Team:    %s\n' "$TEAM_ID"
+      printf '       Type:    %s\n' "$PROFILE_KIND"
+      printf '       Expiry:  %s\n' "$PROFILE_EXPIRY"
+    else
+      printf '[FAIL] Profile 无法解析或不匹配: %s\n' "$PROFILE_FILE"; errors=$((errors + 1))
+    fi
+    rm -f "$tmp_plist"
+  else
+    printf '[FAIL] Profile 不存在: %s\n' "$PROFILE_FILE"; errors=$((errors + 1))
+  fi
+
+  local resolved_p12
+  resolved_p12="$(resolve_p12_file || true)"
+  if [ -n "$resolved_p12" ]; then
+    printf '[OK]   p12: %s\n' "$resolved_p12"
+  else
+    printf '[FAIL] p12 不存在: %s\n' "$P12_FILE"; errors=$((errors + 1))
+  fi
+
+  if security find-generic-password -s "$P12_PASSWORD_SERVICE" -a "$USER" >/dev/null 2>&1; then
+    printf '[OK]   Keychain 已保存 p12 密码: %s\n' "$P12_PASSWORD_SERVICE"
+  else
+    printf '[WARN] Keychain 未保存 p12 密码，运行 setup-signing.sh 配置\n'; warnings=$((warnings + 1))
+  fi
+
+  if [ -d "$LOCAL_IOS_SDK_DIR/UniAppXDemo/UniAppXDemo.xcodeproj" ]; then
+    printf '[OK]   本地 iOS SDK: %s\n' "$LOCAL_IOS_SDK_DIR"
+  else
+    printf '[FAIL] 本地 iOS SDK 不完整: %s\n' "$LOCAL_IOS_SDK_DIR"; errors=$((errors + 1))
+  fi
+
+  if [ -f "$SOURCE_DIR/$BUILD_SCRIPT_RELATIVE" ]; then
+    printf '[OK]   打包脚本: %s\n' "$SOURCE_DIR/$BUILD_SCRIPT_RELATIVE"
+  else
+    printf '[FAIL] 打包脚本不存在: %s\n' "$SOURCE_DIR/$BUILD_SCRIPT_RELATIVE"; errors=$((errors + 1))
+  fi
+
+  printf '结果: errors=%s warnings=%s\n' "$errors" "$warnings"
+  [ "$errors" -eq 0 ]
+}
+
+build_ios_project() {
+  load_project "$1"
+  init_run
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
+
+  exec > >(tee -a "$LOG_FILE") 2>&1
+
+  printf '\n'
+  printf '========================================\n'
+  printf ' PROJECT=%s (%s)\n' "$PROJECT_ID" "$DISPLAY_NAME"
+  printf ' RUN_ID=%s\n' "$RUN_ID"
+  printf ' LOG=%s\n' "$LOG_FILE"
+  printf '========================================\n'
+  task_progress 5 "初始化构建环境"
+
+  require_cmd rsync
+  require_cmd openssl
+  require_cmd plutil
+  require_cmd security
+  require_cmd node
+  require_cmd shasum
+
+  if [ -n "$CLI_VERSION" ]; then
+    MARKETING_VERSION="$CLI_VERSION"
+  else
+    local manifest_path=""
+    manifest_path="$(project_manifest_path "$SOURCE_DIR" 2>/dev/null || true)"
+    if [ -n "$manifest_path" ]; then
+      MARKETING_VERSION="$(manifest_version "$manifest_path" || true)"
+    else
+      MARKETING_VERSION=""
+    fi
+  fi
+  [ -n "${MARKETING_VERSION:-}" ] || warn "未读取到 versionName，将使用 Xcode 工程默认版本"
+
+  log "版本: ${MARKETING_VERSION:-Xcode default}"
+  SEMAPHORE_PROGRESS=15 SEMAPHORE_WAIT_MESSAGE="等待工作区准备名额" SEMAPHORE_RUN_MESSAGE="复制隔离工作区" \
+    with_semaphore "workspace-prepare" "${PARALLEL_MAX_PREPARE_JOBS_RESOLVED:-2}" prepare_workspace
+  sync_full_permissions
+  generate_brand_assets
+  ensure_hbuilderx
+  generate_ios_resources
+  task_progress 35 "生成 iOS 资源"
+  prepare_profile
+  prepare_keychain
+  prepare_native_ios_project
+  write_package_env
+  task_progress 50 "准备签名和 Xcode 工程"
+  run_native_build
+  task_progress 75 "执行 Xcode Archive"
+  verify_ios_custom_uts_plugins "$IPA_SRC"
+  collect_artifact
+  task_artifact_path "$IPA_FINAL"
+  task_progress 90 "归档 IPA"
+  print_result
+  BUILD_SUCCEEDED=1
+  run_upload_stage "$BUILD_INFO_FILE" || true
+  task_progress 100 "已完成"
+  prune_outputs
+}
+
+check_android_project() {
+  load_project "$1"
+  local errors=0 warnings=0 gradle_bin keystore_properties build_tools
+  printf '\n========== ANDROID CHECK: %s ==========\n' "$PROJECT_ID"
+
+  [ "$ANDROID_ENABLED" = "true" ] && printf '[OK]   Android 已启用\n' || { printf '[FAIL] Android 未启用\n'; errors=$((errors + 1)); }
+  [ -d "$SOURCE_DIR" ] && printf '[OK]   源码目录: %s\n' "$SOURCE_DIR" || { printf '[FAIL] 源码目录不存在: %s\n' "$SOURCE_DIR"; errors=$((errors + 1)); }
+  [ -f "$SOURCE_DIR/${ANDROID_MODULE_DIR:-app-android}/app/build.gradle" ] \
+    && printf '[OK]   Android 工程: %s\n' "$SOURCE_DIR/${ANDROID_MODULE_DIR:-app-android}" \
+    || { printf '[FAIL] Android 工程不存在\n'; errors=$((errors + 1)); }
+  [ -d "${ANDROID_SDK_DIR:-$HOME/Library/Android/sdk}" ] \
+    && printf '[OK]   Android SDK: %s\n' "${ANDROID_SDK_DIR:-$HOME/Library/Android/sdk}" \
+    || { printf '[FAIL] Android SDK 不存在\n'; errors=$((errors + 1)); }
+
+  gradle_bin=""
+  local wrapper_dir="$SOURCE_DIR/${ANDROID_MODULE_DIR:-app-android}"
+  if [ "${ANDROID_USE_PROJECT_WRAPPER:-false}" = "true" ] && [ -x "$wrapper_dir/gradlew" ]; then
+    gradle_bin="$wrapper_dir/gradlew"
+  elif [ -f "$SOURCE_DIR/manifest.json" ] && ! project_is_uniappx "$SOURCE_DIR/manifest.json" \
+    && [ -x "$wrapper_dir/gradlew" ] && [ -f "$wrapper_dir/gradle/wrapper/gradle-wrapper.properties" ]; then
+    # 经典 uni-app 的离线工程是 AGP 8 + 自带 Gradle 8 Wrapper；构建时必须用项目 Wrapper，
+    # 这里不去跑 --version（会触发上百兆的 Wrapper 下载），只确认 Wrapper 在位。
+    printf '[OK]   Gradle: 项目自带 Wrapper（经典 uni-app，构建时使用）: %s\n' "$wrapper_dir/gradlew"
+    gradle_bin="__project_wrapper__"
+  else
+    gradle_bin="${ANDROID_GRADLE_BIN:-}"
+    if [ -z "$gradle_bin" ] || [ ! -x "$gradle_bin" ] || ! run_with_timeout 20 "$gradle_bin" --version >/dev/null 2>&1; then
+      gradle_bin="$(find_cached_gradle || true)"
+    fi
+  fi
+  if [ "$gradle_bin" = "__project_wrapper__" ]; then
+    :
+  elif [ -n "$gradle_bin" ] && [ -x "$gradle_bin" ] && run_with_timeout 20 "$gradle_bin" --version >/dev/null 2>&1; then
+    printf '[OK]   Gradle: %s\n' "$gradle_bin"
+  else
+    printf '[FAIL] Gradle 不存在或无法启动: %s\n' "${gradle_bin:-未找到}"; errors=$((errors + 1))
+  fi
+
+  build_tools="$(find "${ANDROID_SDK_DIR:-$HOME/Library/Android/sdk}/build-tools" \
+    -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -n 1)"
+  if [ -n "$build_tools" ] && [ -x "$build_tools/apksigner" ] && [ -x "$build_tools/zipalign" ]; then
+    printf '[OK]   APK 校验工具: %s\n' "$build_tools"
+  else
+    printf '[FAIL] Android build-tools 缺少 apksigner 或 zipalign\n'; errors=$((errors + 1))
+  fi
+
+  if command -v keytool >/dev/null 2>&1; then
+    printf '[OK]   keytool: %s\n' "$(command -v keytool)"
+  else
+    printf '[FAIL] 未找到 keytool\n'; errors=$((errors + 1))
+  fi
+
+  keystore_properties="$(resolve_android_keystore_properties || true)"
+  if [ -n "$keystore_properties" ]; then
+    printf '[OK]   Release keystore 配置: %s\n' "$keystore_properties"
+  else
+    printf '[WARN] 未配置 release keystore，将沿用项目内签名配置（当前可能是 debug keystore）\n'
+    warnings=$((warnings + 1))
+  fi
+
+  printf '结果: errors=%s warnings=%s\n' "$errors" "$warnings"
+  [ "$errors" -eq 0 ]
+}
+
+check_harmony_project() {
+  load_project "$1"
+  local errors=0 warnings=0 material p12 alias cert profile sign_alg store_password key_password
+  printf '\n========== HARMONY CHECK: %s ==========\n' "$PROJECT_ID"
+
+  [ "$HARMONY_ENABLED" = "true" ] && printf '[OK]   HarmonyOS 已启用\n' || { printf '[FAIL] HarmonyOS 未启用\n'; errors=$((errors + 1)); }
+  [ -d "$SOURCE_DIR" ] && printf '[OK]   源码目录: %s\n' "$SOURCE_DIR" || { printf '[FAIL] 源码目录不存在: %s\n' "$SOURCE_DIR"; errors=$((errors + 1)); }
+  [ -x "$HBUILDERX_CLI" ] && printf '[OK]   HBuilderX CLI: %s\n' "$HBUILDERX_CLI" || { printf '[FAIL] HBuilderX CLI 不存在\n'; errors=$((errors + 1)); }
+  [ -d "$DEVECO_STUDIO_APP" ] && printf '[OK]   DevEco Studio: %s\n' "$DEVECO_STUDIO_APP" || { printf '[FAIL] DevEco Studio 不存在\n'; errors=$((errors + 1)); }
+  harmony_sdk_ready && printf '[OK]   HarmonyOS Runtime: %s\n' "$(harmony_sdk_dir)" || { printf '[FAIL] HarmonyOS Runtime 不存在\n'; errors=$((errors + 1)); }
+
+  material="$(WORKSPACE="$SOURCE_DIR" harmony_signing_material || true)"
+  if [ -n "$material" ]; then
+    IFS=$'\t' read -r p12 alias cert profile sign_alg store_password key_password <<<"$material"
+    printf '[OK]   HarmonyOS signingConfigs: %s\n' "$(basename "$profile")"
+    printf '[OK]   P12: %s\n' "$p12"
+    printf '[OK]   Cert: %s\n' "$cert"
+    printf '[OK]   Alias: %s; SignAlg: %s\n' "$alias" "$sign_alg"
+    if [ -d "$(dirname "$p12")/material" ]; then
+      printf '[OK]   加密密码 material 目录存在\n'
+      printf '[OK]   证书文件按 uni-app manifest.json 原样提供给 HBuilderX\n'
+    else
+      printf '[FAIL] 缺少 HarmonyOS 加密密码必需的 material 目录: %s\n' "$(dirname "$p12")/material"
+      errors=$((errors + 1))
+    fi
+  else
+    printf '[FAIL] uni-app signingConfigs 引用的 HarmonyOS 证书文件不完整\n'
+    printf '         请确认 manifest.json 中的 storeFile、certpath、profile 均存在\n'
+    errors=$((errors + 1))
+  fi
+
+  printf '结果: errors=%s warnings=%s\n' "$errors" "$warnings"
+  [ "$errors" -eq 0 ]
+}
+
+build_harmony_project() {
+  load_project "$1"
+  [ "$HARMONY_ENABLED" = "true" ] || die "项目 $PROJECT_ID 尚未启用 HarmonyOS 打包"
+  init_run
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
+  exec > >(tee -a "$LOG_FILE") 2>&1
+
+  printf '\n'
+  printf '========================================\n'
+  printf ' HARMONY PROJECT=%s (%s)\n' "$PROJECT_ID" "$DISPLAY_NAME"
+  printf ' RUN_ID=%s\n' "$RUN_ID"
+  printf ' LOG=%s\n' "$LOG_FILE"
+  printf '========================================\n'
+  task_progress 5 "初始化构建环境"
+
+  require_cmd rsync
+  require_cmd node
+  require_cmd shasum
+  require_cmd java
+  require_cmd unzip
+
+  if [ -n "$CLI_VERSION" ]; then
+    MARKETING_VERSION="$CLI_VERSION"
+  else
+    local manifest_path=""
+    manifest_path="$(project_manifest_path "$SOURCE_DIR" 2>/dev/null || true)"
+    if [ -n "$manifest_path" ]; then
+      MARKETING_VERSION="$(manifest_version "$manifest_path" || true)"
+    else
+      MARKETING_VERSION=""
+    fi
+  fi
+  [ -n "${MARKETING_VERSION:-}" ] || MARKETING_VERSION="1.0.0"
+
+  activate_harmony_temporary_install_patch
+  SEMAPHORE_PROGRESS=15 SEMAPHORE_WAIT_MESSAGE="等待工作区准备名额" SEMAPHORE_RUN_MESSAGE="复制隔离工作区" \
+    with_semaphore "workspace-prepare" "${PARALLEL_MAX_PREPARE_JOBS_RESOLVED:-2}" prepare_workspace
+  ensure_hbuilderx
+  task_progress 35 "准备 HarmonyOS 编译"
+  build_harmony_hap
+  task_progress 75 "生成并签名 HAP"
+  collect_harmony_artifact
+  verify_harmony_pgyer_compat_artifact
+  task_artifact_path "$HAP_FINAL"
+  task_progress 90 "归档 HAP"
+  print_harmony_result
+  BUILD_SUCCEEDED=1
+  run_upload_stage "$BUILD_INFO_FILE" || true
+  task_progress 100 "已完成"
+  prune_harmony_outputs
+}
+
+build_android_project() {
+  load_project "$1"
+  [ "$ANDROID_ENABLED" = "true" ] || die "项目 $PROJECT_ID 尚未启用 Android 打包"
+  init_run
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
+  exec > >(tee -a "$LOG_FILE") 2>&1
+
+  printf '\n'
+  printf '========================================\n'
+  printf ' ANDROID PROJECT=%s (%s)\n' "$PROJECT_ID" "$DISPLAY_NAME"
+  printf ' RUN_ID=%s\n' "$RUN_ID"
+  printf ' LOG=%s\n' "$LOG_FILE"
+  printf '========================================\n'
+  task_progress 5 "初始化构建环境"
+
+  require_cmd rsync
+  require_cmd node
+  require_cmd shasum
+  require_cmd find
+  require_cmd keytool
+
+  if [ -n "$CLI_VERSION" ]; then
+    MARKETING_VERSION="$CLI_VERSION"
+  else
+    local manifest_path=""
+    manifest_path="$(project_manifest_path "$SOURCE_DIR" 2>/dev/null || true)"
+    if [ -n "$manifest_path" ]; then
+      MARKETING_VERSION="$(manifest_version "$manifest_path" || true)"
+    else
+      MARKETING_VERSION=""
+    fi
+  fi
+  [ -n "${MARKETING_VERSION:-}" ] || MARKETING_VERSION="1.0.0"
+
+  SEMAPHORE_PROGRESS=15 SEMAPHORE_WAIT_MESSAGE="等待工作区准备名额" SEMAPHORE_RUN_MESSAGE="复制隔离工作区" \
+    with_semaphore "workspace-prepare" "${PARALLEL_MAX_PREPARE_JOBS_RESOLVED:-2}" prepare_workspace
+  sync_full_permissions
+  generate_brand_assets
+  ensure_hbuilderx
+  generate_android_resources
+  task_progress 35 "生成 Android 资源"
+  copy_android_resources
+  patch_android_project
+  task_progress 50 "准备 Android 工程"
+  build_android_apk
+  task_progress 75 "执行 Gradle assembleRelease"
+  verify_android_apk_signature "$APK_SRC"
+  verify_android_custom_plugins "$APK_SRC"
+  collect_android_artifact
+  task_artifact_path "$APK_FINAL"
+  task_progress 90 "归档 APK"
+  print_android_result
+  BUILD_SUCCEEDED=1
+  run_upload_stage "$BUILD_INFO_FILE" || true
+  task_progress 100 "已完成"
+  prune_android_outputs
+}
+
+check_mp_weixin_project() {
+  load_project "$1"
+  local errors=0 warnings=0 version appid key
+  printf '\n========== MP-WEIXIN CHECK: %s ==========\n' "$PROJECT_ID"
+
+  [ "${MP_WEIXIN_ENABLED:-true}" = "true" ] && printf '[OK]   微信小程序已启用\n' || { printf '[FAIL] 微信小程序未启用（MP_WEIXIN_ENABLED）\n'; errors=$((errors + 1)); }
+  [ -d "$SOURCE_DIR" ] && printf '[OK]   源码目录: %s\n' "$SOURCE_DIR" || { printf '[FAIL] 源码目录不存在: %s\n' "$SOURCE_DIR"; errors=$((errors + 1)); }
+  [ -x "$HBUILDERX_CLI" ] && printf '[OK]   HBuilderX CLI: %s\n' "$HBUILDERX_CLI" || { printf '[FAIL] HBuilderX CLI 不存在\n'; errors=$((errors + 1)); }
+
+  version="$(sdk_series)"
+  if mp_weixin_hbuilderx_ok; then
+    printf '[OK]   HBuilderX 版本: %s（≥4.41，支持发行 mp-weixin）\n' "$version"
+  else
+    printf '[FAIL] HBuilderX 版本过低: %s（need ≥4.41）\n' "$version"; errors=$((errors + 1))
+  fi
+
+  appid="$(mp_weixin_appid "$SOURCE_DIR/manifest.json" 2>/dev/null || true)"
+  if [ -n "$appid" ]; then
+    printf '[OK]   微信小程序 AppID: %s\n' "$appid"
+  else
+    printf '[FAIL] 未找到微信小程序 AppID：在 HBuilderX 的 manifest.json 可视化界面填写，或设置 MP_WEIXIN_APPID\n'
+    errors=$((errors + 1))
+  fi
+
+  if [ "${CLI_MP_WEIXIN_UPLOAD:-${MP_WEIXIN_UPLOAD:-true}}" = "true" ]; then
+    key="$(mp_weixin_private_key)"
+    if [ -n "$key" ] && [ -s "$key" ]; then
+      printf '[OK]   代码上传密钥: %s\n' "$key"
+    else
+      printf '[FAIL] 缺少小程序代码上传密钥：mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 → 下载密钥，放到 %s/*.key\n' \
+        "$(mp_weixin_cert_dir)"
+      printf '         不需要上传时设 MP_WEIXIN_UPLOAD=false\n'
+      errors=$((errors + 1))
+    fi
+    printf '[WARN] 微信公众平台 IP 白名单需包含本机出口 IP，否则上传报 200002\n' && warnings=$((warnings + 1))
+  else
+    printf '[OK]   仅编译不上传（MP_WEIXIN_UPLOAD=false）\n'
+  fi
+
+  printf '结果: errors=%s warnings=%s\n' "$errors" "$warnings"
+  [ "$errors" -eq 0 ]
+}
+
+build_mp_weixin_project() {
+  load_project "$1"
+  [ "${MP_WEIXIN_ENABLED:-true}" = "true" ] || die "项目 $PROJECT_ID 尚未启用微信小程序打包"
+  init_run
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
+  exec > >(tee -a "$LOG_FILE") 2>&1
+
+  printf '\n'
+  printf '========================================\n'
+  printf ' MP-WEIXIN PROJECT=%s (%s)\n' "$PROJECT_ID" "$DISPLAY_NAME"
+  printf ' RUN_ID=%s\n' "$RUN_ID"
+  printf ' LOG=%s\n' "$LOG_FILE"
+  printf '========================================\n'
+  task_progress 5 "初始化构建环境"
+
+  require_cmd rsync
+  require_cmd node
+  require_cmd shasum
+
+  if [ -n "$CLI_VERSION" ]; then
+    MARKETING_VERSION="$CLI_VERSION"
+  else
+    local manifest_path=""
+    manifest_path="$(project_manifest_path "$SOURCE_DIR" 2>/dev/null || true)"
+    if [ -n "$manifest_path" ]; then
+      MARKETING_VERSION="$(manifest_version "$manifest_path" || true)"
+    fi
+  fi
+  [ -n "${MARKETING_VERSION:-}" ] || MARKETING_VERSION="1.0.0"
+
+  MP_WEIXIN_APPID_VALUE="$(mp_weixin_appid "$SOURCE_DIR/manifest.json" 2>/dev/null || true)"
+  [ -n "$MP_WEIXIN_APPID_VALUE" ] || die "未找到微信小程序 AppID：在 HBuilderX 的 manifest.json 里填写 mp-weixin.appid，或设置 MP_WEIXIN_APPID"
+
+  # CLI 覆盖优先于 settings.env / 项目 env（与 CLI_VERSION、--harmony-debug 同一套路）。
+  local do_upload="${CLI_MP_WEIXIN_UPLOAD:-${MP_WEIXIN_UPLOAD:-true}}" private_key="" description="${MP_WEIXIN_DESCRIPTION:-}"
+  if [ "$do_upload" = "true" ]; then
+    private_key="$(mp_weixin_private_key)"
+    [ -n "$private_key" ] && [ -s "$private_key" ] || die "缺少小程序代码上传密钥：从 mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 下载后放到 $(mp_weixin_cert_dir)/*.key，或设置 MP_WEIXIN_PRIVATE_KEY"
+  fi
+  [ -n "$description" ] || description="$PROJECT_ID $MARKETING_VERSION"
+
+  SEMAPHORE_PROGRESS=15 SEMAPHORE_WAIT_MESSAGE="等待工作区准备名额" SEMAPHORE_RUN_MESSAGE="复制隔离工作区" \
+    with_semaphore "workspace-prepare" "${PARALLEL_MAX_PREPARE_JOBS_RESOLVED:-2}" prepare_workspace
+  ensure_hbuilderx
+
+  local -a publish_args=(publish --platform mp-weixin --project "$WORKSPACE")
+  if [ "$do_upload" = "true" ]; then
+    publish_args+=(--upload true --appid "$MP_WEIXIN_APPID_VALUE" --privatekey "$private_key"
+      --version "$MARKETING_VERSION" --description "$description")
+    [ -n "${MP_WEIXIN_ROBOT:-}" ] && publish_args+=(--robot "$MP_WEIXIN_ROBOT")
+  else
+    publish_args+=(--upload false)
+  fi
+
+  task_progress 30 "HBuilderX 编译微信小程序"
+  if ! SEMAPHORE_PROGRESS=30 SEMAPHORE_WAIT_MESSAGE="等待 HBuilderX 名额" \
+    SEMAPHORE_RUN_MESSAGE="HBuilderX 编译微信小程序" \
+    with_semaphore "hbuilderx" "${PARALLEL_MAX_HBULDERX_JOBS_RESOLVED:-1}" \
+    run_with_timeout "${MP_WEIXIN_TIMEOUT:-1800}" "$HBUILDERX_CLI" "${publish_args[@]}" >>"$LOG_FILE" 2>&1; then
+    tail -n 100 "$LOG_FILE" >&2 || true
+    die "HBuilderX 发行微信小程序失败（完整日志: ${LOG_FILE}）。常见原因：HBuilderX 未登录、未安装微信小程序上传 CI 插件、AppID 与上传密钥不匹配、公众平台 IP 白名单未放行本机出口 IP"
+  fi
+  MP_WEIXIN_UPLOADED="$do_upload"
+
+  local build_root=""
+  if [ -d "$WORKSPACE/unpackage/dist/build/mp-weixin" ]; then
+    build_root="$WORKSPACE/unpackage/dist/build/mp-weixin"
+  elif [ -d "$WORKSPACE/dist/build/mp-weixin" ]; then
+    build_root="$WORKSPACE/dist/build/mp-weixin"
+  fi
+  [ -n "$build_root" ] || die "HBuilderX 编译完成但未找到小程序产物目录（unpackage/dist/build/mp-weixin）"
+
+  task_progress 75 "归档小程序产物"
+  collect_mp_weixin_artifact "$build_root" "$MP_WEIXIN_APPID_VALUE" "$MP_WEIXIN_UPLOADED" "$description"
+  task_artifact_path "$MP_WEIXIN_DIST"
+  print_mp_weixin_result
+  BUILD_SUCCEEDED=1
+  task_progress 100 "已完成"
+  prune_mp_weixin_outputs
+}

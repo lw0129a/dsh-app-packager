@@ -28,7 +28,7 @@ pnpm -r pack --pack-destination /tmp/ap-pack   # 改了会发布的内容就跑
 
 - **改引擎必须同提交更新引擎说明。** 涉及 `packages/app-packager/engine/` 下脚本、配置键、命令行参数、目录结构、产物、签名或上传规则的改动，必须在同一个提交里更新 `packages/app-packager/engine/项目介绍.md`（含变更记录与"最后更新"日期），并升引擎脚本版本号。
 - **项目读取方式不许退化。** 初始化仍要能自动发现同级目录下的 uni-app x 项目（`manifest.json` + `pages.json`，或 `src/` 同构），同时保留手动指定绝对路径。
-- **CLI 不许加运行时依赖。** `packages/app-packager` 只用 Node 内置模块；`packages/dsh-app-packager` 运行时不得导入 `@deepseek-ai/*`。
+- **CLI 不许加运行时依赖。** `packages/app-packager` 只用 Node 内置模块；仓库根（插件包）运行时不得导入 `@deepseek-ai/*`。
 - **绝不提交凭据。** 证书、`*.p12`、描述文件、`signing/current/`、`sdk/` 内容、`config/*.local.env` 与 `config/projects/*.env` 都不进 Git。
 - **不要在 macOS 之外声称支持 iOS**，也不要为了"跨平台"把 bash 引擎改写成 Node。
 

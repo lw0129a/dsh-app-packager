@@ -16,7 +16,7 @@ Three things to confirm:
 
 1. The `packages/app-packager` tarball contains `engine/` (~46 files, ~124 KB) and both `engine/打包工具.command` and `engine/lib/common.sh` are present.
    Note that **pnpm writes every file in the tarball as 644** (`npm pack` is what preserves 755), so do not rely on the tarball's mode bits: the CLI restores 755 for `.command`/`.sh` when it materialises the engine (`EXECUTABLE` in `src/home.ts`, unit-tested), so the user's copy is double-clickable.
-2. In the `packages/dsh-app-packager` tarball, the `app-packager` dependency has been rewritten from `workspace:^0.2.0` to `^0.2.0` (npm does not understand the workspace protocol; an unrewritten dependency installs nowhere).
+2. The tarball ships no runtime dependency at all: the engine is copied into `vendor/app-packager` by `prepack`, so nothing has to be published twice and no `workspace:` protocol is rewritten.
 3. Both `package.json` `version` fields have been bumped.
 
 Both packages live on the public npm registry with **unscoped names** (`app-packager`, `dsh-app-packager`). Publishing only requires that `npm whoami` is you (`lw0129a`):
@@ -200,11 +200,11 @@ data/plugins/<owner>__<repo>.yml                              # root package
 data/plugins/<owner>__<repo>--<subpackage path, / → ->.yml    # monorepo subpackage
 ```
 
-This project is a monorepo (the root package is the CLI, the plugin is `packages/dsh-app-packager`), so it uses the subpackage form: `url` points into the subdirectory and `name` carries the subpackage after `#`.
+The repository root *is* the plugin package, so the plain repository form works — and because `dist/` and `vendor/` are committed, a git install needs no build step.
 
 ```yaml
 # data/plugins/lw0129a__dsh-app-packager--packages-dsh-app-packager.yml
-url: https://github.com/lw0129a/dsh-app-packager/tree/main/packages/dsh-app-packager
+url: https://github.com/lw0129a/dsh-app-packager
 name: lw0129a/dsh-app-packager#dsh-app-packager
 category: dev
 description:
@@ -223,7 +223,7 @@ description:
 ### What their CI checks (`scripts/check-submission.mjs`)
 
 1. At most 3 entries per PR.
-2. **`dsh.bundle`**: read from the `package.json` the entry points at (root, or a `packages/` · `plugins/` · `apps/` subpackage). Ours lives in `packages/dsh-app-packager/package.json` and declares `dsh.bundle.patch` — satisfied.
+2. **`dsh.bundle`**: read from the `package.json` the entry points at (root, or a `packages/` · `plugins/` · `apps/` subpackage). Ours lives in the root `package.json` and declares `dsh.bundle.patch` — satisfied.
 3. **`MIN_AGE_DAYS = 1`: the repository must be at least one day old. This failure clears itself** — the checker literally says not to resubmit, push or reopen; `regate.yml` (cron `19 */6 * * *`) re-runs the gate every 6 hours and it turns green on time.
 4. The repository must carry the `dsh-plugin` topic.
 5. Official `@deepseek-ai/*` packages must be `peerDependencies`, not `dependencies`.

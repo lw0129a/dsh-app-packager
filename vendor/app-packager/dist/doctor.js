@@ -1,0 +1,194 @@
+/**
+ * Environment diagnosis shared by `app-packager doctor` and the DSH tool.
+ *
+ * It answers one question: on THIS machine, which platforms can be built right
+ * now. Checks that cannot be established are warnings with a hint, never silent
+ * passes — a false "ok" costs a failed build hours later.
+ */
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { findExecutable, shellAvailable } from './engine.js';
+import { materializedVersion, packageVersion, isMaterialized } from './home.js';
+import { listProjects } from './projects.js';
+import { parseEnvFile } from './projects.js';
+const PLATFORM_LABELS = {
+    ios: 'iOS (IPA)',
+    android: 'Android (APK)',
+    harmony: 'HarmonyOS (HAP)',
+    'mp-weixin': '微信小程序 (MP-WEIXIN)',
+};
+/** uni-app x 从 HBuilderX 4.41 起支持发行微信小程序。 */
+const MP_WEIXIN_MIN_SERIES = 4.41;
+function hbuilderxSeries(cli) {
+    try {
+        const out = execFileSync(cli, ['--help'], { encoding: 'utf8', timeout: 20000 });
+        const match = out.match(/HBuilderX\(v?([0-9]+\.[0-9]+)/);
+        return match ? match[1] : '';
+    }
+    catch {
+        return '';
+    }
+}
+function check(id, label, status, detail = '', hint = '') {
+    return { id, label, status, detail: detail || '', hint: hint || '' };
+}
+function probeExecutable(id, label, names, hint) {
+    for (const name of names) {
+        const found = findExecutable(name);
+        if (found)
+            return check(id, label, 'ok', found);
+    }
+    return check(id, label, 'fail', `未找到 ${names.join(' / ')}`, hint);
+}
+function readSettings(home) {
+    const file = path.join(home, 'config', 'settings.env');
+    if (!fs.existsSync(file))
+        return {};
+    try {
+        return parseEnvFile(file, { PIPELINE_ROOT: home, HOME: os.homedir() });
+    }
+    catch {
+        return {};
+    }
+}
+export function runDoctor({ home, platform = 'all' }) {
+    const wantPlatform = (name) => platform === 'all' || platform === name;
+    const checks = [];
+    const nodeMajor = Number(process.versions.node.split('.')[0]);
+    checks.push(nodeMajor >= 18
+        ? check('node', 'Node.js', 'ok', `v${process.versions.node}`)
+        : check('node', 'Node.js', 'fail', `v${process.versions.node}`, '需要 Node.js >= 18'));
+    const materialized = isMaterialized(home);
+    if (!materialized) {
+        checks.push(check('engine', '打包引擎', 'fail', `${home} 未初始化`, '运行 `app-packager init` 复制引擎并完成初始化向导'));
+    }
+    else {
+        const drift = materializedVersion(home) !== packageVersion();
+        checks.push(drift
+            ? check('engine', '打包引擎', 'warn', `${home} 的引擎版本与当前 CLI 不一致`, '运行 `app-packager init --force` 刷新引擎脚本')
+            : check('engine', '打包引擎', 'ok', home));
+    }
+    const shell = shellAvailable();
+    checks.push(shell.available
+        ? check('bash', 'bash / 引擎桥接', 'ok', `${shell.shell.kind} · ${shell.shell.command}${shell.shell.hint ? ` · ${shell.shell.hint}` : ''}`)
+        : check('bash', 'bash / 引擎桥接', 'fail', shell.error, 'Windows 安装 Git for Windows，或启用 WSL'));
+    const settings = materialized ? readSettings(home) : {};
+    if (wantPlatform('ios')) {
+        if (process.platform !== 'darwin') {
+            checks.push(check('ios.host', PLATFORM_LABELS.ios, 'fail', `当前系统 ${process.platform} 无法构建 iOS`, 'iOS 打包只能在 macOS 上完成（需要 Xcode）'));
+        }
+        else {
+            checks.push(check('ios.host', 'macOS / Xcode 主机', 'ok', `darwin ${os.release()}`));
+            checks.push(probeExecutable('ios.xcodebuild', 'xcodebuild', ['xcodebuild'], '安装 Xcode 并在终端执行 `xcode-select --install`'));
+            checks.push(probeExecutable('ios.security', 'security / codesign', ['security', 'codesign'], '安装 Xcode Command Line Tools'));
+            const hb = settings.HBUILDERX_CLI;
+            if (!hb) {
+                checks.push(check('ios.hbuilderx', 'HBuilderX CLI', 'warn', '尚未初始化，无法读取 HBUILDERX_CLI', '运行 `app-packager init` 后重试'));
+            }
+            else if (fs.existsSync(hb)) {
+                checks.push(check('ios.hbuilderx', 'HBuilderX CLI', 'ok', hb));
+            }
+            else {
+                checks.push(check('ios.hbuilderx', 'HBuilderX CLI', 'fail', `${hb} 不存在`, '安装 HBuilderX，或在 config/settings.local.env 覆盖 HBUILDERX_CLI'));
+            }
+        }
+    }
+    if (wantPlatform('android')) {
+        checks.push(probeExecutable('android.java', 'Java (JDK)', ['java'], '安装 JDK 17+ 并配置 JAVA_HOME'));
+        const sdkDir = settings.ANDROID_SDK_DIR || path.join(os.homedir(), 'Library', 'Android', 'sdk');
+        checks.push(fs.existsSync(sdkDir)
+            ? check('android.sdk', 'Android SDK', 'ok', sdkDir)
+            : check('android.sdk', 'Android SDK', 'warn', `${sdkDir} 不存在`, '安装 Android SDK，或在 config/settings.local.env 覆盖 ANDROID_SDK_DIR'));
+    }
+    if (wantPlatform('harmony')) {
+        const hvigor = findExecutable('hvigorw') || findExecutable('hvigorw.bat');
+        const deveco = [
+            '/Applications/DevEco-Studio.app',
+            process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Huawei', 'DevEco Studio'),
+        ].filter(Boolean).find((dir) => fs.existsSync(dir));
+        checks.push(deveco || hvigor
+            ? check('harmony.toolchain', 'HarmonyOS 工具链', 'ok', deveco || hvigor)
+            : check('harmony.toolchain', 'HarmonyOS 工具链', 'warn', '未发现 DevEco Studio 或 hvigorw', '安装 DevEco Studio；引擎也会从业务项目的 hvigorw 兜底'));
+        const harmonyCertDir = settings.HARMONY_SIGNING_CERT_DIR;
+        if (!harmonyCertDir) {
+            checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'warn', '尚未初始化', '运行 `app-packager init` 后重试'));
+        }
+        else if (!fs.existsSync(harmonyCertDir)) {
+            checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'warn', `${harmonyCertDir} 不存在`, '把 HarmonyOS 签名证书放进该目录（引擎初始化会创建它），或在 config/settings.local.env 覆盖 HARMONY_SIGNING_CERT_DIR'));
+        }
+        else {
+            checks.push(check('harmony.signing', 'HarmonyOS 签名目录', 'ok', harmonyCertDir));
+        }
+    }
+    if (wantPlatform('mp-weixin')) {
+        const hb = settings.HBUILDERX_CLI;
+        if (!hb) {
+            checks.push(check('mp-weixin.hbuilderx', 'HBuilderX CLI', 'warn', '尚未初始化，无法读取 HBUILDERX_CLI', '运行 `app-packager init` 后重试'));
+        }
+        else if (!fs.existsSync(hb)) {
+            checks.push(check('mp-weixin.hbuilderx', 'HBuilderX CLI', 'fail', `${hb} 不存在`, '安装 HBuilderX，或在 config/settings.local.env 覆盖 HBUILDERX_CLI'));
+        }
+        else {
+            const series = hbuilderxSeries(hb);
+            if (!series) {
+                checks.push(check('mp-weixin.hbuilderx', 'HBuilderX 版本', 'warn', '无法读取 HBuilderX 版本', '打开一次 HBuilderX 后重试；发行微信小程序需要 4.41+'));
+            }
+            else if (Number(series) < MP_WEIXIN_MIN_SERIES) {
+                checks.push(check('mp-weixin.hbuilderx', 'HBuilderX 版本', 'fail', `${series} 过低`, '升级 HBuilderX 到 4.41+（uni-app x 从 4.41 起支持发行微信小程序）'));
+            }
+            else {
+                checks.push(check('mp-weixin.hbuilderx', 'HBuilderX 版本', 'ok', `${series}（≥4.41）`));
+            }
+        }
+        const certDir = settings.MP_WEIXIN_CERT_DIR || path.join(home, 'certificates', 'WeChatMP');
+        let keyCount = 0;
+        try {
+            keyCount = fs.readdirSync(certDir).filter((name) => name.endsWith('.key')).length;
+        }
+        catch {
+            keyCount = 0;
+        }
+        if (String(settings.MP_WEIXIN_UPLOAD ?? '').toLowerCase() === 'false') {
+            checks.push(check('mp-weixin.upload', '代码上传密钥', 'ok', 'MP_WEIXIN_UPLOAD=false：只编译不上传'));
+        }
+        else if (keyCount > 0) {
+            checks.push(check('mp-weixin.upload', '代码上传密钥', 'ok', `${certDir}（${keyCount} 个 .key）`));
+            checks.push(check('mp-weixin.ip', '微信公众平台 IP 白名单', 'warn', '上传前需把本机出口 IP 加入白名单', 'mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 → IP 白名单；不加会报 200002'));
+        }
+        else {
+            checks.push(check('mp-weixin.upload', '代码上传密钥', 'warn', `${certDir} 里没有 .key`, 'mp.weixin.qq.com → 开发 → 开发管理 → 开发设置 → 下载代码上传密钥放到该目录，或设 MP_WEIXIN_UPLOAD=false 只编译'));
+        }
+    }
+    const projects = materialized ? listProjects(home) : [];
+    if (!materialized) {
+        checks.push(check('projects', '项目配置', 'warn', '引擎未初始化', '运行 `app-packager init`'));
+    }
+    else if (projects.length === 0) {
+        checks.push(check('projects', '项目配置', 'warn', '未发现 config/projects/*.env', '把 uni-app 项目放在引擎同级目录，或运行 `app-packager register <项目目录>`；插件面板里有「选择目录…」按钮'));
+    }
+    else {
+        const missing = projects.filter((project) => project.sourceDir && !project.sourceDirExists);
+        checks.push(missing.length === 0
+            ? check('projects', '项目配置', 'ok', `${projects.length} 个项目：${projects.map((project) => project.id).join(', ')}`)
+            : check('projects', '项目配置', 'warn', `${missing.length}/${projects.length} 个项目的 SOURCE_DIR 不存在`, `检查 ${missing.map((project) => project.file).join(', ')}`));
+    }
+    const failed = checks.filter((item) => item.status === 'fail');
+    return {
+        ok: failed.length === 0,
+        home,
+        platform,
+        platformName: platform === 'all' ? '全部平台' : PLATFORM_LABELS[platform] || platform,
+        checks,
+        failures: failed.length,
+        warnings: checks.filter((item) => item.status === 'warn').length,
+        projects: projects.map((project) => ({
+            id: project.id,
+            enabledPlatforms: project.enabledPlatforms,
+            sourceDir: project.sourceDir,
+            sourceDirExists: project.sourceDirExists,
+        })),
+    };
+}
+export { PLATFORM_LABELS };

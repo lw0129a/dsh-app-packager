@@ -1,0 +1,151 @@
+/**
+ * Resolve and materialize the AppPackager home directory.
+ *
+ * The engine (packages/app-packager/engine) is a set of bash scripts that own
+ * their own PIPELINE_ROOT: they read config/, download sdk/, keep logs/ and
+ * archive packages/ below it. An installed npm package lives in a read-only
+ * node_modules tree, so the engine is copied once into a writable home and the
+ * scripts then run untouched from there.
+ */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+export const PACKAGE_ROOT = path.resolve(fileURLToPath(import.meta.url), '..', '..');
+export const ENGINE_SOURCE = path.join(PACKAGE_ROOT, 'engine');
+export const ENGINE_ENTRY = '打包工具.command';
+export const ENGINE_WIZARD = '初始化.command';
+export const VERSION_FILE = '.engine-version';
+/** Scripts the user may double-click in Finder; always restored to 0o755. */
+const EXECUTABLE = /\.(command|sh)$/i;
+/** Paths inside the home that belong to the user and are never overwritten. */
+const USER_OWNED = [
+    /^config\/settings\.local\.env$/,
+    /^config\/upload\.local\.env$/,
+    /^config\/parallel\.local\.env$/,
+    /^config\/init\.local\.env$/,
+    /^config\/projects\/(?!.*\.example$).*\.env$/,
+    /^certificates\/(?!README\.md$)(?!处理证书\.command$)/,
+    /^signing\/(?!README\.md$)(?!apple\/)/,
+    /^sdk\/(?!README\.md$)(?!处理SDK\.command$)/,
+    /^packages\//,
+    /^logs\/(?!\.gitkeep$)/,
+    /^workspaces\//,
+    /^\.tmp\//,
+];
+export function isUserOwned(relativePath) {
+    const rel = relativePath.split(path.sep).join('/');
+    return USER_OWNED.some((pattern) => pattern.test(rel));
+}
+export function packageVersion() {
+    const manifest = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'));
+    return manifest.version;
+}
+/**
+ * Home precedence: explicit --dir > APP_PACKAGER_HOME > ~/AppPackager.
+ * The default sits directly in the user's home so that uni-app x projects kept
+ * next to it are still discovered by the engine's sibling scan.
+ */
+export function resolveHome(explicit) {
+    if (explicit)
+        return path.resolve(explicit);
+    if (process.env.APP_PACKAGER_HOME)
+        return path.resolve(process.env.APP_PACKAGER_HOME);
+    return path.join(os.homedir(), 'AppPackager');
+}
+export function engineEntryPath(home) {
+    return path.join(home, ENGINE_ENTRY);
+}
+export function isMaterialized(home) {
+    return fs.existsSync(engineEntryPath(home));
+}
+export function materializedVersion(home) {
+    try {
+        return fs.readFileSync(path.join(home, VERSION_FILE), 'utf8').trim();
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * Written into a fresh engine home when the engine ships no `.gitignore` of its
+ * own — npm drops that file from the tarball. Keeps a user who versions the
+ * engine directory from committing local config, certificates or SDK copies.
+ */
+export const HOME_GITIGNORE = `# AppPackager 引擎目录：本地配置、证书、SDK 与产物不进 Git
+.DS_Store
+config/*.local.env
+config/init.local.env
+config/projects/*.env
+!config/projects/project.env.example
+certificates/*
+!certificates/README.md
+!certificates/处理证书.command
+signing/current/
+sdk/*
+!sdk/README.md
+!sdk/处理SDK.command
+tools/*
+packages/
+logs/*
+!logs/.gitkeep
+workspaces/
+.tmp/
+*.p12
+*.mobileprovision
+*.ipa
+*.apk
+*.hap
+`;
+/**
+ * Copy the packaged engine into `home`.
+ *
+ * Scripts, docs and templates are refreshed on every version bump; files the
+ * user owns (local config, certificates, sdk, packages, logs, workspaces) are
+ * left alone.
+ */
+export function materialize(home, { force = false } = {}) {
+    const version = packageVersion();
+    if (!force && isMaterialized(home) && materializedVersion(home) === version) {
+        return { copied: 0, skipped: 0, version, upToDate: true };
+    }
+    if (!fs.existsSync(ENGINE_SOURCE)) {
+        throw new Error(`packaged engine not found at ${ENGINE_SOURCE}`);
+    }
+    const result = { copied: 0, skipped: 0, version, upToDate: false };
+    fs.mkdirSync(home, { recursive: true });
+    const walk = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const src = path.join(dir, entry.name);
+            const rel = path.relative(ENGINE_SOURCE, src);
+            if (entry.isDirectory()) {
+                walk(src);
+                continue;
+            }
+            if (isUserOwned(rel)) {
+                result.skipped += 1;
+                continue;
+            }
+            const dest = path.join(home, rel);
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            try {
+                // pnpm pack 会把 tarball 里所有文件记成 644（npm pack 保留 755），所以打包态下源文件的
+                // 权限位不可信：`.command`/`.sh` 是给 Finder 双击用的，这里一律补回可执行。
+                // Windows 无 POSIX 权限位，chmod 会失败或无效（引擎始终用 `bash <script>` 调用），无害。
+                const sourceMode = fs.statSync(src).mode & 0o777;
+                fs.chmodSync(dest, EXECUTABLE.test(entry.name) ? 0o755 : sourceMode);
+            }
+            catch {
+                /* best effort */
+            }
+            result.copied += 1;
+        }
+    };
+    walk(ENGINE_SOURCE);
+    fs.writeFileSync(path.join(home, VERSION_FILE), `${version}\n`);
+    const ignore = path.join(home, '.gitignore');
+    if (!fs.existsSync(ignore))
+        fs.writeFileSync(ignore, HOME_GITIGNORE);
+    return result;
+}

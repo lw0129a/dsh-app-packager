@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The plugin ships the en
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-10-29
+
+### Changed
+
+- **仓库根就是插件包。** 插件源码、测试、图标、`cordis.patch.yml` 全部移到仓库根，`packages/` 下只留被内联的引擎 CLI；不再有「插件在子目录里」这回事，GitHub 上直接填仓库地址即可安装。
+- `dist/` 与 `vendor/` 纳入版本库，从 git 安装不需要再本地构建；`files` 白名单不变。
+
+### Fixed
+
+- **仓库根即插件时升级接口报错：** `pluginRootFromModule()` 原来只在路径里出现 `node_modules/dsh-app-packager` 时认自己，改成本仓库布局后返回 `null`，面板「升级插件」直接 500。现在先按旧逻辑认 `node_modules`，否则从模块目录向上最多 6 层找最近的 `package.json`，包名是 `dsh-app-packager` 就认这个目录。
+
 ## [0.7.2] - 2026-10-29
 
 ### Changed

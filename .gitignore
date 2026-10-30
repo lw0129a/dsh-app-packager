@@ -3,11 +3,11 @@ node_modules/
 .DS_Store
 .tmp/
 
-# TypeScript build output (packages ship dist/ in the npm tarball)
-packages/*/dist/
-packages/*/dist-test/
-# Engine copy vendored into the plugin at build time
-packages/dsh-app-packager/vendor/
+# Engine build output; the plugin's own dist/ and vendor/ are committed so a
+# `pnpm add <git url>` install works without a build step.
+packages/app-packager/dist/
+packages/app-packager/dist-test/
+dist-test/
 .scripts/
 
 # Local AppPackager runtime state materialized by `app-packager init`

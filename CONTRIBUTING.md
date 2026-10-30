@@ -28,7 +28,7 @@ A PR should do one thing, come with a test for any behaviour change, and update 
 
 - **Engine changes update the engine spec in the same commit.** Anything touching scripts, config keys, CLI arguments, directory layout, artefacts, signing or upload rules under `packages/app-packager/engine/` must also update `packages/app-packager/engine/项目介绍.md` (including its changelog and "last updated" date) and bump the engine script version.
 - **Project discovery must not regress.** Init still has to auto-discover sibling uni-app x projects (`manifest.json` + `pages.json`, or a `src/` layout) while keeping manual absolute paths working.
-- **No runtime dependencies in the CLI.** `packages/app-packager` uses Node built-ins only; `packages/dsh-app-packager` must not import `@deepseek-ai/*` at runtime.
+- **No runtime dependencies in the CLI.** `packages/app-packager` uses Node built-ins only; the repository root (the plugin package) must not import `@deepseek-ai/*` at runtime.
 - **Never commit credentials.** Certificates, `*.p12`, provisioning profiles, `signing/current/`, `sdk/` contents, `config/*.local.env` and `config/projects/*.env` stay out of Git.
 - **Do not claim iOS support outside macOS**, and do not rewrite the bash engine into Node to fake portability.
 

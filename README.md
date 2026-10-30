@@ -1,138 +1,236 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-# AppPackager
+# dsh-app-packager
 
-[![CI](https://github.com/lw0129a/dsh-app-packager/actions/workflows/ci.yml/badge.svg)](https://github.com/lw0129a/dsh-app-packager/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/app-packager.svg)](https://www.npmjs.com/package/app-packager)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+DeepSeek Harness bundle for [AppPackager](https://github.com/lw0129a/dsh-app-packager):
+list your uni-app x projects, check the local toolchain, and build iOS IPA /
+Android APK / HarmonyOS HAP without leaving a Harness session — from the agent
+(four tools) or from a panel in the web GUI.
 
-Repository: <https://github.com/lw0129a/dsh-app-packager> (MIT)
+## Install
 
-A local, offline toolchain that turns uni-app x projects into **iOS IPA / Android APK / HarmonyOS HAP** builds, plus **WeChat mini program** publishes (`build mp-weixin`: compile and upload in one HBuilderX `publish`, no DevTools and no QR scan) — classic uni-app projects (uni-app + Vue) build **Android APK** locally through the same pipeline. It keeps running the original way on macOS, and is also installable as an npm package and as a **DeepSeek Harness plugin** from the plugin market.
-
-- **CLI** — `app-packager`, a dependency-free Node command line that delivers the bash packaging engine to `~/AppPackager` on your machine.
-- **Plugin** — `dsh-app-packager`, four agent tools in DeepSeek Harness for *list projects / check environment / verify a platform / build*, so nobody has to memorise the command line.
-- **Licence** — MIT.
-
-> This repository ships no business project and contains no application source. Projects are read at runtime from `config/projects/*.env`, builds are copied into an isolated workspace, and artefacts are archived under `packages/`. SDKs, signing material, artefacts, workspaces and local configuration never enter Git.
-
-## Quick start
-
-### Option 1: command line
-
-```bash
-# install globally (or just use npx)
-npm i -g dsh-app-packager
-# or: pnpm add -g dsh-app-packager
-
-app-packager init          # first run: copy the engine to ~/AppPackager and start the wizard
-app-packager doctor        # what can this machine build?
-app-packager list          # list the uni-app x projects found
-app-packager register ~/work/shop   # register a project dir anywhere on disk
-app-packager build android my-project --upload pgyer
-app-packager build ios --all
-```
-
-Without installing anything:
-
-```bash
-npx dsh-app-packager doctor
-npx dsh-app-packager build harmony my-project
-npx dsh-app-packager build mp-weixin my-project   # compile + upload to the WeChat MP platform
-```
-
-The engine directory defaults to `~/AppPackager`; override it with the `APP_PACKAGER_HOME` environment variable or `--dir <path>`. The wizard registers uni-app x projects found next to it into `config/projects/`; `--search-roots` adds more directories to scan, and `app-packager register <path>` (or the panel's **Choose folder…** button) registers a project anywhere on disk.
-
-### Option 2: DeepSeek Harness plugin
-
-Install **AppPackager** from the Harness plugin market, or add the package to a profile directly (`dsh plugin` forwards its arguments to that profile's pnpm):
+Search for **AppPackager** in the Harness plugin market, or:
 
 ```bash
 dsh plugin --profile desktop add dsh-app-packager
 ```
 
-Restart the profile to mount the tools. Publishing and marketplace listing are documented in [docs/en/publishing.md](docs/en/publishing.md).
+Restart the profile afterwards. The plugin depends on `app-packager` (the CLI
+and the packaging engine), which is installed with it.
 
-Once installed the agent can call four tools:
+## Panel in the web GUI
 
-| Tool | What it does |
+The bundle ships a client half (`./src/client.ts`), so the web GUI gains an
+**App packaging** entry in the sidebar's own panel list, with its page in the
+centre column:
+
+- **Engine** — engine directory, engine version, whether it is materialized,
+  and which bash bridge was found (macOS/Linux `bash`, Windows Git Bash or WSL).
+  *Init engine* materializes a missing engine in one click.
+- **Environment check (Node)** — the same report as `app_packager_doctor`, for
+  one platform or all of them, with hints for every failed item. It runs by
+  itself as soon as the panel has the engine state (you never sit on *Loading…*),
+  re-runs when you switch the platform in that card, and a failure is written
+  into the card so *Run check* can retry.
+- **Folding** — every section (Engine / Environment check / SDK / Projects /
+  Build options & scope / Upload / Job) starts collapsed; click its title
+  to open. The fold state lives with the component, so refreshing state or
+  polling a job never loses where the user left it.
+- **Projects** — every `config/projects/*.env`, its source directory (flagging
+  a missing one), the platforms it enables, and per-project *Env check* /
+  *Build* buttons; the whole list folds under the **Project list** header, and each
+  row keeps its own *Remove* button. The **Choose folder…** button opens the host's own folder
+  dialog and *Add project* registers the picked directory through the engine's
+  `register` subcommand, so a project anywhere on disk gets the same
+  `config/projects/<id>.env` the wizard would write. The field is the folder
+  that **holds** your projects (e.g. `/Users/you/work/projects`) — the engine scans
+  one level below it and registers every uni-app x project it finds, so picking
+  projects one by one is unnecessary (several picked folders are joined into
+  that one field).
+- **Build options & scope** — one card for both halves of "how to build" and
+  "what to build": the version override, the *Upload after build* row, the
+  *Advanced* fold, and underneath the boxed scope block — any set of platforms
+  (tick *All* for the three) and any subset of projects (none ticked = every
+  project that platform enables), with the one *Env check* / *Build* pair. The
+  engine CLI takes a single platform and a single project per run, so a
+  selection becomes several engine runs executed back to back inside one job,
+  each marked `▶ i/n` in the log; the job succeeds only if every run did,
+  keeping the first failing exit code. A build can still upload what it
+  just produced: the **Upload after build** row ticks the distribution platforms
+  (the same selection the Upload card's *Distribution* row edits, sent as one
+  comma separated `--upload`), and ticking none sends `noUpload`, so uploading
+  without a rebuild stays the Upload card's job. *HarmonyOS debug HAP* and *Keep
+  work dir* live in that *Advanced* fold, each with a one-line explanation.
+- **Upload** — the installers the engine has already archived, straight from
+  `state.artifacts` (`listArtifacts` reads `packages/iOS|Android|HarmonyOS/
+  <项目ID>-latest.json`): display name, version, file size (or a *no installer
+  archived* tag when the JSON outlived the file) and build time, each with an
+  *Upload* button that starts a `kind: 'upload'` job for that one artifact —
+  the engine's `upload <platform> <project> --to <平台>` action, which never
+  rebuilds and fails the job when the engine skipped rather than uploaded. The card also holds the distribution targets (the usable uploaders
+  from `config/upload.env`, ticked ones sent as one comma separated `--to`) and
+  the credential rows: an uploader that declares `UPLOAD_PLATFORM_<id>_API_KEY_VAR`
+  (pgyer declares `PGYER_API_KEY`) or `_USER_KEY_VAR` (`PGYER_USER_KEY`, pgyer's
+  optional API 1.0 `uKey`) gets a masked row each, with a `Configured` / `Not
+  set` chip next to its *Save* button. *Save* writes only the field
+  you typed into, so storing one never clears the other: `POST
+  /api/app-packager/upload/credential` updates `config/upload.local.env` (mode
+  600, the file `lib/init.sh` sources), and the key only ever travels
+  engine-ward — `GET state` carries the booleans `credentialConfigured` /
+  `userKeyConfigured`, never a secret. The card also reports whether the
+  official CLI is installed (with its package and version once it is).
+- **SDK** — the detected HBuilderX app/CLI and its version series, and each
+  platform's SDK directory with its state (`ready` / `mismatch` / `missing`).
+  *One-click setup* asks the engine to download and unpack the matching SDK for
+  the ticked platforms, *Process downloaded SDKs* imports archives already in
+  `sdk/`, and each row links to DCloud's official download page — plus the
+  direct iOS archive URL, which follows from the version series alone.
+- **Upgrade plugin** — reinstalls `dsh-app-packager@latest` into the current
+  profile. The engine directory is renamed out of the way for the duration, so
+  an upgrade can never delete your downloaded SDKs, certificates or registered
+  projects; the button is hidden when the plugin does not run from a profile's
+  `node_modules`. Once the upgrade job succeeds the card tells you to
+  **restart DeepSeek Harness** and deliberately offers no *Reload page* button:
+  the browser asks for client modules by the revision from its boot-time
+  manifest, and after an upgrade that revision no longer exists on the server
+  (`plugins/??<id>/src/client.ts&rev=<old>` answers **404**), so a reload takes the
+  sidebar entry away instead of bringing it back. Restarting DSH rebuilds the
+  manifest.
+- **Job** — the running check/build/upload with its live engine log, its verdict
+  (`[FAIL]` or a non-zero exit code counts as failed) and a *Stop* button.
+  Engine `[FAIL] …` / `[WARN] …` lines are also lifted into their own box above
+  the log together with the totals, so a missing profile, p12 or SDK is readable
+  without scrolling the raw output. The job lives in the host process, not in the
+  browser tab: switching to another DeepSeek Harness tab (or reloading the panel)
+  re-adopts the newest job from `GET state`, so a build that is still running
+  comes back with its log, verdict and *Stop* button, and a finished one stays on
+  screen until you start another build or press *Clear* (settled jobs only — a
+  running one is never dropped, or there would be nothing left to stop).
+
+The panel only calls same-origin routes registered by this plugin
+(`/api/app-packager/state|init|doctor|pick|project|project/remove|job|job/log|job/kill|job/clear|upload/credential`) — no
+build logic runs in the browser. It needs a profile that ships the web app
+(`@deepseek-ai/dsh-web-app`, as the desktop and web profiles do); in a headless
+profile the panel is simply absent and the four tools keep working.
+
+## Tools
+
+### `app_packager_list`
+
+Lists the projects configured in the engine directory (`config/projects/*.env`):
+project id, app name, whether the source directory exists, enabled platforms.
+
+```
+AppPackager 引擎目录：<plugin>/home
+引擎版本：0.6.2
+项目（1）:
+- shop（商城）
+  平台: iOS (IPA), Android (APK)
+  源码: /Users/me/work/shop
+```
+
+Pure Node, so it also works on Windows. The first call materializes the engine.
+
+### `app_packager_doctor`
+
+Reports whether this machine can build: Node version, the bash bridge, Xcode /
+signing tools, HBuilderX CLI, JDK, Android SDK, DevEco Studio, the HarmonyOS
+signing directory and the project config. `platform`: `ios` / `android` /
+`harmony` / `all` (default `all`). Also pure Node.
+
+### `app_packager_check`
+
+Runs the engine's `check` subcommand for one platform (certificates, SDK
+directories, HBuilderX CLI) and returns the tail of its output plus a verdict.
+Parameters: `platform` (default `all`), `project` (project id, omit for all),
+`home`.
+
+### `app_packager_build`
+
+Runs a real build; minutes per platform (iOS especially), timeout 90 minutes.
+
+| Parameter | Description |
 | --- | --- |
-| `app_packager_list` | Lists configured projects, enabled platforms and whether each source directory exists |
-| `app_packager_doctor` | Checks Node / shell bridge / Xcode / HBuilderX / JDK / Android SDK / DevEco Studio / project config |
-| `app_packager_check` | Runs the engine's pre-build check for one platform (certificates, SDK, CLI) |
-| `app_packager_build` | Builds (`ios` / `android` / `harmony` / `mp-weixin` / `all`); no project means every enabled project of that platform, upload takes one or more targets (`pgyer,huawei`), version override |
+| `platform` | required, `ios` / `android` / `harmony` / `all` |
+| `project` | project id; optional with `platform=all` (means every project) |
+| `upload` | upload after building, e.g. `pgyer` |
+| `noUpload` | skip the upload stage |
+| `version` | override the artifact version |
+| `harmonyDebug` | emit a HarmonyOS debug side-load HAP |
+| `keepWork` | keep the intermediate work directory |
+| `home` | engine directory (usually omitted, see below) |
 
-The first call materialises the engine into `<plugin>/home` (an existing `~/AppPackager` is renamed there on first use, keeping your SDKs and registered projects); `app_packager_doctor` works on Windows too.
+When unsure, run `app_packager_check` first.
 
-### Web panel
+## Configuration
 
-The same plugin ships a browser half (`./src/client.ts`), so a profile with the web UI gets an **AppPackager** row in the sidebar panel list and a page in the centre column:
+The bundle patch provides the config; override it in your own profile
+`cordis.patch.yml` by re-inserting `id: app-packager`:
 
-- **Engine** — engine directory, version, materialised state and the detected bash bridge, with a one-click initialise.
-- **Environment** — the same report as `app_packager_doctor`, for one platform or all, each failure carrying its fix hint.
-- **Projects** — register and remove projects: the field takes the folder that *holds* your projects (e.g. `/Users/you/work/projects`; several folders are accepted too, comma or newline separated), and the engine scans one level below it, so every uni-app x project inside is registered in one go. The whole list folds under the *Project list* header; each registered project shows its source directory and enabled platforms, and keeps a two-step *Remove* that only deletes the engine's own `config/projects/<id>.env` — never the project sources.
-- **Build options & scope** — one card for both halves of building: the parameters below, and the batch entry point (platforms × projects, no project ticked = all of them). A selection runs back to back in one job, marked `▶ i/n` in the log, and **a build first runs the environment check over the same projects and platforms**, stopping with the list of `[FAIL]` items when the environment is not ready, so packaging only starts once the check passes. The parameters: version override; a **full permissions** switch (defaults to `FULL_PERMISSION_PROFILE` in `config/settings.env`, overridable for one run); the **iOS release kind** (Ad Hoc test / App Store release / development / enterprise — the profile is picked by the project's bundle id, and a kind with no local profile is greyed out with the reason); a **profile** dropdown (every `.mobileprovision` in the signing directories, with kind, bundle id and expiry; leave it on *Auto* to follow the kind or the project wiring); **custom build parameters** (one `KEY=VALUE` per line, e.g. `MARKETING_VERSION=1.2.3`, loadable from the project's own `scripts/ios-package/env/*.env` presets; path-like keys are refused); *HarmonyOS debug HAP* and *Keep work dir* in an *Advanced* fold.
-- **Upload** — ships installers the engine has already archived, never a rebuild: one row per `packages/iOS|Android|HarmonyOS/<项目ID>-latest.json` (display name, version, size, build time, and a tag when the installer itself has been cleaned away), each with an *Upload* button that starts a standalone `upload <platform> <project> --to <平台>` job. The card also holds the distribution targets (the uploaders the engine's `config/upload.env` marks usable, the ticked ones sent as one comma separated `--to`) and the credential rows — pgyer takes an optional User Key next to the API key (the old API's `uKey`, stored as `PGYER_USER_KEY`; the official CLI and API 2.0 ignore it), each with a `Configured` / `Not set` chip. That same distribution row also sits in *Build options* as *Upload after build*, so a build can still upload what it just produced — tick nothing there and the build sends `noUpload`. *Save* writes only the field you typed into, so storing one never clears the other; both live in the engine directory's `config/upload.local.env` (mode 600) and `GET state` only reports whether each is stored, never a secret.
-- **SDK** — the detected HBuilderX app/CLI and its version series, plus each platform's SDK state (`ready` / `mismatch` / `missing`) and directory; *One-click setup* downloads and unpacks the matching iOS / Android / HarmonyOS SDK through the engine, *Process downloaded SDKs* imports archives already sitting in `sdk/`, and every platform row links to DCloud's official download page, names the archive (or, for HarmonyOS, the ohpm package) to look for, and iOS also gets its direct archive URL, which is derivable from the series).
-- **Upgrade plugin** — reinstalls `dsh-app-packager@latest` into the current profile with the engine directory renamed out of the way first, so an upgrade cannot delete your SDKs, certificates or registered projects.
-- **Jobs** — live engine output of the running check/build/upload, its verdict (`[FAIL]` or a non-zero exit code means failure) and a stop button.
+```yaml
+- insert:
+    - id: app-packager
+      name: 'dsh-app-packager'
+      config:
+        home: ''                 # engine dir; empty = <plugin>/home or APP_PACKAGER_HOME
+        searchRoots: []          # extra project scan roots (outside the engine's parent)
+        checkTimeoutMs: 600000   # check timeout (ms)
+        buildTimeoutMs: 5400000  # build timeout (ms)
+        outputLimit: 12000       # engine output kept in a tool result (tail)
+```
 
-The panel talks to eleven same-origin routes the host half registers (`/api/app-packager/state|init|doctor|pick|project|project/remove|job|job/log|job/kill|job/clear|upload/credential`); builds still run in the host process, never in the browser. A headless profile simply shows no panel — the four tools work everywhere.
+The same values are editable in Harness under **Settings → Plugins → Plugin
+config**.
+
+## Engine directory and first use
+
+The engine directory lives inside the plugin (`<plugin>/home`), so it travels
+with the plugin; `APP_PACKAGER_HOME` or the `home` config key points it
+somewhere else. An existing `~/AppPackager` from an earlier version is renamed
+into place on first use — a rename, never a copy, so multi-GB SDKs and
+registered projects move instantly.
+
+The first tool call (or the panel's *Init engine*) releases the bundled engine
+there; later upgrades refresh the engine files (when the `.engine-version` in the
+directory differs from the package version, the next tool call or panel button
+refreshes it in place, and until then that panel row reads "the directory holds
+X — needs a refresh") but never overwrite your own
+config, certificates, SDKs or artifacts. *Upgrade plugin* in the panel goes one
+step further and reinstalls the npm package, keeping the engine directory
+stashed until the install finishes.
+
+> **Do not reinstall this package around the panel.** `<plugin>/home` sits inside
+> the package directory, so any pnpm command that really reinstalls it —
+> `pnpm install --force`, adding another version, changing the `file:` spec —
+> deletes the engine directory along with it, SDKs, certificates and registered
+> projects included. Use *Upgrade plugin* in the panel, or
+> `node <plugin>/upgrade.ts`, which stashes the engine directory first; both
+> also refuse to move you onto an older release than the one installed.
+>
+> **When the sidebar entry disappears.** The host composes the plugin list once at
+> startup and silently skips a plugin whose package directory is missing. Check in
+> order: (1) `ls <plugin>` (i.e. `<profile>/node_modules/dsh-app-packager`); (2) if it
+> is gone, read `<profile>/.plugin-manager/logs/*/pnpm.log` — a failed install leaves
+> `Command failed with exit code 1`, and pnpm removes the old package directory
+> first, taking the SDKs, certificates and projects in `home` with it; (3) install it
+> back (plugin market, or `dsh plugin --profile <profile> add dsh-app-packager`) and
+> **restart DSH** — the list is composed at startup only.
+
+For the interactive wizard (register uni-app x projects found next to the
+engine, pick platforms, configure signing), use the CLI:
+
+```bash
+npx app-packager init
+npx app-packager register ~/work/shop   # or register a directory directly
+```
 
 ## Platform support
 
-| Capability | macOS | Windows | Linux |
-| --- | --- | --- | --- |
-| `list` / `doctor` / `env` (pure Node) | ✅ | ✅ | ✅ |
-| Engine delivery, project discovery | ✅ | ✅ | ✅ |
-| Android APK builds | ✅ | ⚠️ needs Git for Windows or WSL (HBuilderX + JDK must live in that environment) | ⚠️ same |
-| HarmonyOS HAP builds | ✅ | ⚠️ same | ⚠️ same |
-| iOS IPA builds | ✅ | ❌ (iOS can only be signed and packaged on macOS) | ❌ |
-
-On Windows the CLI looks for Git Bash (`%ProgramFiles%\Git\bin\bash.exe`) and falls back to `wsl.exe`, translating paths as needed; `APP_PACKAGER_BASH` points at your own bash. Details in [docs/en/windows.md](docs/en/windows.md).
-
-CI runs the unit tests and `init` / `list` / `doctor` smoke runs on `ubuntu-latest` / `windows-latest` / `macos-latest` × Node 18/20/22, so the pure-Node rows are exercised on all three systems. Real Android / HarmonyOS builds (which need HBuilderX plus a local JDK and Android SDK) are **not** covered by CI.
-
-## Repository layout
-
-```
-packages/
-  app-packager/            # CLI + packaging engine (engine/ is the original bash toolchain, kept as-is)
-    dist/bin.js   # executable entry
-    src/                   # home / projects / engine / doctor / cli
-    engine/                # 打包工具.command, 初始化.command, lib/, config/, signing/ …
-  dsh-app-packager/        # DeepSeek Harness plugin: four tools (index.js, web.js) + web panel (src/client.ts)
-.github/workflows/ci.yml   # three platforms × Node 18/20/22 + packaging checks
-docs/en/                   # architecture, publishing, Windows notes
-docs/zh-CN/                # the same documents in Chinese
-AGENTS.md                  # rules for coding agents and maintainers
-```
-
-The engine (`packages/app-packager/engine/`) keeps the original project's layout and invocation exactly; its own [项目介绍.md](packages/app-packager/engine/项目介绍.md) remains the authoritative description of engine behaviour (Chinese, as before).
-
-## Documentation
-
-| Document | English | 中文 |
-| --- | --- | --- |
-| Architecture and modules | [architecture.md](docs/en/architecture.md) | [architecture.md](docs/zh-CN/architecture.md) |
-| Publishing and marketplace listing | [publishing.md](docs/en/publishing.md) | [publishing.md](docs/zh-CN/publishing.md) |
-| Windows / Linux | [windows.md](docs/en/windows.md) | [windows.md](docs/zh-CN/windows.md) |
-| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md) |
-| Engine behaviour | — (engine docs stay Chinese) | [项目介绍.md](packages/app-packager/engine/项目介绍.md) |
-
-## Development
-
-```bash
-pnpm install
-pnpm test          # the guard below, then node --test for both packages
-pnpm guard:check   # no business project configs, keys or certificates may be committed
-pnpm docs:check    # documentation pairing and link check
-pnpm cli list      # run the local CLI
-pnpm doctor
-```
-
-Ground rules live in [AGENTS.md](AGENTS.md): engine changes must update the engine spec in the same commit, and every user-facing document exists in both languages.
+`list` / `doctor` work anywhere. `check` / `build` need bash: built in on
+macOS/Linux, and on Windows through Git for Windows (recommended) or WSL. iOS
+packaging is macOS only — elsewhere `doctor` reports iOS as failed rather than
+pretending otherwise.
 
 ## Licence
 
-MIT © 2026 [lw0129a](https://github.com/lw0129a)
+MIT

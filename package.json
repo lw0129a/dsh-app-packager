@@ -1,34 +1,126 @@
 {
-  "name": "app-packager-monorepo",
-  "private": true,
-  "version": "0.1.0",
-  "description": "Monorepo for AppPackager: the cross-platform uni-app x packaging CLI and its DeepSeek Harness plugin.",
+  "name": "dsh-app-packager",
+  "version": "0.7.3",
+  "description": "AppPackager for DeepSeek Harness · 用 HBuilderX 一键配好 iOS / Android / HarmonyOS 环境，打出安装包并一键上传",
+  "icon": "icon.svg",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "app-packager",
+    "uni-app-x",
+    "hBuilderX",
+    "ios",
+    "android",
+    "harmonyos",
+    "ipa",
+    "apk",
+    "hap"
+  ],
+  "homepage": "https://github.com/lw0129a/dsh-app-packager#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lw0129a/dsh-app-packager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lw0129a/dsh-app-packager/issues"
+  },
+  "author": "lw0129a",
   "license": "MIT",
+  "private": false,
   "type": "module",
   "packageManager": "pnpm@12.5.1",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js",
+    "./web": "./dist/web.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "app-packager": "./vendor/app-packager/dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "vendor",
+    "cordis.patch.yml",
+    "icon.svg",
+    "assets",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "dshWorkshop": {
+    "schema": "omdsh-workshop-package/v1",
+    "type": "plugin",
+    "integration": {
+      "protocol": "harness-profile",
+      "artifact": "cordis.patch.yml"
+    },
+    "lifecycle": {
+      "activation": "restart-profile",
+      "dispose": "supported"
+    },
+    "permissions": [
+      "native-code:none",
+      "network:outbound-optional"
+    ],
+    "capability": {
+      "id": "app-packager",
+      "kind": "tools+panel",
+      "invocation": "mount the dsh-app-packager bundle row",
+      "expected": "also reads the HBuilderX version, recommends the matching iOS / Android / HarmonyOS SDK downloads and installs them from the panel, and can upgrade the plugin while keeping the downloaded SDKs; exposes app_packager_list / app_packager_doctor / app_packager_check / app_packager_build, driving the bundled bash engine (or the Node half on Windows), plus an AppPackager panel in the web GUI (environment check, project list, builds with live logs and cancel)."
+    },
+    "evidence": {
+      "install": null,
+      "failureIsolation": null,
+      "hotReload": null,
+      "remove": null
+    }
+  },
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "test": "tsc -p tsconfig.scripts.json && node .scripts/check-no-local-config.js && pnpm -r test",
+    "build": "node scripts/vendor-engine.mjs && tsc -p tsconfig.json && node scripts/link-vendored-engine.mjs",
+    "prepack": "node scripts/vendor-engine.mjs && tsc -p tsconfig.json && node scripts/link-vendored-engine.mjs",
+    "test": "pnpm guard:check && pnpm build && tsc -p tsconfig.test.json && node --test dist-test/plugin.test.js && pnpm -C packages/app-packager test",
     "guard:check": "tsc -p tsconfig.scripts.json && node .scripts/check-no-local-config.js",
     "docs:check": "tsc -p tsconfig.scripts.json && node .scripts/check-docs.js",
     "cli": "pnpm -C packages/app-packager build && node packages/app-packager/dist/bin.js",
     "doctor": "pnpm -C packages/app-packager build && node packages/app-packager/dist/bin.js doctor",
     "list": "pnpm -C packages/app-packager build && node packages/app-packager/dist/bin.js list",
-    "build": "pnpm -r build"
+    "build:engine": "pnpm -C packages/app-packager build"
   },
-  "keywords": [
-    "uni-app-x",
-    "packager",
-    "dsh-plugin",
-    "deepseek-harness",
-    "ios",
-    "android",
-    "harmonyos"
-  ],
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4",
     "@types/node": "^26.6.5",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "app-packager": "workspace:^0.7.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

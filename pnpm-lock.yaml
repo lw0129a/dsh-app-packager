@@ -166,23 +166,20 @@ importers:
 
   .:
     devDependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.4
+        version: 3.18.4
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
+      app-packager:
+        specifier: workspace:^0.7.0
+        version: link:packages/app-packager
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
 
   packages/app-packager: {}
-
-  packages/dsh-app-packager:
-    devDependencies:
-      '@deepseek-ai/schemastery':
-        specifier: ^3.18.4
-        version: 3.18.4
-      app-packager:
-        specifier: workspace:^0.7.0
-        version: link:../app-packager
 
 packages:
 
